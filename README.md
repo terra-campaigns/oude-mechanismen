@@ -139,7 +139,11 @@ pip install -r requirements.txt
 To scaffold a new Tier 3 Markdown digest directly from a PDF in Google Drive (extracting chapter bookmarks and page ranges):
 
 ```bash
+# Top-level chapters (default depth 1):
 python3 .agents/scripts/generate_digests.py --scaffold "cores/MyNewBook.pdf"
+
+# Deeper sub-sections (optional depth 2):
+python3 .agents/scripts/generate_digests.py --scaffold "cores/MyNewBook.pdf" --depth 2
 ```
 
 To recompile `.agents/context/references.json` across all existing Markdown digests in `_digests/`:

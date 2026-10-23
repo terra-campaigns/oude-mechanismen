@@ -150,7 +150,13 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
                 if ext == ".pdf":
                     action_hint = f"Run `python3 .agents/scripts/generate_digests.py --scaffold \"{rel}\"`"
                 elif ext == ".gsheet":
-                    action_hint = "Spreadsheet ledger or trade table"
+                    fname_lower = fpath.name.lower()
+                    if "trad" in fname_lower:
+                        action_hint = "Live trade catalogue (synced via sync_trade.py to trading/)"
+                    elif "caravan" in fname_lower or "atles" in fname_lower:
+                        action_hint = "Expedition ledger (linked to directory/Atles/index.md)"
+                    else:
+                        action_hint = "Spreadsheet ledger or trade table"
                 elif ext == ".gdoc":
                     action_hint = "Campaign document or background notes"
                 else:

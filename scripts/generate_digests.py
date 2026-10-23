@@ -246,16 +246,17 @@ def find_pdf(drive_dir: Path, query: str) -> Optional[Path]:
     return None
 
 
-def extract_pdf_outline(reader: Any) -> List[Tuple[str, int, int]]:
-    """Extract top-level outline items with computed page ranges (title, start_page, end_page)."""
+def extract_pdf_outline(reader: Any, max_depth: int = 1) -> List[Tuple[str, int, int]]:
+    """Extract outline items up to max_depth with computed page ranges (title, start_page, end_page)."""
     if not getattr(reader, "outline", None):
         return []
 
-    def flatten(items: Any) -> List[Tuple[str, int]]:
+    def parse_items(items: Any, current_depth: int, target_depth: int) -> List[Tuple[str, int]]:
         res: List[Tuple[str, int]] = []
         for it in items:
             if isinstance(it, list):
-                res.extend(flatten(it))
+                if current_depth < target_depth:
+                    res.extend(parse_items(it, current_depth + 1, target_depth))
             else:
                 try:
                     p = reader.get_destination_page_number(it) + 1
@@ -266,7 +267,14 @@ def extract_pdf_outline(reader: Any) -> List[Tuple[str, int, int]]:
                     pass
         return res
 
-    raw_items = flatten(reader.outline)
+    raw_items = parse_items(reader.outline, 1, max_depth)
+
+    # Adaptive expansion: if top-level outline has fewer than 3 items and deeper nodes exist, expand to depth 2
+    if len(raw_items) < 3 and max_depth == 1:
+        deeper = parse_items(reader.outline, 1, 2)
+        if len(deeper) >= 3:
+            raw_items = deeper
+
     if not raw_items:
         return []
 
@@ -298,6 +306,7 @@ def scaffold_digest(
     pdf_query: str,
     custom_slug: Optional[str] = None,
     category: Optional[str] = None,
+    depth: int = 1,
     force: bool = False
 ) -> Path:
     """Scaffold a new Tier 3 Markdown digest from a Google Drive PDF using pypdf outline metadata."""
@@ -356,7 +365,7 @@ def scaffold_digest(
         else:
             category = "supplement"
 
-    ranges = extract_pdf_outline(reader)
+    ranges = extract_pdf_outline(reader, max_depth=depth)
     contents_lines: List[str] = []
     if ranges:
         for t, s, e in ranges:
@@ -389,7 +398,7 @@ def scaffold_digest(
     out_content = ensure_heading_blank_lines("\n".join(lines))
     digests_dir.mkdir(parents=True, exist_ok=True)
     out_file.write_text(out_content, encoding="utf-8")
-    print(f"[SCAFFOLD] Successfully created digest scaffold at {out_file}")
+    print(f"[SCAFFOLD] Successfully created digest scaffold at {out_file} (extracted {len(ranges)} sections at depth {depth})")
 
     compile_references(repo_root, drive_dir)
     return out_file
@@ -403,6 +412,7 @@ def main():
     parser.add_argument("--scaffold", type=str, default=None, metavar="PDF_QUERY", help="Scaffold a new Tier 3 Markdown digest from a PDF in Google Drive")
     parser.add_argument("--slug", type=str, default=None, help="Custom slug/filename for scaffolded digest")
     parser.add_argument("--category", type=str, default=None, help="Category for scaffolded digest (core_setting, supplement, module, rules, bestiary)")
+    parser.add_argument("--depth", type=int, default=1, help="Maximum outline depth to extract (default: 1 for top-level chapters)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing digest file during scaffolding")
     args = parser.parse_args()
 
@@ -416,6 +426,7 @@ def main():
             args.scaffold,
             custom_slug=args.slug,
             category=args.category,
+            depth=args.depth,
             force=args.force
         )
     else:
