@@ -44,7 +44,13 @@ for REPO in "${TARGET_REPOS[@]}"; do
   mkdir -p "$ABS_REPO/.agents"
   cp "$SCRIPT_DIR/requirements.txt" "$ABS_REPO/.agents/requirements.txt"
 
-  echo "  ✓ Engine files, requirements, and pre-commit hook synced to $ABS_REPO."
+  # 6. Agent Script Runners
+  mkdir -p "$ABS_REPO/.agents/scripts"
+  cp "$SCRIPT_DIR/templates/runners/generate_digests.py.template" "$ABS_REPO/.agents/scripts/generate_digests.py"
+  cp "$SCRIPT_DIR/templates/runners/audit_coverage.py.template" "$ABS_REPO/.agents/scripts/audit_coverage.py"
+  chmod +x "$ABS_REPO/.agents/scripts/generate_digests.py" "$ABS_REPO/.agents/scripts/audit_coverage.py"
+
+  echo "  ✓ Engine files, requirements, runners, and pre-commit hook synced to $ABS_REPO."
 done
 
 echo "==> All target repositories synced successfully."

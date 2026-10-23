@@ -33,13 +33,17 @@ def find_repo_root(custom_dir: str = None) -> Path:
         p = Path(custom_dir).resolve()
         if p.exists() and p.is_dir():
             return p
+        raise FileNotFoundError(f"Provided repository directory '{custom_dir}' does not exist.")
 
     cwd = Path.cwd().resolve()
     for candidate in [cwd, *cwd.parents]:
         if (candidate / "_config.yml").exists() or (candidate / ".agents").is_dir():
             return candidate
 
-    return cwd
+    raise FileNotFoundError(
+        f"Could not locate a campaign repository from current directory '{cwd}'. "
+        f"Please run from within a campaign vault or pass --repo-root."
+    )
 
 
 def find_drive_dir(repo_root: Path, explicit_drive_dir: str = None) -> Path:
