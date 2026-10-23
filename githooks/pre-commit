@@ -1,17 +1,18 @@
 #!/usr/bin/env sh
-# Automatically refresh and stage the Tier 1 semantic catalogue upon commit.
+# Refresh Tier 1 semantic catalogue upon commit when Markdown content changes.
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:$PATH"
 
-# 1. Sync live trade goods if sync_trade.py script is present in repository
-if [ -f .agents/scripts/sync_trade.py ]; then
-  python3 .agents/scripts/sync_trade.py
-  if [ -d trading ]; then
-    git add trading/ .agents/context/trade_sheet_cache.csv 2>/dev/null
+# 1. Re-index Tier 1 catalogue only when Markdown content files are staged
+if git diff --cached --name-only 2>/dev/null | grep -q '\.md$'; then
+  if [ -f _plugins/data_extractor.rb ]; then
+    ruby --disable-gems _plugins/data_extractor.rb
+    if [ -f .agents/context/catalog.json ]; then
+      git add .agents/context/catalog.json 2>/dev/null
+    fi
   fi
 fi
 
-# 2. Refresh Tier 1 catalogue
-ruby --disable-gems _plugins/data_extractor.rb
-if [ -f .agents/context/catalog.json ]; then
-  git add .agents/context/catalog.json 2>/dev/null
+# 2. Execute optional local campaign pre-commit hook if present
+if [ -x .githooks/pre-commit.local ]; then
+  .githooks/pre-commit.local
 fi
