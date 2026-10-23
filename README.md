@@ -45,7 +45,6 @@ oude-mechanismen/
 │   └── scribe-session/
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Scaffolds Tier 3 digests from PDFs & compiles references.json
-│   ├── compile_references.py   # Symlink alias for generate_digests.py
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
 │   └── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction
 ├── jekyll/                     # Source-of-truth Jekyll engine
@@ -65,8 +64,7 @@ oude-mechanismen/
     ├── tier1_sources.yml.template
     ├── decisions.md.template
     ├── skills.json.template
-    ├── route_graph.json.template
-    └── requirements.txt.template
+    └── route_graph.json.template
 ```
 
 ---

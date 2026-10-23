@@ -364,8 +364,12 @@ def main():
     # Determine focal points
     gray_np = np.array(working_img.convert('L'), dtype=np.float32)
     if args.flare_coords:
-        fx, fy = [int(v) for v in args.flare_coords.split(',')]
-        focal_points = [(fx, fy)]
+        scale = target_w / float(orig_w)
+        focal_points = []
+        for pair in args.flare_coords.split(';'):
+            if ',' in pair:
+                fx, fy = [float(v.strip()) for v in pair.split(',')]
+                focal_points.append((int(fx * scale), int(fy * scale)))
     else:
         focal_points = detect_focal_points(gray_np)
     print(f"Focal / flare origins: {focal_points}")
