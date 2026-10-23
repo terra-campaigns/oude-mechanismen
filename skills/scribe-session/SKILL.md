@@ -26,10 +26,10 @@ An automated, single-pass pipeline to process a tabletop RPG session recording i
 Execute the shared orchestrator script from the campaign workspace:
 
 ```bash
-python3 ../oude-mechanismen/scripts/transcribe_session.py "<input_file>" --json
+python3 .agents/scripts/transcribe_session.py "<input_file>" --json
 ```
 
-*(Note: If passing an existing transcript file, include `--skip-transcribe`)*.
+*(Note: Pre-transcribed `.txt` files are automatically detected and ingested without running audio transcription).*
 
 Parse the resulting JSON manifest to capture:
 - `session_slug`: Date and episode identifier (e.g. `2026-10-23_ep012`).

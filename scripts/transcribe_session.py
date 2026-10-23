@@ -37,16 +37,15 @@ def find_campaign_root(explicit_root: Optional[str] = None) -> Path:
             return p
         raise FileNotFoundError(f"Specified repo root '{explicit_root}' does not appear to be a campaign repository.")
 
-    cwd = Path.cwd()
-    # Walk upwards looking for .agents or _config.yml
-    curr = cwd
-    while curr != curr.parent:
-        if (curr / ".agents").is_dir() and (curr / ".agents" / "AGENTS.md").is_file():
-            return curr
-        curr = curr.parent
+    cwd = Path.cwd().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        if (candidate / "_config.yml").exists() or (candidate / ".agents").is_dir():
+            return candidate
 
-    # Fallback to CWD
-    return cwd
+    raise FileNotFoundError(
+        f"Could not locate a campaign repository from current directory '{cwd}'. "
+        f"Please run from within a campaign vault or pass --repo-root."
+    )
 
 
 def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) -> Path:
@@ -486,7 +485,10 @@ def main():
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
     input_path = Path(args.input_file).expanduser().resolve()
-    if not args.skip_transcribe and not input_path.exists():
+    is_text_input = input_path.suffix.lower() in (".txt", ".md", ".vtt", ".srt")
+    skip_transcribe = args.skip_transcribe or is_text_input
+
+    if not skip_transcribe and not input_path.exists():
         print(f"Error: Input recording '{input_path}' does not exist.", file=sys.stderr)
         sys.exit(1)
 
@@ -510,8 +512,11 @@ def main():
     # 4. Dynamic Glossary
     _, proper_nouns = build_dynamic_glossary(repo_root, glossary_path, slug)
 
-    # 5. Audio Normalisation & Metal Transcription
-    if not args.skip_transcribe:
+    # 5. Audio Normalisation & Metal Transcription / Transcript Ingestion
+    if not skip_transcribe:
+        if not input_path.exists():
+            print(f"Error: Input recording '{input_path}' does not exist.", file=sys.stderr)
+            sys.exit(1)
         temp_wav = Path(f"/tmp/{slug}_16k.wav")
         try:
             if not args.json:
@@ -532,8 +537,13 @@ def main():
             if temp_wav.exists():
                 temp_wav.unlink()
     else:
-        if not transcript_path.exists():
-            print(f"Error: --skip-transcribe specified but transcript not found at {transcript_path}", file=sys.stderr)
+        # Pre-transcribed input or reuse of existing transcript
+        if input_path.exists() and input_path.is_file() and input_path != transcript_path:
+            if not args.json:
+                print(f"==> Ingesting pre-transcribed text from '{input_path.name}' into {transcript_path}...")
+            shutil.copy2(input_path, transcript_path)
+        elif not transcript_path.exists():
+            print(f"Error: Transcript file not found at '{input_path}' or '{transcript_path}'.", file=sys.stderr)
             sys.exit(1)
 
     manifest: Dict[str, Any] = {
