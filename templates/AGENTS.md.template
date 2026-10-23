@@ -1,0 +1,79 @@
+This repo is both an Obsidian vault and a Jekyll website for a tabletop RPG campaign.
+
+The markdown files are the main source of truth.
+The site is published with Jekyll, the Just the Docs theme, and GitHub Pages.
+
+## First Steps
+
+- Search existing notes before inventing new lore, NPCs, factions, places, mechanics, or names.
+- Prefer local campaign files over memory.
+- Treat `campaigns/`, `directory/`, `systems/`, and similar content folders as campaign source material.
+- Treat `_site/` and `.jekyll-cache/` as generated output. Do not edit them directly.
+- Preserve Obsidian-friendly markdown and Jekyll/Liquid syntax.
+
+## Project Shape
+
+Common folders:
+
+- `campaigns/`: session logs, campaign arcs, chapter pages, play reports.
+- `directory/`: gazetteer entries for places, NPCs, factions, organisations, and setting material.
+- `systems/`: rules, procedures, character templates, subsystems, and generators.
+- `imgs/`: images used by markdown pages and galleries.
+- `_includes/`: reusable Jekyll snippets.
+- `_sass/`: Just the Docs theme customisation.
+- `_data/`: generated JSON used by includes, backlinks, galleries, and metadata.
+- `.obsidian/`: Obsidian vault settings. Avoid changing unless explicitly asked.
+
+## Campaign Canon & Canon Hierarchy
+
+- **Tier 1 canon** is the published campaign notes (listed in `.agents/context/tier1_sources.yml` and indexed in `.agents/context/catalog.json`). These notes are strong canon.
+- **Tier 2 canon** is Project Memory, visible conversation, and confirmed GM rulings recorded in `.agents/context/decisions.md`.
+- **Tier 3 canon** is reference material in the Google Drive campaign folder and structured digests in `_digests/` (indexed in `.agents/context/references.json`). It should be used as influence and possibility, not as automatic canon.
+
+## Context & Token Optimisation Policy
+
+- Never read all markdown notes or large reference PDFs in bulk.
+- Use the `lookup-context` skill or consult `.agents/context/catalog.json` first to locate relevant entities, locations, and factions before reading files.
+- The catalogue is a navigation index, not a replacement for reading the note. Once located, open only the target file (using line-range reads where practical).
+- For Tier 3 setting lore or procedures, consult `_digests/*.md` via `.agents/context/references.json` before opening raw PDFs.
+- Front-matter `hooks` field is deprecated and ignored across all agents and tooling. Do not add `hooks:` to new front matter.
+- Regenerate the Tier 1 catalogue manually with `ruby --disable-gems _plugins/data_extractor.rb` or automatically upon git commit.
+- For heavy batch text processing, extraction, or local summarisation, offload to local Ollama (`llama3.2:latest` or `llama3.1:latest`) over `localhost:11434`, always enforcing British English in prompt instructions.
+
+## Markdown & Obsidian Conventions
+
+- Preserve YAML front matter.
+- Use existing front matter patterns such as `layout`, `title`, `parent`, `nav_order`, `type`, `image`, and `images`.
+- Use relative markdown links for internal links, usually including the `.md` filename when linking source notes.
+- Preserve Dataview queries, especially when they are inside Jekyll comments.
+- Preserve Liquid includes such as `{% include header_directories.md %}` and gallery includes.
+- Do not convert working Obsidian/Jekyll patterns into another linking style without being asked.
+- Keep filenames and folder naming consistent with nearby files.
+
+## Campaign Specification
+
+<!--
+This section parameterises the shared skills in oude-mechanismen.
+-->
+
+### Style & Tone
+- Genre: [Setting genre, e.g. blue-collar sci-fi, psychedelic fantasy]
+- Cadence: [Sentence length, paragraph flow, one sentence per line]
+- Vocabulary: [Atmospheric keywords, register, aesthetic touches]
+
+### Reference Material (for Deep Reviews & Lore)
+- Root Path: [Absolute path to campaign source PDFs]
+- Priority Sources:
+  1. [Primary sourcebook]
+  2. [Secondary module]
+
+### Calibration Examples
+- Too flat: "[Sample flat sentence]"
+- Too purple: "[Sample overwrought sentence]"
+- In voice: "[Sample balanced setting-faithful sentence]"
+
+### Structural & Procedural Defaults
+- Default Campaign Subfolder: `campaigns/[DefaultCampaign]/`
+- Campaign Hub Page: `[index](../../directory/[DefaultHub]/index.md)`
+- Character Archetypes / Vocations: [Available setting classes, roles, or affiliations]
+- Session Prep Mode: [Expedition / Station Crawl / Urban Mystery]
