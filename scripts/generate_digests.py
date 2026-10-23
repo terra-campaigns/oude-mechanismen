@@ -106,18 +106,24 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                     source_pdf = str(drive_dir / raw_src)
                 break
 
-        # 3. Categorisation heuristic
+        # 3. Categorisation heuristic (derived from source folder and generic keywords)
         stem = md_file.stem.lower()
-        if any(k in stem for k in ["core", "rules", "setting"]):
-            category = "core_setting"
-        elif any(k in stem for k in ["analysis", "research"]):
-            category = "research_aesthetic"
-        elif "map" in stem:
-            category = "maps"
-        elif "postcard" in stem:
+        src_lower = (source_pdf or "").lower()
+
+        if "postcard" in stem or "/postcards/" in src_lower:
             category = "postcards"
-        elif any(k in stem for k in ["supplement", "synthetic", "metamorphica"]):
+        elif "map" in stem or "/maps/" in src_lower:
+            category = "maps"
+        elif "player_guide" in stem:
+            category = "player_guide"
+        elif any(k in stem for k in ["analysis", "research"]) or "/research/" in src_lower:
+            category = "research_aesthetic"
+        elif "/cores/" in src_lower or any(k in stem for k in ["core", "rules", "setting"]):
+            category = "core_setting"
+        elif any(k in src_lower for k in ["/supplements/", "/suplements/"]) or "supplement" in stem:
             category = "supplement"
+        elif any(k in src_lower for k in ["/modules/", "/scenarios/"]) or any(k in stem for k in ["module", "scenario"]):
+            category = "module"
         else:
             category = "module"
 
@@ -143,10 +149,21 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
             "sections": sections
         })
 
-    # Write output to repo
+    # Write output to repo idempotently (preserve timestamp if sources unchanged)
     campaign_name = repo_root.name
+    out_file = repo_root / ".agents" / "context" / "references.json"
+    generated_time = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+    if out_file.exists():
+        try:
+            existing = json.loads(out_file.read_text(encoding="utf-8"))
+            if existing.get("sources") == sources:
+                generated_time = existing.get("generated", generated_time)
+        except Exception:
+            pass
+
     payload = {
-        "generated": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "generated": generated_time,
         "tier": 3,
         "campaign": campaign_name,
         "note": f"Tier 3 reference routing index — influence only, never automatic {campaign_name.title()} canon.",
@@ -154,7 +171,6 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
         "sources": sources
     }
 
-    out_file = repo_root / ".agents" / "context" / "references.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"[INDEX] Successfully compiled {len(sources)} reference sources from {digests_dir} to {out_file}")
@@ -162,7 +178,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
 def main():
     parser = argparse.ArgumentParser(description="Compile Tier 3 reference index from Google Drive Markdown digests.")
-    parser.add_argument("--repo-root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
+    parser.add_argument("--repo-root", "--repo-dir", dest="repo_root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Path to Google Drive campaign folder")
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
     args = parser.parse_args()

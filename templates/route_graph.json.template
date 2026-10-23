@@ -1,0 +1,44 @@
+{
+  "stations": {
+    "Hub Alpha (1)": {
+      "num": 1,
+      "aliases": [
+        "hub alpha",
+        "alpha hub"
+      ],
+      "dir_folder": "AlphaHub"
+    },
+    "Outpost Beta (2)": {
+      "num": 2,
+      "aliases": [
+        "outpost beta",
+        "beta outpost"
+      ],
+      "dir_folder": "BetaOutpost"
+    }
+  },
+  "connections": [
+    {
+      "origin": "Hub Alpha (1)",
+      "destination": "Outpost Beta (2)",
+      "weeks": 1,
+      "direction": "East",
+      "terrain": "Paved Highway / Rail corridor"
+    }
+  ],
+  "station_lore": {
+    "Hub Alpha (1)": {
+      "canon_entities": [
+        {
+          "name": "Station Master Vance",
+          "type": "NPC / Official",
+          "summary": "Bureaucrat managing cargo logistics and departure permits."
+        }
+      ],
+      "road_hazards": [
+        "Cargo bottleneck inspection delays",
+        "Corrosive dust in ventilation filters"
+      ]
+    }
+  }
+}

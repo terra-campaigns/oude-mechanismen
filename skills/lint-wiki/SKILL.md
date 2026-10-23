@@ -97,6 +97,64 @@ Scan all `title:` values in front matter across the repo. Report any exact dupli
 5. Run each check from the list above.
 6. Write the report as an artifact.
 
+## Output format
+
+Write the report as a markdown artifact. Use this structure:
+
+````markdown
+# Wiki Lint Report
+
+Generated: [date]
+
+## Summary
+
+- X dead links
+- X orphan pages
+- X stubs
+- X unused images
+- X deprecated hooks
+- X catalogue / front matter issues
+- X duplicate titles
+
+## Dead Links
+
+| Source file | Line | Broken link target |
+|---|---|---|
+| ... | ... | ... |
+
+## Orphan Pages
+
+- `path/to/orphan.md` — no inbound links found.
+
+## Stubs
+
+- `path/to/stub.md` — N lines of content.
+
+## Unused Images
+
+- `imgs/unused-image.png`
+
+## Deprecated Hooks
+
+| Declared in | Hook text |
+|---|---|
+| ... | ... |
+
+## Front Matter Issues
+
+| File | Issue |
+|---|---|
+| ... | Missing `title` |
+
+## Duplicate Titles
+
+| Title | Files |
+|---|---|
+| ... | file1.md, file2.md |
+````
+
+Omit any section where no issues were found. If the wiki is clean, say so.
+
 ## Rules
 
 - **Read only.** This skill does not edit any files. It produces a diagnostic report.

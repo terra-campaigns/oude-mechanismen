@@ -14,12 +14,20 @@ If the user's prompt does not supply all required details, ask clarifying questi
 
 1. **Campaign**: Which campaign does this chapter belong to?
    - Check available subfolders in `campaigns/` (or check `Default Campaign Subfolder` in `.agents/AGENTS.md`).
-2. **Episode Number**: Automatically determine the next episode number by checking existing files in `campaigns/<Campaign>/` (e.g. `ep_010.md` -> `ep_011.md`).
-3. **Chapter Title**: An evocative title matching the episode's central dilemma, creature, hazard, or weird event.
-4. **In-Universe Date (`nav_order`)**: Date of the session in `YYYY-MM-DD` format (e.g. `3025-08-19`). Check the previous episode's date to maintain chronological order.
-5. **Region & Location**: Where did the session take place? (e.g. station sector, trail station, landmark).
-6. **Hub / Base**: Which hub or base index should be linked in the comment block? (Check `Campaign Hub Page` in `.agents/AGENTS.md`).
-7. **Session Notes**: Raw player actions, discoveries, trades, NPC interactions, debts, and mechanical consequences.
+2. **Episode Number & Naming Convention**:
+   - Check existing files in `campaigns/<Campaign>/` to determine the filename convention and the next sequential number.
+   - Common patterns: `ep_<NNN>.md` (e.g. `ep_011.md`), `<NNN>.md` (e.g. `003.md`), or `chap<NNN>.md` (e.g. `chap002.md`).
+3. **Chapter Title**: An evocative title matching the episode's central dilemma, hazard, creature, or event.
+4. **In-Universe Date (`nav_order`)**:
+   - Date or timestamp of the session in `YYYY-MM-DD` or `YYYY-MM-DD HH:MM` format.
+   - Check previous episodes in the campaign to maintain chronological order and timestamp precision.
+5. **Region & Location**:
+   - Where did the session take place? (e.g. trail station, space station, colony sector, orbital facility).
+   - Use `region:` or `location:` in front matter according to the campaign's established pattern.
+6. **Hub / Base / Caravan Index**:
+   - Which central index should be linked in the comment block? (Check `Campaign Hub Page` in `.agents/AGENTS.md`).
+7. **Session Notes**:
+   - Raw player actions, discoveries, trades, NPC interactions, debts, and mechanical consequences.
 
 ## 2. Entity Resolution & Cross-Linking
 
@@ -27,12 +35,12 @@ Before drafting the chapter prose:
 
 1. **Identify mentioned entities**: Scan the session notes for all PCs, NPCs, factions, locations, and creatures.
 2. **Search Directory**: Consult `.agents/context/catalog.json` (or use `rg`) to locate the exact filenames and paths in `directory/`.
-3. **Format relative links**: Ensure every entity is linked on its first significant mention using relative paths (e.g. `[Kur (Barista)](../../directory/Atles/Barista.md)`).
+3. **Format relative links**: Ensure every entity is linked on its first significant mention using relative paths (e.g. `[Kur (Barista)](../../directory/Atles/Barista.md)`, `[Brightside Station](../../directory/Perdurabo/BrightsideStation.md)`).
 4. **Clarify new connections**: If a new relationship between characters or factions emerges during the session, prompt the user for the specific relationship dynamic and whether to document it bidirectionally.
 
 ## 3. Template & Front Matter
 
-Create the file as `campaigns/<Campaign>/ep_<NNN>.md`.
+Create the file in `campaigns/<Campaign>/` following the campaign's filename convention.
 
 ### Front Matter Specification
 
@@ -44,8 +52,8 @@ nav_exclude: false
 
 parent: <Exact title of the campaign index>
 title: <Chapter Title>
-region: <Region or Location Name>
-nav_order: <YYYY-MM-DD>
+region: <Region or Location Name> # or location: <Location Name>
+nav_order: <YYYY-MM-DD or YYYY-MM-DD HH:MM>
 narration: 
 footer_content: 
 
@@ -56,7 +64,7 @@ images:
 
 > [!NOTE]
 > - `type:` must be `session`.
-> - `nav_order:` must be the in-universe date string (`YYYY-MM-DD`). Jekyll uses this to format the date in the chapter header and order episodes chronologically.
+> - `nav_order:` must be the in-universe date or timestamp string (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`). Jekyll uses this to format the date in the chapter header and order episodes chronologically.
 > - `narration:` is an optional list of character names if dedicated individual narrative sub-logs exist (e.g. `ep_011_Pilik.md`). Leave empty if none.
 
 ### Scaffolding & Comment Block
@@ -72,19 +80,19 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
 ```
 ---
 
-- [index](<relative_path_to_hub_index.md>)
+- [index](<relative_path_to_hub_or_base_index.md>)
 
 {% endcomment %}
 ```
 
 > [!NOTE]
-> The hub link (e.g. `- [index](../../directory/Atles/index.md)`) inside the comment block ensures Jekyll's `_plugins/data_extractor.rb` builds bidirectional links connecting the base/hub to this session.
+> The hub/caravan link inside the comment block ensures Jekyll's `_plugins/data_extractor.rb` builds bidirectional links connecting the base/hub/caravan to this session.
 
 ## 4. Structure, Prose Formatting & Voice
 
-Chapter writing must adhere to setting conventions defined in `.agents/AGENTS.md`:
+Chapter writing must adhere to setting conventions defined in `.agents/AGENTS.md` and follow a semi-strict structural format:
 
-### Structural Rules
+### Structural Rules (Semi-Strict Format)
 
 1. **2 to 4 Subheaders**:
    - Structure the chapter body into 2 to 4 themed subsections using `## Heading`.
@@ -92,20 +100,60 @@ Chapter writing must adhere to setting conventions defined in `.agents/AGENTS.md
 
 2. **2 to 4 Paragraphs per Subheader**:
    - Each subsection must contain between 2 and 4 distinct paragraphs.
-   - Separate distinct paragraphs with a blank line. Do not combine multiple paragraphs into a single block.
+   - Separate distinct paragraphs with a blank line (skip line). Do not combine multiple paragraphs into a single block.
 
 3. **2 to 4 Sentences per Paragraph**:
    - Each paragraph must consist of between 2 and 4 sentences.
-   - Place each sentence on its own line (one sentence per line) where practical.
+   - In Markdown, each sentence must be placed on its own line (one sentence per line).
 
-4. **Prose Voice**:
-   - Align vocabulary and aesthetic descriptions with the setting rules in `.agents/AGENTS.md`.
+#### Structure Template Example
+
+````markdown
+## First Subheader
+
+First sentence of first paragraph.
+Second sentence of first paragraph.
+Third sentence of first paragraph.
+
+First sentence of second paragraph.
+Second sentence of second paragraph.
+
+## Second Subheader
+
+First sentence of first paragraph.
+Second sentence of first paragraph.
+Third sentence of first paragraph.
+Fourth sentence of first paragraph.
+
+First sentence of second paragraph.
+Second sentence of second paragraph.
+Third sentence of second paragraph.
+````
+
+### Voice & Register
+
+1. **British English**:
+   - Use British English spelling and conventions throughout (e.g. *favour*, *travelled*, *rumours*, *armour*).
+
+2. **Setting Register**:
+   - Align tone, vocabulary, cadence, and aesthetic descriptions with the setting rules in `.agents/AGENTS.md`.
+   - Avoid purple prose or unnecessary flourishing; crisp, evocative prose grounded in concrete sensory details works best.
+
+3. **Factual Fidelity**:
+   - Stay strictly faithful to the GM's play report.
+   - Do not invent plot developments, player character decisions, or unearned successes.
 
 ## 5. Verification Checklist
 
 After writing the file:
-1. Verify that all internal links resolve to existing files.
-2. Confirm the heading spacing rule (blank line after any markdown headings).
-3. Ensure British English spelling throughout.
+
+1. Confirm structural compliance with the semi-strict format:
+   - 2 to 4 subheaders (`##`).
+   - 2 to 4 paragraphs per subheader (separated by a blank line).
+   - 2 to 4 sentences per paragraph (each sentence on its own line).
+   - Blank lines immediately following every Markdown heading.
+2. Verify that all internal links resolve to existing files on disk.
+3. Confirm the sequential episode numbering and chronological date.
 4. Refresh the Tier 1 catalogue: `ruby --disable-gems _plugins/data_extractor.rb`.
-5. Leave the created file unstaged in git for user review.
+5. Run `bundle exec jekyll build` to ensure the site compiles cleanly.
+6. Leave the created file unstaged in git for user review.

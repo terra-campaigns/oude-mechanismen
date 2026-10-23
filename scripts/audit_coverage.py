@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Automated Gap Analysis for the Charged Campaign.
+Automated Gap Analysis for Tabletop RPG Campaign Vaults.
 
 Performs a multi-layered campaign audit:
 1. Google Drive Sync: Audits raw sourcebooks, PDFs, and Google Sheets against
    the Tier 3 routing index (.agents/context/references.json) and _digests/.
-2. Trail Proximity & Untapped Locations: Determines the caravan's active location
-   from the latest session log, maps the 23-station Ultraviolet Grasslands trail graph,
-   and flags unvisited / unwritten destinations within N hops (default: 2).
-3. Untapped Factions & Lore Hooks: Identifies canon entities, patrons, hazards, and
-   relics in current and proximate sectors that have not yet been introduced to the PCs.
-4. Directory Depth: Checks for empty stubs, disconnected NPCs, or missing market tables.
+2. Route Topology & Proximity Gaps (optional): When .agents/context/route_graph.json
+   is present, maps the trail/star system graph from the latest session log,
+   and flags unvisited destinations within N hops (default: 2).
+3. Untapped Factions & Lore Hooks: Identifies canon entities, patrons, and hazards
+   in current and proximate sectors that have not yet been introduced.
+4. Directory Depth: Checks for empty stubs, disconnected NPCs, or missing indexes.
 
 Usage:
-  .agents/venv/bin/python3 .agents/scripts/audit_coverage.py
-  .agents/venv/bin/python3 .agents/scripts/audit_coverage.py --radius 2 --json
-  .agents/venv/bin/python3 .agents/scripts/audit_coverage.py --report-path /path/to/report.md
+  python3 scripts/audit_coverage.py
+  python3 scripts/audit_coverage.py --radius 2 --json
+  python3 scripts/audit_coverage.py --report-path /path/to/report.md
+  python3 scripts/audit_coverage.py --repo-dir /path/to/repo --drive-dir /path/to/drive
 """
 
 import argparse
@@ -28,321 +29,72 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DRIVE_DIR = Path(
-    "/Users/efsa/Library/CloudStorage/GoogleDrive-estevao.alvarenga@gmail.com/My Drive/RPG/campaigns/charged"
-)
-DIGESTS_DIR = DRIVE_DIR / "_digests"
-REFERENCES_INDEX_PATH = REPO_ROOT / ".agents" / "context" / "references.json"
-CATALOG_PATH = REPO_ROOT / ".agents" / "context" / "catalog.json"
-CAMPAIGNS_DIR = REPO_ROOT / "campaigns" / "UVG24XX"
-DIRECTORY_DIR = REPO_ROOT / "directory"
+
+def find_repo_root(custom_dir: Optional[str] = None) -> Path:
+    """Detect the campaign repository root directory."""
+    if custom_dir:
+        p = Path(custom_dir).resolve()
+        if p.exists() and p.is_dir():
+            return p
+
+    cwd = Path.cwd().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        if (candidate / "_config.yml").exists() or (candidate / ".agents").is_dir():
+            return candidate
+
+    return cwd
 
 
-# -----------------------------------------------------------------------------
-# UVG Trail Graph (Stations, Hops, Travel Times, Directions, and Terrain)
-# -----------------------------------------------------------------------------
+def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Optional[Path]:
+    """Resolve the campaign Google Drive directory from tier1_sources.yml or fallback glob."""
+    if custom_drive:
+        p = Path(custom_drive).resolve()
+        if p.exists() and p.is_dir():
+            return p
 
-# Station definitions: canonical name, station number, directory folder name (if known)
-TRAIL_STATIONS: Dict[str, Dict[str, Any]] = {
-    "Violet City (1)": {
-        "num": 1,
-        "aliases": ["violet city", "the violet city", "violet city (1)"],
-        "dir_folder": "VioletCity",
-        "category": "starting_settlement",
-    },
-    "Low Road and High (2)": {
-        "num": 2,
-        "aliases": ["low road and high", "the low road and the high", "low road / high road", "low road and high (2)"],
-        "dir_folder": "LowRoadHigh",
-        "category": "road_corridor",
-    },
-    "Steppe of Lime Nomads (3)": {
-        "num": 3,
-        "aliases": ["steppe of lime nomads", "steppe of the lime nomads", "lime nomads", "steppe of lime nomads (3)"],
-        "dir_folder": "LimeNomads",
-        "category": "steppe_camp",
-    },
-    "Porcelain Citadel (4)": {
-        "num": 4,
-        "aliases": ["porcelain citadel", "porcelain citadel (4)"],
-        "dir_folder": "PorcelainCitadel",
-        "category": "citadel_oasis",
-    },
-    "Potsherd Crater (5)": {
-        "num": 5,
-        "aliases": ["potsherd crater", "potsherd crater (5)"],
-        "dir_folder": "PotsherdCrater",
-        "category": "depression_ruins",
-    },
-    "Trail of Vomish Dreams (6)": {
-        "num": 6,
-        "aliases": ["trail of vomish dreams", "vomish dreams", "trail of vomish dreams (6)"],
-        "dir_folder": "VomishDreams",
-        "category": "biomechanical_trail",
-    },
-    "Grass Colossus (7)": {
-        "num": 7,
-        "aliases": ["grass colossus", "the grass colossus", "grass colossus (7)"],
-        "dir_folder": "GrassColossus",
-        "category": "relic_landmark",
-    },
-    "The Last Serai (8)": {
-        "num": 8,
-        "aliases": ["last serai", "the last serai", "the last serai (8)"],
-        "dir_folder": "LastSerai",
-        "category": "frontier_outpost",
-    },
-    "Way Stone Graveyard (9)": {
-        "num": 9,
-        "aliases": ["way stone graveyard", "way stone", "the way stone", "way stone graveyard (9)"],
-        "dir_folder": "WayStoneGraveyard",
-        "category": "megalith_field",
-    },
-    "Death-Facing Passage (10)": {
-        "num": 10,
-        "aliases": ["death-facing passage", "the death-facing passage", "death facing passage", "death-facing passage (10)"],
-        "dir_folder": "DeathFacingPassage",
-        "category": "mountain_pass",
-    },
-    "South-Facing Passage (11)": {
-        "num": 11,
-        "aliases": ["south-facing passage", "the south-facing passage", "south facing passage", "south-facing passage (11)"],
-        "dir_folder": "SouthFacingPassage",
-        "category": "mountain_pass",
-    },
-    "Fallen Umber (12)": {
-        "num": 12,
-        "aliases": ["fallen umber", "fallen umber (12)"],
-        "dir_folder": "FallenUmber",
-        "category": "desert_ruins",
-    },
-    "Long Ridge & Behemoth (13)": {
-        "num": 13,
-        "aliases": ["long ridge", "behemoth shell", "long ridge & behemoth", "long ridge (13)"],
-        "dir_folder": "LongRidge",
-        "category": "calcified_ridge",
-    },
-    "Moon-Facing Ford (14)": {
-        "num": 14,
-        "aliases": ["moon-facing ford", "moon river ford", "moon-facing ford (14)"],
-        "dir_folder": "MoonFacingFord",
-        "category": "river_crossing",
-    },
-    "Glass Bridge (15)": {
-        "num": 15,
-        "aliases": ["glass bridge", "three sticks lake", "glass bridge (15)"],
-        "dir_folder": "GlassBridge",
-        "category": "megastructure",
-    },
-    "The Gall Grass (16)": {
-        "num": 16,
-        "aliases": ["the gall grass", "gall grass", "gall grass (16)"],
-        "dir_folder": "GallGrass",
-        "category": "psychoactive_steppe",
-    },
-    "Ribs of the Father (17)": {
-        "num": 17,
-        "aliases": ["ribs of the father", "the ribs", "ribs of the father (17)"],
-        "dir_folder": "RibsOfTheFather",
-        "category": "subterranean_machinery",
-    },
-    "The Iron Road (18)": {
-        "num": 18,
-        "aliases": ["the iron road", "iron road", "the iron road (18)"],
-        "dir_folder": "IronRoad",
-        "category": "calcified_railway",
-    },
-    "The Ivory Plain (19)": {
-        "num": 19,
-        "aliases": ["the ivory plain", "ivory plain", "the ivory plain (19)"],
-        "dir_folder": "IvoryPlain",
-        "category": "bleached_flatlands",
-    },
-    "Dead Bridge (20)": {
-        "num": 20,
-        "aliases": ["dead bridge", "dead bridge (20)"],
-        "dir_folder": "DeadBridge",
-        "category": "collapsed_span",
-    },
-    "Dark Light Passage (21)": {
-        "num": 21,
-        "aliases": ["dark light passage", "dark light path", "dark light passage (21)"],
-        "dir_folder": "DarkLightPassage",
-        "category": "chasm_canyon",
-    },
-    "The Endless Houses (22)": {
-        "num": 22,
-        "aliases": ["the endless houses", "endless houses", "forest of meat", "the endless houses (22)"],
-        "dir_folder": "EndlessHouses",
-        "category": "modular_ruinland",
-    },
-    "The Black City (23)": {
-        "num": 23,
-        "aliases": ["the black city", "black city", "the black city (23)"],
-        "dir_folder": "BlackCity",
-        "category": "terminal_metropolis",
-    },
-}
+    tier1_path = repo_root / ".agents" / "context" / "tier1_sources.yml"
+    if tier1_path.exists():
+        try:
+            content = tier1_path.read_text(encoding="utf-8")
+            m = re.search(r"^drive_dir:\s*['\"]?(.*?)['\"]?\s*$", content, re.MULTILINE)
+            if m and m.group(1).strip():
+                raw = m.group(1).strip()
+                p = Path(os.path.expanduser(raw)).resolve()
+                if p.exists():
+                    return p
+        except Exception:
+            pass
 
-# Bidirectional network links: (origin, destination, weeks, direction_from_origin, terrain)
-TRAIL_CONNECTIONS = [
-    # Violet City (1)
-    ("Violet City (1)", "Low Road and High (2)", 1, "West", "trail"),
-    ("Violet City (1)", "Steppe of Lime Nomads (3)", 2, "West", "steppe"),
+    # Generic CloudStorage glob fallback without hardcoded personal accounts
+    repo_name = repo_root.name
+    try:
+        cloud_storage = Path.home() / "Library" / "CloudStorage"
+        if cloud_storage.exists():
+            matches = list(cloud_storage.glob(f"GoogleDrive-*/My Drive/RPG/campaigns/{repo_name}"))
+            if matches and matches[0].exists():
+                return matches[0]
+    except Exception:
+        pass
 
-    # Low Road and High (2)
-    ("Low Road and High (2)", "Steppe of Lime Nomads (3)", 1, "North", "steppe"),
-    ("Low Road and High (2)", "Porcelain Citadel (4)", 1, "West", "safe oasis"),
-    ("Low Road and High (2)", "Potsherd Crater (5)", 2, "South-West", "steppe"),
-
-    # Steppe of Lime Nomads (3)
-    ("Steppe of Lime Nomads (3)", "Porcelain Citadel (4)", 1, "West", "safe oasis"),
-
-    # Porcelain Citadel (4)
-    ("Porcelain Citadel (4)", "Potsherd Crater (5)", 1, "South", "prospector trails"),
-    ("Porcelain Citadel (4)", "The Last Serai (8)", 1, "South-West", "trail"),
-    ("Porcelain Citadel (4)", "Trail of Vomish Dreams (6)", 1, "North-West", "trail"),
-
-    # Potsherd Crater (5)
-    ("Potsherd Crater (5)", "The Last Serai (8)", 2, "West", "steppe"),
-
-    # Trail of Vomish Dreams (6)
-    ("Trail of Vomish Dreams (6)", "Grass Colossus (7)", 1, "West", "trail"),
-
-    # Grass Colossus (7)
-    ("Grass Colossus (7)", "Death-Facing Passage (10)", 2, "South", "rough steppe"),
-    ("Grass Colossus (7)", "South-Facing Passage (11)", 2, "South-West", "steppe"),
-    ("Grass Colossus (7)", "Long Ridge & Behemoth (13)", 1, "West", "trail"),
-
-    # The Last Serai (8)
-    ("The Last Serai (8)", "Way Stone Graveyard (9)", 1, "West", "trail"),
-    ("The Last Serai (8)", "Death-Facing Passage (10)", 2, "North-West", "canyons"),
-
-    # Way Stone Graveyard (9)
-    ("Way Stone Graveyard (9)", "Death-Facing Passage (10)", 2, "North", "rough steppe"),
-    ("Way Stone Graveyard (9)", "South-Facing Passage (11)", 3, "North-West", "rough steppe"),
-    ("Way Stone Graveyard (9)", "Fallen Umber (12)", 1, "West", "trail"),
-
-    # Death-Facing Passage (10)
-    ("Death-Facing Passage (10)", "South-Facing Passage (11)", 2, "West", "steppe"),
-
-    # South-Facing Passage (11)
-    ("South-Facing Passage (11)", "Fallen Umber (12)", 1, "South", "steppe"),
-    ("South-Facing Passage (11)", "Long Ridge & Behemoth (13)", 1, "North", "steppe"),
-
-    # Fallen Umber (12)
-    ("Fallen Umber (12)", "Moon-Facing Ford (14)", 2, "West", "trail"),
-
-    # Long Ridge & Behemoth (13)
-    ("Long Ridge & Behemoth (13)", "Moon-Facing Ford (14)", 2, "West", "steppe"),
-
-    # Moon-Facing Ford (14)
-    ("Moon-Facing Ford (14)", "Glass Bridge (15)", 2, "North-West", "steppe"),
-
-    # Glass Bridge (15)
-    ("Glass Bridge (15)", "The Gall Grass (16)", 1, "North-West", "old road"),
-
-    # The Gall Grass (16)
-    ("The Gall Grass (16)", "Ribs of the Father (17)", 1, "West", "lost road"),
-
-    # Ribs of the Father (17)
-    ("Ribs of the Father (17)", "The Iron Road (18)", 1, "West", "clear trail"),
-
-    # The Iron Road (18)
-    ("The Iron Road (18)", "The Ivory Plain (19)", 2, "North", "steppe"),
-    ("The Iron Road (18)", "Dead Bridge (20)", 1, "West", "clear trail"),
-
-    # The Ivory Plain (19)
-    ("The Ivory Plain (19)", "Dark Light Passage (21)", 1, "North-West", "steppe"),
-    ("The Ivory Plain (19)", "Dead Bridge (20)", 2, "South-West", "steppe"),
-
-    # Dead Bridge (20)
-    ("Dead Bridge (20)", "The Endless Houses (22)", 2, "West", "rubble trail"),
-
-    # Dark Light Passage (21)
-    ("Dark Light Passage (21)", "The Endless Houses (22)", 2, "West", "roads"),
-
-    # The Endless Houses (22)
-    ("The Endless Houses (22)", "The Black City (23)", 1, "North-West", "decaying boulevards"),
-]
-
-# Canonical UVG Entities and Hooks per Station (from UVG 2E Core)
-CANON_STATION_LORE: Dict[str, Dict[str, Any]] = {
-    "The Last Serai (8)": {
-        "canon_entities": [
-            {"name": "Angel 22-unity", "type": "character", "role": "High-ranking Porcelain Prince factor"},
-            {"name": "Lacquer Stone 4-body", "type": "character", "role": "Dusty porcelain diplomat and courtier"},
-            {"name": "Black Helmet 60-plurality", "type": "character", "role": "Aggrieved polybody caravan master and labour unionist"},
-            {"name": "Pooki", "type": "character", "role": "Lazy, overpowered cat-lord chief of the Rainbow Serai"},
-            {"name": "Iron Pot 6-body", "type": "character", "role": "Porcelain investigator hunted across the serai alleys"},
-            {"name": "The Giving Cow", "type": "faction", "role": "Yellow-wood milk bar and quiet meeting place"},
-            {"name": "Buried Delicatessen", "type": "location", "role": "Subterranean dining speakeasy serving Long-Long-Ago preserves"},
-            {"name": "Deep-Coral Chambers", "type": "location", "role": "Submerged residential vaults beneath the static harmonic rods"},
-            {"name": "Chamber of Crystal Rebirth", "type": "location", "role": "Vault housing the dormant Rebuilder (L17 biomancer)"},
-        ],
-        "road_hazards": ["Porcelain dust storms", "Choking toxic pollen", "Static electrical discharge", "Corporate body snatchers"],
-    },
-    "Way Stone Graveyard (9)": {
-        "canon_entities": [
-            {"name": "The Way Stone", "type": "location", "role": "Massive black basalt navigational obelisk emitting radio hums"},
-            {"name": "Static Monolith Hermits", "type": "faction", "role": "Solitary ascetics bound to navigational beacons"},
-            {"name": "Ghost Signals", "type": "creature", "role": "Sentient radio transmissions mimicking lost travellers"},
-        ],
-        "road_hazards": ["Violent magnetic shears", "Navigation compass inversion", "Disembodied machine whispers"],
-    },
-    "Death-Facing Passage (10)": {
-        "canon_entities": [
-            {"name": "The Face of Death", "type": "location", "role": "Gigantic petrified robotic visage carved into the mountain divide"},
-            {"name": "Canyon Outriders", "type": "faction", "role": "Ruthless toll-keepers ambushing narrow gorge traverses"},
-            {"name": "Katabatic Spectres", "type": "creature", "role": "Freezing wind elementals flaying exposed flesh"},
-        ],
-        "road_hazards": ["Lethal rockfalls", "Altitude sickness", "Radiation hotspots in shaded arroyos"],
-    },
-    "South-Facing Passage (11)": {
-        "canon_entities": [
-            {"name": "Cedar Grove Hermitage", "type": "location", "role": "Sanctuary of silence in deep cedar valleys"},
-            {"name": "Lenticular Worms", "type": "creature", "role": "Endurance-draining parasites infesting mountain springs"},
-        ],
-        "road_hazards": ["Freezing katabatic night gales", "Parasite infection", "Disorienting mirages"],
-    },
-    "Potsherd Crater (5)": {
-        "canon_entities": [
-            {"name": "The Glass House of the Dead Prince", "type": "location", "role": "Intact crystal pavilion containing ancestral kaolin treasures"},
-            {"name": "Feral Kaolin Golems", "type": "creature", "role": "Shattered ceramic servitors defending ceramic burial mounds"},
-            {"name": "Ceramic Prospectors", "type": "faction", "role": "Dust-bitten scavengers sifting ancestral porcelain rubble"},
-        ],
-        "road_hazards": ["Razor-sharp ceramic shards", "Collapsing subterranean kiln vaults", "Toxic kaolin dust"],
-    },
-    "Grass Colossus (7)": {
-        "canon_entities": [
-            {"name": "The Sleeping Automaton", "type": "location", "role": "Derelict planetary maintenance colossus housing nomadic tent cities"},
-            {"name": "Nomad Custodians", "type": "faction", "role": "Keepers of the sacred engine vents and ceremonial oil wells"},
-        ],
-        "road_hazards": ["Vomish parasite swarms", "Crushing interior piston seizures", "Pilgrim disputes"],
-    },
-    "Trail of Vomish Dreams (6)": {
-        "canon_entities": [
-            {"name": "The Riven Biomass", "type": "creature", "role": "Parasitic meat-and-circuit machine hiveminds"},
-            {"name": "Signal Spire Sentinels", "type": "creature", "role": "Autonomous biological radar nodes relaying hunter broadcasts"},
-        ],
-        "road_hazards": ["Biomechanical infection", "Signal fever", "Night predatory vechs"],
-    },
-    "Fallen Umber (12)": {
-        "canon_entities": [
-            {"name": "Cerulean Five Oasis", "type": "location", "role": "Deep azure pool surrounded by petrified orange salt cliffs"},
-            {"name": "Umber Sub-Bunkers", "type": "location", "role": "Sealed fallout vaults from the Third Age of Rainbow"},
-        ],
-        "road_hazards": ["Orange salt blindness", "Dehydration", "Vicious dust devils"],
-    },
-}
+    return None
 
 
-# -----------------------------------------------------------------------------
-# Core Audit Functions
-# -----------------------------------------------------------------------------
+def load_route_graph(repo_root: Path) -> Optional[Dict[str, Any]]:
+    """Load route graph from .agents/context/route_graph.json if available."""
+    graph_path = repo_root / ".agents" / "context" / "route_graph.json"
+    if not graph_path.exists():
+        return None
 
-def audit_drive_sync() -> Dict[str, Any]:
+    try:
+        with open(graph_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data
+    except Exception as e:
+        print(f"Warning: Failed to parse {graph_path}: {e}", file=sys.stderr)
+        return None
+
+
+def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, Any]:
     """Audit physical Google Drive files against references.json and _digests/."""
     results: Dict[str, Any] = {
         "drive_accessible": False,
@@ -352,16 +104,11 @@ def audit_drive_sync() -> Dict[str, Any]:
         "total_drive_files": 0,
     }
 
-    if not DRIVE_DIR.exists():
-        return results
-
-    results["drive_accessible"] = True
-
-    # Read active references.json
+    ref_path = repo_root / ".agents" / "context" / "references.json"
     indexed_map: Dict[str, Dict[str, Any]] = {}
-    if REFERENCES_INDEX_PATH.exists():
+    if ref_path.exists():
         try:
-            with open(REFERENCES_INDEX_PATH, "r", encoding="utf-8") as f:
+            with open(ref_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 for src in data.get("sources", []):
                     indexed_map[src.get("slug")] = src
@@ -370,10 +117,15 @@ def audit_drive_sync() -> Dict[str, Any]:
 
     results["indexed_sources"] = list(indexed_map.keys())
 
-    # Scan Google Drive folder
+    if not drive_dir or not drive_dir.exists():
+        return results
+
+    results["drive_accessible"] = True
+    digests_dir = drive_dir / "_digests"
+
     drive_files: List[Path] = []
     try:
-        for root, dirs, files in os.walk(DRIVE_DIR):
+        for root, dirs, files in os.walk(drive_dir):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d != "_digests"]
             for f in files:
                 if not f.startswith(".") and not f.startswith("~"):
@@ -383,34 +135,29 @@ def audit_drive_sync() -> Dict[str, Any]:
         return results
 
     results["total_drive_files"] = len(drive_files)
-    if len(drive_files) == 0 and DRIVE_DIR.exists():
-        results["drive_permission_denied"] = True
-        return results
 
-    # Check which Drive files are indexed
-    known_paths = {Path(s.get("source_pdf", "")) for s in indexed_map.values()}
+    known_names = {Path(s.get("source_pdf", "")).name for s in indexed_map.values()}
 
     for fpath in drive_files:
         ext = fpath.suffix.lower()
         if ext in [".pdf", ".gdoc", ".gsheet"]:
-            if fpath not in known_paths and fpath.name not in [p.name for p in known_paths]:
+            if fpath.name not in known_names:
                 action_hint = "Extract digest to `_digests/`"
-                if fpath.name == "UVG-TradingGoods.gsheet":
-                    action_hint = "Synced via `sync_trade.py` to `trading/`"
-                elif fpath.name == "UVG-AtlesCaravan.gsheet":
-                    action_hint = "Bridge ledger to caravan roster / `directory/Atles/`"
+                if ext == ".gsheet":
+                    action_hint = "Spreadsheet ledger or trade table"
+                elif ext == ".gdoc":
+                    action_hint = "Campaign document or background notes"
 
                 results["unindexed_files"].append({
                     "name": fpath.name,
-                    "rel_path": str(fpath.relative_to(DRIVE_DIR)),
+                    "rel_path": str(fpath.relative_to(drive_dir)),
                     "type": "spreadsheet" if ext == ".gsheet" else ("document" if ext == ".gdoc" else "sourcebook"),
-                    "size_bytes": fpath.stat().st_size,
+                    "size_bytes": fpath.stat().st_size if fpath.exists() else 0,
                     "action_hint": action_hint,
                 })
 
-    # Check which indexed sources are missing a physical digest file
     for slug, src in indexed_map.items():
-        digest_file = Path(src.get("digest_path", DIGESTS_DIR / f"{slug}.md"))
+        digest_file = Path(src.get("digest_path", digests_dir / f"{slug}.md"))
         if not digest_file.exists():
             results["missing_digests"].append({
                 "slug": slug,
@@ -421,58 +168,117 @@ def audit_drive_sync() -> Dict[str, Any]:
     return results
 
 
-def get_current_campaign_location() -> Dict[str, Any]:
-    """Determine the caravan's current location from the latest session log."""
+def get_current_campaign_location(
+    repo_root: Path,
+    route_graph: Optional[Dict[str, Any]],
+    custom_campaign_subfolder: Optional[str] = None
+) -> Dict[str, Any]:
+    """Determine the party's current location from the latest session log."""
     info: Dict[str, Any] = {
         "latest_episode": None,
         "raw_region": None,
-        "matched_station": "The Last Serai (8)",  # Canonical fallback
+        "matched_station": None,
         "matched": False,
     }
 
-    if not CAMPAIGNS_DIR.exists():
+    target_dir: Optional[Path] = None
+    if custom_campaign_subfolder:
+        p = (repo_root / custom_campaign_subfolder).resolve()
+        if p.is_dir():
+            target_dir = p
+
+    if not target_dir:
+        # Check AGENTS.md for Default Campaign Subfolder
+        agents_md = repo_root / ".agents" / "AGENTS.md"
+        if agents_md.exists():
+            try:
+                txt = agents_md.read_text(encoding="utf-8")
+                m = re.search(r"Default Campaign Subfolder:\s*`?([^`\r\n]+)`?", txt)
+                if m and m.group(1).strip():
+                    cand = (repo_root / m.group(1).strip()).resolve()
+                    if cand.is_dir():
+                        target_dir = cand
+            except Exception:
+                pass
+
+    if not target_dir:
+        target_dir = repo_root / "campaigns"
+
+    if not target_dir.is_dir():
         return info
 
-    episodes = sorted(CAMPAIGNS_DIR.glob("ep_*.md"), key=lambda p: p.name)
-    if not episodes:
+    # Find all session logs with type: session (or .md files)
+    logs: List[Tuple[Path, str]] = []
+    for p in target_dir.rglob("*.md"):
+        if p.name == "index.md":
+            continue
+        try:
+            txt = p.read_text(encoding="utf-8")
+            if re.search(r"^type:\s*session\b", txt, re.MULTILINE):
+                # Extract nav_order or fallback to stem
+                order_match = re.search(r"^nav_order:\s*['\"]?(.*?)['\"]?\s*$", txt, re.MULTILINE)
+                sort_val = order_match.group(1).strip() if order_match else p.stem
+                logs.append((p, sort_val))
+        except Exception:
+            pass
+
+    if not logs:
+        # Fallback to any markdown files in the folder
+        for p in target_dir.glob("*.md"):
+            if p.name != "index.md":
+                logs.append((p, p.stem))
+
+    if not logs:
         return info
 
-    latest = episodes[-1]
-    info["latest_episode"] = latest.name
+    logs.sort(key=lambda item: item[1])
+    latest, _ = logs[-1]
+    info["latest_episode"] = str(latest.relative_to(repo_root))
 
     try:
         content = latest.read_text(encoding="utf-8")
-        # Extract region front matter
-        region_match = re.search(r"^region:\s*(.+)$", content, re.MULTILINE)
+        region_match = re.search(r"^(?:region|location):\s*(.+)$", content, re.MULTILINE)
         if region_match:
             raw_reg = region_match.group(1).strip()
             info["raw_region"] = raw_reg
             raw_lower = raw_reg.lower()
 
-            for station_name, sdata in TRAIL_STATIONS.items():
-                if any(alias in raw_lower for alias in sdata["aliases"]):
-                    info["matched_station"] = station_name
-                    info["matched"] = True
-                    break
+            if route_graph and "stations" in route_graph:
+                stations = route_graph["stations"]
+                for station_name, sdata in stations.items():
+                    aliases = [a.lower() for a in sdata.get("aliases", [])]
+                    aliases.append(station_name.lower())
+                    if any(alias in raw_lower for alias in aliases):
+                        info["matched_station"] = station_name
+                        info["matched"] = True
+                        break
     except Exception as e:
         info["error"] = str(e)
 
     return info
 
 
-def build_trail_adjacency() -> Dict[str, List[Dict[str, Any]]]:
-    """Build adjacency list for the UVG trail network."""
-    adj: Dict[str, List[Dict[str, Any]]] = {k: [] for k in TRAIL_STATIONS}
+def build_adjacency(route_graph: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """Build adjacency list for the campaign route network."""
+    stations = route_graph.get("stations", {})
+    adj: Dict[str, List[Dict[str, Any]]] = {k: [] for k in stations}
 
-    # Inverse compass directions
     opposite_dir = {
         "West": "East", "East": "West",
         "North": "South", "South": "North",
         "North-West": "South-East", "South-East": "North-West",
         "North-East": "South-West", "South-West": "North-East",
+        "Inward": "Outward", "Outward": "Inward",
+        "Up": "Down", "Down": "Up",
     }
 
-    for orig, dest, weeks, direction, terrain in TRAIL_CONNECTIONS:
+    for conn in route_graph.get("connections", []):
+        orig = conn.get("origin")
+        dest = conn.get("destination")
+        weeks = conn.get("weeks", 1)
+        direction = conn.get("direction", "")
+        terrain = conn.get("terrain", "")
+
         if orig in adj and dest in adj:
             adj[orig].append({
                 "station": dest,
@@ -490,66 +296,56 @@ def build_trail_adjacency() -> Dict[str, List[Dict[str, Any]]]:
     return adj
 
 
-def get_directory_status() -> Dict[str, Dict[str, Any]]:
+def get_directory_status(repo_root: Path, route_graph: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Scan directory/ and catalog.json to identify existing location and entity notes."""
     status: Dict[str, Dict[str, Any]] = {}
+    dir_path = repo_root / "directory"
 
-    catalog_entries: List[Dict[str, Any]] = []
-    if CATALOG_PATH.exists():
-        try:
-            with open(CATALOG_PATH, "r", encoding="utf-8") as f:
-                catalog_entries = json.load(f).get("entries", [])
-        except Exception:
-            pass
+    if not route_graph or "stations" not in route_graph:
+        return status
 
-    for station_name, sdata in TRAIL_STATIONS.items():
+    for station_name, sdata in route_graph["stations"].items():
         folder_name = sdata.get("dir_folder")
-        folder_path = DIRECTORY_DIR / folder_name if folder_name else None
+        folder_path = dir_path / folder_name if (folder_name and dir_path.exists()) else None
 
         has_folder = folder_path.is_dir() if folder_path else False
         has_index = (folder_path / "index.md").is_file() if has_folder else False
 
-        # Gather notes within this location folder
         child_notes: List[str] = []
         if has_folder and folder_path:
             child_notes = [p.stem for p in folder_path.glob("*.md") if p.name != "index.md"]
 
-        # Check line count / content quality if index exists
         content_lines = 0
-        has_trade_table = False
         if has_index and folder_path:
             try:
                 txt = (folder_path / "index.md").read_text(encoding="utf-8")
-                # Remove YAML
                 body = re.sub(r"^---.*?---\s*", "", txt, flags=re.DOTALL)
                 content_lines = len([l for l in body.splitlines() if l.strip()])
-                has_trade_table = "Most profitable trade" in txt or "Location Price" in txt
             except Exception:
                 pass
 
         note_state = "Untapped"
         if has_index:
-            if content_lines < 8:
-                note_state = "Stub"
-            else:
-                note_state = "Established"
+            note_state = "Stub" if content_lines < 8 else "Established"
 
         status[station_name] = {
             "state": note_state,
-            "folder": str(folder_path.relative_to(REPO_ROOT)) if (has_folder and folder_path) else None,
+            "folder": str(folder_path.relative_to(repo_root)) if (has_folder and folder_path) else None,
             "child_entities": child_notes,
             "content_lines": content_lines,
-            "has_trade_table": has_trade_table,
         }
 
     return status
 
 
-def calculate_proximity_gaps(current_station: str, max_hops: int = 2) -> List[Dict[str, Any]]:
-    """Calculate stations within max_hops from the current station using BFS."""
-    adj = build_trail_adjacency()
-    dir_status = get_directory_status()
-
+def calculate_proximity_gaps(
+    current_station: str,
+    route_graph: Dict[str, Any],
+    dir_status: Dict[str, Dict[str, Any]],
+    max_hops: int = 2
+) -> List[Dict[str, Any]]:
+    """Calculate reachable locations within max_hops from the current station."""
+    adj = build_adjacency(route_graph)
     queue: deque = deque([(current_station, 0, 0, [])])
     visited: Set[str] = {current_station}
     results: List[Dict[str, Any]] = []
@@ -567,7 +363,6 @@ def calculate_proximity_gaps(current_station: str, max_hops: int = 2) -> List[Di
                 "state": dstate.get("state", "Untapped"),
                 "folder": dstate.get("folder"),
                 "child_entities": dstate.get("child_entities", []),
-                "has_trade_table": dstate.get("has_trade_table", False),
             })
 
         if hops < max_hops:
@@ -575,45 +370,48 @@ def calculate_proximity_gaps(current_station: str, max_hops: int = 2) -> List[Di
                 neighbour = edge["station"]
                 if neighbour not in visited:
                     visited.add(neighbour)
-                    new_path = path + [f"{edge['direction']} to {neighbour} ({edge['weeks']}w, {edge['terrain']})"]
-                    queue.append((neighbour, hops + 1, total_weeks + edge["weeks"], new_path))
+                    desc = f"{edge['direction']} to {neighbour} ({edge['weeks']}w, {edge['terrain']})"
+                    queue.append((neighbour, hops + 1, total_weeks + edge["weeks"], path + [desc]))
 
-    # Sort results: first by hops, then by total_weeks
     results.sort(key=lambda x: (x["hops"], x["total_weeks"]))
     return results
 
 
-def audit_untapped_factions(current_station: str, proximate_stations: List[Dict[str, Any]]) -> Dict[str, Any]:
+def audit_untapped_factions(
+    current_station: str,
+    proximate_stations: List[Dict[str, Any]],
+    route_graph: Dict[str, Any],
+    repo_root: Path,
+    dir_status: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
     """Cross-reference canon entities with repository notes to surface unintroduced factions & NPCs."""
-    dir_status = get_directory_status()
+    catalog_path = repo_root / ".agents" / "context" / "catalog.json"
     catalog_titles: Set[str] = set()
 
-    if CATALOG_PATH.exists():
+    if catalog_path.exists():
         try:
-            with open(CATALOG_PATH, "r", encoding="utf-8") as f:
+            with open(catalog_path, "r", encoding="utf-8") as f:
                 for entry in json.load(f).get("entries", []):
                     catalog_titles.add(entry.get("title", "").strip().lower())
-                    # Also include base filename without extension
                     p = Path(entry.get("path", ""))
                     catalog_titles.add(p.stem.lower())
         except Exception:
             pass
 
+    station_lore = route_graph.get("station_lore", {})
     audit: Dict[str, Any] = {
         "current_station": {
             "name": current_station,
             "introduced": [],
             "untapped": [],
-            "hazards": CANON_STATION_LORE.get(current_station, {}).get("road_hazards", []),
+            "hazards": station_lore.get(current_station, {}).get("road_hazards", []),
         },
         "proximate_untapped_entities": [],
     }
 
-    # Check entities at current station
-    curr_lore = CANON_STATION_LORE.get(current_station, {}).get("canon_entities", [])
+    curr_lore = station_lore.get(current_station, {}).get("canon_entities", [])
     for ent in curr_lore:
         name_lower = ent["name"].lower()
-        # Check if present in catalog or child notes
         is_known = any(name_lower in t or t in name_lower for t in catalog_titles)
         if not is_known and current_station in dir_status:
             is_known = any(name_lower in c.lower() for c in dir_status[current_station].get("child_entities", []))
@@ -623,10 +421,9 @@ def audit_untapped_factions(current_station: str, proximate_stations: List[Dict[
         else:
             audit["current_station"]["untapped"].append(ent)
 
-    # Check entities at proximate 1-hop and 2-hop stations
     for prox in proximate_stations:
         st_name = prox["station"]
-        st_lore = CANON_STATION_LORE.get(st_name, {})
+        st_lore = station_lore.get(st_name, {})
         for ent in st_lore.get("canon_entities", []):
             name_lower = ent["name"].lower()
             is_known = any(name_lower in t or t in name_lower for t in catalog_titles)
@@ -640,207 +437,166 @@ def audit_untapped_factions(current_station: str, proximate_stations: List[Dict[
     return audit
 
 
-def run_gap_analysis(max_hops: int = 2) -> Dict[str, Any]:
+def run_gap_analysis(
+    repo_root: Path,
+    drive_dir: Optional[Path],
+    max_hops: int = 2,
+    campaign_subfolder: Optional[str] = None
+) -> Dict[str, Any]:
     """Execute complete gap analysis and return structured findings."""
-    drive_audit = audit_drive_sync()
-    location_info = get_current_campaign_location()
-    current_station = location_info.get("matched_station", "The Last Serai (8)")
-    proximity_gaps = calculate_proximity_gaps(current_station, max_hops=max_hops)
-    faction_audit = audit_untapped_factions(current_station, proximity_gaps)
+    drive_audit = audit_drive_sync(repo_root, drive_dir)
+    route_graph = load_route_graph(repo_root)
+    location_info = get_current_campaign_location(repo_root, route_graph, campaign_subfolder)
 
-    # Summary metrics
-    untapped_locations = [p for p in proximity_gaps if p["state"] == "Untapped"]
-    stub_locations = [p for p in proximity_gaps if p["state"] == "Stub"]
-    established_locations = [p for p in proximity_gaps if p["state"] == "Established"]
-
-    return {
+    results: Dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "current_caravan_location": {
-            "station": current_station,
-            "episode": location_info.get("latest_episode"),
-            "raw_region": location_info.get("raw_region"),
-            "is_established": get_directory_status().get(current_station, {}).get("state") == "Established",
-        },
-        "drive_sync": drive_audit,
-        "proximity_analysis": {
-            "radius_hops": max_hops,
-            "total_proximate_stations": len(proximity_gaps),
-            "untapped_count": len(untapped_locations),
-            "stub_count": len(stub_locations),
-            "established_count": len(established_locations),
-            "stations": proximity_gaps,
-        },
-        "faction_audit": faction_audit,
+        "repo_root": str(repo_root),
+        "drive_audit": drive_audit,
+        "location": location_info,
+        "route_graph_available": route_graph is not None,
     }
 
+    if route_graph and location_info.get("matched_station"):
+        curr_station = location_info["matched_station"]
+        dir_status = get_directory_status(repo_root, route_graph)
+        proximity_gaps = calculate_proximity_gaps(curr_station, route_graph, dir_status, max_hops=max_hops)
+        faction_audit = audit_untapped_factions(curr_station, proximity_gaps, route_graph, repo_root, dir_status)
 
-def format_markdown_report(data: Dict[str, Any]) -> str:
-    """Format audit results as a crisp Markdown report in British English with blank lines under headings."""
-    curr = data["current_caravan_location"]
-    drive = data["drive_sync"]
-    prox = data["proximity_analysis"]
-    factions = data["faction_audit"]
+        results["proximity_gaps"] = proximity_gaps
+        results["factions"] = faction_audit
 
-    lines = [
-        "# Campaign Coverage & Gap Analysis Report",
+    return results
+
+
+def format_markdown_report(report: Dict[str, Any]) -> str:
+    """Format structured gap analysis results into a clean markdown document."""
+    lines: List[str] = [
+        "# Campaign Coverage & Gap Analysis",
         "",
-        f"> [!NOTE]",
-        f"> Automated diagnostic audit generated on **{datetime.now().strftime('%d %B %Y at %H:%M')}**.",
-        f"> Current caravan locus: **{curr['station']}** (identified from `{curr['episode']}`).",
+        f"**Generated:** {report.get('timestamp', '')[:10]}",
+        f"**Repository:** `{report.get('repo_root')}`",
         "",
-        "## 1. Google Drive Sync & Sourcebook Indexing",
+        "## Summary",
         "",
     ]
 
-    if drive.get("drive_permission_denied"):
-        lines.extend([
-            "> [!WARNING]",
-            "> Google Drive folder access was restricted by the environment sandbox during this run.",
-            "> Terminal commands accessing CloudStorage require elevated sandbox execution.",
-            "",
-        ])
-    elif not drive.get("drive_accessible"):
-        lines.append("Google Drive directory could not be reached at the configured path.\n")
-    else:
-        unindexed = drive.get("unindexed_files", [])
-        if unindexed:
-            lines.extend([
-                f"> [!IMPORTANT]",
-                f"> **{len(unindexed)} unindexed file(s)** detected in Google Drive:",
-                "",
-                "| File Name | Location | Type | Action Needed |",
-                "| :--- | :--- | :--- | :--- |",
-            ])
-            for u in unindexed:
-                action = u.get("action_hint", "Extract digest to `_digests/`")
-                lines.append(f"| `{u['name']}` | `{u['rel_path']}` | {u['type'].title()} | {action} |")
+    drive = report.get("drive_audit", {})
+    loc = report.get("location", {})
+    has_graph = report.get("route_graph_available", False)
+
+    unindexed_count = len(drive.get("unindexed_files", []))
+    missing_digests_count = len(drive.get("missing_digests", []))
+
+    lines.append(f"- **Google Drive Access:** {'Accessible' if drive.get('drive_accessible') else 'Offline / Not Found'}")
+    lines.append(f"- **Indexed Tier 3 Sources:** {len(drive.get('indexed_sources', []))}")
+    lines.append(f"- **Unindexed Drive Files:** {unindexed_count}")
+    lines.append(f"- **Missing Digests:** {missing_digests_count}")
+    lines.append(f"- **Latest Session:** `{loc.get('latest_episode', 'None')}`")
+    lines.append(f"- **Current Location:** {loc.get('raw_region', 'Unknown')}")
+    if has_graph:
+        lines.append(f"- **Matched Station:** {loc.get('matched_station', 'None')}")
+    lines.append("")
+
+    # Section 1: Drive Sync
+    lines.append("## Tier 3 Source Material & Drive Sync")
+    lines.append("")
+    if unindexed_count > 0:
+        lines.append("### Unindexed Drive Files")
+        lines.append("")
+        lines.append("| Filename | Type | Recommended Action |")
+        lines.append("|---|---|---|")
+        for u in drive["unindexed_files"]:
+            lines.append(f"| `{u['name']}` | {u['type']} | {u['action_hint']} |")
+        lines.append("")
+
+    if missing_digests_count > 0:
+        lines.append("### Missing Digest Files")
+        lines.append("")
+        for m in drive["missing_digests"]:
+            lines.append(f"- `{m['slug']}` ({m['title']}): expected at `{m['expected_path']}`")
+        lines.append("")
+
+    if unindexed_count == 0 and missing_digests_count == 0:
+        lines.append("All reference materials in Google Drive match the active Tier 3 digest index.")
+        lines.append("")
+
+    # Section 2: Proximity Gaps (if route graph available)
+    if has_graph and "proximity_gaps" in report:
+        lines.append("## Geographic Proximity & Destination Gaps")
+        lines.append("")
+        prox = report["proximity_gaps"]
+        if prox:
+            lines.append("| Destination | Hops | Travel Time | Current State | Directory Folder |")
+            lines.append("|---|---|---|---|---|")
+            for p in prox:
+                folder_desc = f"`{p['folder']}`" if p["folder"] else "*None*"
+                lines.append(f"| **{p['station']}** | {p['hops']} | {p['total_weeks']} weeks | {p['state']} | {folder_desc} |")
             lines.append("")
         else:
-            lines.extend([
-                "All core PDFs, supplements, and research documents in Google Drive are fully indexed in Tier 3 digests.",
-                "",
-            ])
-
-        missing_dig = drive.get("missing_digests", [])
-        if missing_dig:
-            lines.extend([
-                "### Missing Digest Files",
-                "",
-            ])
-            for m in missing_dig:
-                lines.append(f"- **{m['title']}**: Digest file not found at `{m['expected_path']}`.")
+            lines.append("No destination gaps identified within the specified search radius.")
             lines.append("")
 
-    lines.extend([
-        "## 2. Trail Proximity & Untapped Locations",
-        "",
-        f"The caravan is currently anchored at **{curr['station']}**. Below is the status of all trail stations within **{prox['radius_hops']} hops**:",
-        "",
-        "| Destination | Hops | Travel Time | Directory State | Notes & Deficiencies |",
-        "| :--- | :---: | :---: | :---: | :--- |",
-    ])
+        factions = report.get("factions", {})
+        curr = factions.get("current_station", {})
+        untapped_curr = curr.get("untapped", [])
+        if untapped_curr:
+            lines.append(f"### Untapped Lore & Entities at {curr.get('name')}")
+            lines.append("")
+            for ent in untapped_curr:
+                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}): {ent.get('summary', '')}")
+            lines.append("")
 
-    for st in prox["stations"]:
-        badge = "🔴 **Untapped**" if st["state"] == "Untapped" else ("🟡 **Stub**" if st["state"] == "Stub" else "🟢 **Established**")
-        notes = []
-        if st["state"] == "Untapped":
-            notes.append("No entry in `directory/`. Needs creation before expedition departs.")
-        elif st["state"] == "Stub":
-            notes.append("Folder exists but has under 8 lines of body content.")
-        else:
-            entity_count = len(st.get("child_entities", []))
-            trade_status = "market table present" if st.get("has_trade_table") else "no market table"
-            notes.append(f"{entity_count} entities documented; {trade_status}.")
-
-        lines.append(f"| **{st['station']}** | {st['hops']} | {st['total_weeks']} week(s) | {badge} | {' '.join(notes)} |")
-
-    lines.extend([
-        "",
-        "## 3. Untapped Factions, Patrons & Road Encounters",
-        "",
-        f"### Current Station: {curr['station']}",
-        "",
-    ])
-
-    curr_untapped = factions["current_station"]["untapped"]
-    curr_intro = factions["current_station"]["introduced"]
-
-    if curr_intro:
-        lines.append("**Introduced Entities:**")
-        for ent in curr_intro:
-            lines.append(f"- **{ent['name']}** ({ent['role']})")
+        prox_untapped = factions.get("proximate_untapped_entities", [])
+        if prox_untapped:
+            lines.append("### Untapped Entities in Proximate Locations")
+            lines.append("")
+            for pu in prox_untapped:
+                ent = pu["entity"]
+                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}, at {pu['station']}, {pu['hops']} hop): {ent.get('summary', '')}")
+            lines.append("")
+    elif not has_graph:
+        lines.append("## Geographic Proximity")
+        lines.append("")
+        lines.append("No route graph (`.agents/context/route_graph.json`) defined for this campaign. Proximity gap analysis was skipped.")
         lines.append("")
 
-    if curr_untapped:
-        lines.extend([
-            "**Untapped Canon Opportunities at this Station:**",
-            "",
-        ])
-        for ent in curr_untapped:
-            lines.append(f"- **{ent['name']}** ({ent['type'].title()}): {ent['role']}.")
-        lines.append("")
-
-    hazards = factions["current_station"].get("hazards", [])
-    if hazards:
-        lines.extend([
-            "**Regional Environmental Hazards:**",
-            "",
-            f"- {', '.join(hazards)}.",
-            "",
-        ])
-
-    prox_untapped = factions.get("proximate_untapped_entities", [])
-    if prox_untapped:
-        lines.extend([
-            "### Immediate Horizon: Untapped Entities Along Adjacent Routes",
-            "",
-            "| Destination | Hop | Entity / Hook | Role |",
-            "| :--- | :---: | :--- | :--- |",
-        ])
-        for p in prox_untapped:
-            e = p["entity"]
-            lines.append(f"| {p['station']} | {p['hops']} | **{e['name']}** ({e['type'].title()}) | {e['role']} |")
-        lines.append("")
-
-    lines.extend([
-        "## 4. Recommended Next Steps for the GM",
-        "",
-        "1. **Draft `Way Stone Graveyard (9)`**: As the primary western overland route leading out of The Last Serai, create `directory/WayStoneGraveyard/index.md` with regional static hazard rules and trade pricing.",
-        "2. **Introduce a Local Serai Patron**: Bring in **Lacquer Stone 4-body** or **Black Helmet 60-plurality** as a rival or employer in the hunt for Iron Pot's remaining body.",
-        "3. **Bridge `UVG-AtlesCaravan.gsheet`**: Connect the party's active ledger and vehicle status to the campaign website.",
-        "4. **Leverage Electric Bastionland Spark Tables**: Use the newly indexed Tier 3 digest (`_digests/electric_bastionland.md`) for industrial boroughs, dilemma traps, and living machines.",
-        "",
-    ])
-
-    return "\n".join(lines).strip() + "\n"
+    return "\n".join(lines)
 
 
-# -----------------------------------------------------------------------------
-# Main Entry Point
-# -----------------------------------------------------------------------------
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Audit campaign coverage and gap analysis.")
+    parser.add_argument("--repo-dir", "--repo-root", dest="repo_dir", help="Path to campaign repository root.")
+    parser.add_argument("--drive-dir", help="Path to campaign Google Drive folder.")
+    parser.add_argument("--campaign-dir", help="Subfolder under campaigns/ (e.g. campaigns/UVG24XX).")
+    parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in hops (default: 2).")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON.")
+    parser.add_argument("--report-path", help="Save markdown report to specific file path.")
 
-def main():
-    parser = argparse.ArgumentParser(description="Automated Gap Analysis for the Charged Campaign.")
-    parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in trail hops (default: 2)")
-    parser.add_argument("--json", action="store_true", help="Output raw JSON data to stdout")
-    parser.add_argument("--report-path", type=str, default=None, help="Save formatted Markdown report to a specific file")
     args = parser.parse_args()
 
-    data = run_gap_analysis(max_hops=args.radius)
+    repo_root = find_repo_root(args.repo_dir)
+    drive_dir = resolve_drive_dir(repo_root, args.drive_dir)
+
+    report = run_gap_analysis(
+        repo_root,
+        drive_dir,
+        max_hops=args.radius,
+        campaign_subfolder=args.campaign_dir
+    )
 
     if args.json:
-        print(json.dumps(data, indent=2))
+        print(json.dumps(report, indent=2))
         return
 
-    md_report = format_markdown_report(data)
+    md_output = format_markdown_report(report)
 
     if args.report_path:
-        out_file = Path(args.report_path)
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(md_report, encoding="utf-8")
-        print(f"[REPORT] Saved gap analysis report to {out_file}")
+        out_p = Path(args.report_path).resolve()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(md_output, encoding="utf-8")
+        print(f"Report saved to {out_p}")
     else:
-        print(md_report)
+        print(md_output)
 
 
 if __name__ == "__main__":

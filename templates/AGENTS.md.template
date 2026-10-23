@@ -57,22 +57,26 @@ This section parameterises the shared skills in oude-mechanismen.
 -->
 
 ### Style & Tone
+
 - Genre: [Setting genre, e.g. blue-collar sci-fi, psychedelic fantasy]
 - Cadence: [Sentence length, paragraph flow, one sentence per line]
 - Vocabulary: [Atmospheric keywords, register, aesthetic touches]
 
 ### Reference Material (for Deep Reviews & Lore)
-- Root Path: [Absolute path to campaign source PDFs]
+
+- Root Path: [Absolute path to campaign source PDFs or drive_dir]
 - Priority Sources:
   1. [Primary sourcebook]
   2. [Secondary module]
 
 ### Calibration Examples
+
 - Too flat: "[Sample flat sentence]"
 - Too purple: "[Sample overwrought sentence]"
 - In voice: "[Sample balanced setting-faithful sentence]"
 
 ### Structural & Procedural Defaults
+
 - Default Campaign Subfolder: `campaigns/[DefaultCampaign]/`
 - Campaign Hub Page: `[index](../../directory/[DefaultHub]/index.md)`
 - Character Archetypes / Vocations: [Available setting classes, roles, or affiliations]
