@@ -338,6 +338,7 @@ def main():
     parser.add_argument("--name-prefix", "-n", help="Prefix for output file names.")
     parser.add_argument("--target-width", type=int, default=1400, help="Working resolution width in pixels.")
     parser.add_argument("--no-matte", action="store_true", help="Do not separate foreground subject from backdrop.")
+    parser.add_argument("--no-flares", action="store_true", help="Disable specular and lens flares.")
     parser.add_argument("--flare-coords", help="Explicit focal coordinates as 'x,y' for flare placement.")
 
     args = parser.parse_args()
@@ -363,7 +364,9 @@ def main():
 
     # Determine focal points
     gray_np = np.array(working_img.convert('L'), dtype=np.float32)
-    if args.flare_coords:
+    if args.no_flares:
+        focal_points = None
+    elif args.flare_coords:
         scale = target_w / float(orig_w)
         focal_points = []
         for pair in args.flare_coords.split(';'):
