@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
 # Refresh Tier 1 semantic catalogue upon commit when Markdown content changes.
 
-# 1. Expand standard PATH for macOS GUI Git clients (Obsidian Git, VS Code, Fork, Tower)
+# 1. Expand standard PATH and UTF-8 locale for macOS GUI Git clients (Obsidian Git, VS Code, Fork, Tower)
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.rbenv/shims:$HOME/.asdf/shims:$HOME/.local/share/mise/shims:$PATH"
+export LC_ALL="${LC_ALL:-en_GB.UTF-8}"
+export LANG="${LANG:-en_GB.UTF-8}"
 
 # 2. Re-index Tier 1 catalogue only when Markdown content files are staged
 if git diff --cached --name-only 2>/dev/null | grep -q '\.md$'; then

@@ -37,7 +37,7 @@ module Jekyll
       skills_json = File.join(base_dir, ".agents", "skills.json")
       if File.exist?(skills_json)
         begin
-          cfg = JSON.parse(File.read(skills_json))
+          cfg = JSON.parse(File.read(skills_json, encoding: 'utf-8'))
           (cfg['entries'] || []).each do |entry|
             raw_path = entry['path']
             next unless raw_path

@@ -7,8 +7,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Expand standard paths for Homebrew, asdf, rbenv, mise, etc.
+# Expand standard paths and UTF-8 locale for Homebrew, asdf, rbenv, mise, etc.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.rbenv/shims:$HOME/.asdf/shims:$HOME/.local/share/mise/shims:$PATH"
+export LC_ALL="${LC_ALL:-en_GB.UTF-8}"
+export LANG="${LANG:-en_GB.UTF-8}"
 
 echo "==> Setting up campaign environment in $REPO_ROOT..."
 
