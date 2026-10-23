@@ -86,6 +86,7 @@ def parse_campaign_defaults(repo_root: Path) -> Dict[str, Any]:
         "chapter_naming": "ep_{num:03d}.md",
         "timestamp_format": "YYYY-MM-DD",
         "location_key": "region",
+        "session_language": "en",
         "genre": None,
         "cadence": None,
         "vocabulary": None,
@@ -121,14 +122,23 @@ def parse_campaign_defaults(repo_root: Path) -> Dict[str, Any]:
     # 4. Chapter Timestamp Format
     m_time = re.search(r"Chapter Timestamp Format:\s*`?([^`\n]+)`?", text)
     if m_time:
-        defaults["timestamp_format"] = m_time.group(1).strip()
+        raw_time = m_time.group(1).strip()
+        raw_time = re.sub(r"^nav_order:\s*", "", raw_time)
+        raw_time = re.sub(r"\(.*?\)", "", raw_time).strip()
+        defaults["timestamp_format"] = raw_time
 
     # 5. Location Front Matter Key
-    m_loc = re.search(r"Location Front Matter Key:\s*`?([^`\n]+)`?", text)
+    m_loc = re.search(r"Location Front Matter Key:\s*`?([^`\n:]+)`?", text)
     if m_loc:
-        defaults["location_key"] = m_loc.group(1).strip().rstrip(":")
+        raw_loc = m_loc.group(1).strip().split()[0].rstrip(":")
+        defaults["location_key"] = raw_loc
 
-    # 6. Style & Tone
+    # 6. Session Audio Language
+    m_lang = re.search(r"Session Audio Language:\s*`?([a-zA-Z_\-]+)`?", text)
+    if m_lang:
+        defaults["session_language"] = m_lang.group(1).strip().lower()
+
+    # 7. Style & Tone
     m_genre = re.search(r"Genre:\s*([^\n]+)", text)
     if m_genre:
         defaults["genre"] = m_genre.group(1).strip()
@@ -224,7 +234,8 @@ def discover_next_chapter(repo_root: Path, defaults: Dict[str, Any]) -> Dict[str
 def build_dynamic_glossary(
     repo_root: Path,
     out_glossary_path: Path,
-    session_slug: str
+    session_slug: str,
+    defaults: Optional[Dict[str, Any]] = None
 ) -> Tuple[str, List[str]]:
     """
     Compile a structured campaign glossary from .agents/context/catalog.json,
@@ -264,14 +275,38 @@ def build_dynamic_glossary(
 
         if etype == "people":
             people.append(e)
-        elif etype in ("location", "gazetteer") or path_str.startswith("directory/"):
-            locations.append(e)
         elif etype == "faction":
             factions.append(e)
+        elif etype in ("location", "gazetteer") or path_str.startswith("directory/"):
+            locations.append(e)
         elif etype == "session":
             sessions.append(e)
         else:
             other.append(e)
+
+    # Prioritise entities and sessions connected to the active campaign
+    camp_sub = (defaults or {}).get("campaign_subfolder", "campaigns")
+    camp_sessions = [s for s in sessions if (s.get("path") or "").startswith(camp_sub)]
+    sessions_to_use = camp_sessions if camp_sessions else sessions
+
+    hub_pages = (defaults or {}).get("hub_pages", [])
+    camp_paths = {s.get("path") for s in sessions_to_use}
+
+    def is_connected_to_campaign(item: Dict[str, Any]) -> bool:
+        p = item.get("path", "")
+        for hub in hub_pages:
+            clean_hub_dir = str(Path(hub).parent).replace("../", "").strip("/")
+            if clean_hub_dir and clean_hub_dir in p:
+                return True
+        out_links = set(item.get("links_out", []))
+        in_links = set(item.get("links_in", []))
+        if (out_links | in_links) & camp_paths:
+            return True
+        return False
+
+    people.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
+    locations.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
+    factions.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
 
     # Decisions & active rulings
     decisions_text = ""
@@ -346,7 +381,7 @@ def build_dynamic_glossary(
     ])
 
     # Sort sessions by nav_order or path
-    recent_sessions = sorted(sessions, key=lambda s: str(s.get("nav_order") or s.get("path")))[-4:]
+    recent_sessions = sorted(sessions_to_use, key=lambda s: str(s.get("nav_order") or s.get("path")))[-4:]
     if recent_sessions:
         for s in recent_sessions:
             title = s.get("title", "Untitled Episode")
@@ -422,7 +457,8 @@ def transcribe_audio(
     model_path: Path,
     wav_path: Path,
     output_base: Path,
-    proper_nouns: List[str]
+    proper_nouns: List[str],
+    language: Optional[str] = None
 ) -> Path:
     """Execute whisper-cli on Apple Metal GPU to produce a verbatim text transcript."""
     if not shutil.which("whisper-cli"):
@@ -441,6 +477,9 @@ def transcribe_audio(
         "-otxt",
         "-of", str(output_base)
     ]
+
+    if language:
+        cmd.extend(["-l", language])
 
     # Inject proper-noun prompt bias if available
     if proper_nouns:
@@ -466,6 +505,12 @@ def main():
     parser.add_argument("--repo-root", type=str, default=None, help="Campaign repository root (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Override Google Drive campaign folder")
     parser.add_argument("--session-slug", type=str, default=None, help="Custom slug (e.g. 2026-10-23_ep012)")
+    parser.add_argument(
+        "--language", "-l",
+        type=str,
+        default=None,
+        help="Spoken language code for Whisper (e.g. pt, en, auto)"
+    )
     parser.add_argument(
         "--model-path",
         type=str,
@@ -510,7 +555,9 @@ def main():
     notes_path = sessions_dir / f"{slug}_session_notes.md"
 
     # 4. Dynamic Glossary
-    _, proper_nouns = build_dynamic_glossary(repo_root, glossary_path, slug)
+    _, proper_nouns = build_dynamic_glossary(repo_root, glossary_path, slug, defaults=campaign_defaults)
+
+    whisper_lang = args.language or campaign_defaults.get("session_language") or "en"
 
     # 5. Audio Normalisation & Metal Transcription / Transcript Ingestion
     if not skip_transcribe:
@@ -524,8 +571,8 @@ def main():
             normalise_audio(input_path, temp_wav)
 
             if not args.json:
-                print(f"==> [2/2] Transcribing with whisper-cli on Apple Metal GPU (prompting {len(proper_nouns)} proper nouns)...")
-            transcribe_audio(Path(args.model_path), temp_wav, transcript_base, proper_nouns)
+                print(f"==> [2/2] Transcribing with whisper-cli on Apple Metal GPU (lang={whisper_lang}, prompting {len(proper_nouns)} proper nouns)...")
+            transcribe_audio(Path(args.model_path), temp_wav, transcript_base, proper_nouns, language=whisper_lang)
 
             if args.archive_recording:
                 dest_rec = sessions_dir / input_path.name
@@ -552,6 +599,7 @@ def main():
         "repo_root": str(repo_root),
         "drive_dir": str(drive_dir),
         "session_slug": slug,
+        "session_language": whisper_lang,
         "transcript_path": str(transcript_path),
         "glossary_path": str(glossary_path),
         "session_notes_path": str(notes_path),

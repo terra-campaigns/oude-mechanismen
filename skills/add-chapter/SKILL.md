@@ -144,6 +144,24 @@ Third sentence of second paragraph.
    - Stay strictly faithful to the GM's play report.
    - Do not invent plot developments, player character decisions, or unearned successes.
 
+4. **Bilingual Campaigns (e.g. Portuguese / British English)**:
+   - When `Chapter Output Format:` in `.agents/AGENTS.md` specifies bilingual output, format the chapter body into two parallel sections:
+     ```markdown
+     English version below
+     {: .text-delta .text-right}
+
+     ## <Primeiro Subtítulo em Português>
+
+     <Parágrafos em Português com links de entidades relativos...>
+
+     ---
+
+     ## <First Subheader in British English>
+
+     <Paragraphs in British English with identical relative entity links...>
+     ```
+   - Both language versions must adhere to the semi-strict structural format (2–4 subheaders, 2–4 paragraphs per subheader, 2–4 sentences per paragraph, one sentence per line) and share identical entity relative markdown links.
+
 ## 5. Verification Checklist
 
 After writing the file:

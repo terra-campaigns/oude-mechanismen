@@ -159,7 +159,7 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
 - **2 to 4 Sentences per Paragraph:** Each paragraph must contain between 2 and 4 sentences. Place each sentence on its own line (one sentence per line) where practical.
 - **Entity Cross-Linking:** Embed relative Markdown links (`[Entity](../../directory/...)`) on the first significant mention of every catalogued PC, NPC, location, or faction.
 - **Setting Voice:** Strictly adhere to the cadence, vocabulary, and calibration examples defined under `## Campaign Specification` in `.agents/AGENTS.md`.
-- **Language:** British English spelling throughout.
+- **Language & Bilingual Mode:** British English spelling throughout. If `Chapter Output Format:` in `.agents/AGENTS.md` is bilingual (e.g. Portuguese / British English), generate the Portuguese section first, preceded by `English version below` and `{: .text-delta .text-right}`, followed by a horizontal divider `---` and the British English mirror section. Archival GM session notes in Google Drive remain synthesised in British English.
 
 ---
 

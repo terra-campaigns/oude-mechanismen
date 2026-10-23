@@ -54,7 +54,7 @@ Search public domain cultural archives matching the entity's specific nature:
 Run the generic filter engine in `scripts/art_filter.py`:
 
 ```bash
-python3 /Users/efsa/Repos/oude-mechanismen/skills/illustrate-entry/scripts/art_filter.py \
+python3 .agents/scripts/art_filter.py \
   --input "<path_or_url>" \
   --config ".agents/context/aesthetics.yml" \
   --output-dir "imgs/gallery" \
