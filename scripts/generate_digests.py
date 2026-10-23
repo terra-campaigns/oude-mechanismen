@@ -27,6 +27,21 @@ def ensure_heading_blank_lines(text: str) -> str:
     return "\n".join(out).strip() + "\n"
 
 
+def find_repo_root(custom_dir: str = None) -> Path:
+    """Detect the campaign repository root directory by walking parent directories."""
+    if custom_dir:
+        p = Path(custom_dir).resolve()
+        if p.exists() and p.is_dir():
+            return p
+
+    cwd = Path.cwd().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        if (candidate / "_config.yml").exists() or (candidate / ".agents").is_dir():
+            return candidate
+
+    return cwd
+
+
 def find_drive_dir(repo_root: Path, explicit_drive_dir: str = None) -> Path:
     if explicit_drive_dir:
         p = Path(explicit_drive_dir).expanduser()
@@ -183,7 +198,7 @@ def main():
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
     args = parser.parse_args()
 
-    repo_root = Path(args.repo_root).resolve() if args.repo_root else Path.cwd()
+    repo_root = find_repo_root(args.repo_root)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
 
     compile_references(repo_root, drive_dir, clean_headings=args.clean_headings)

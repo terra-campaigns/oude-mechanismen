@@ -71,6 +71,7 @@ Scan all YAML front matter for the deprecated `hooks:` field.
 - Verify that `.agents/context/catalog.json` exists and matches the current note count in `.agents/context/tier1_sources.yml`.
 - Verify that `summary` is not null for non-stub files.
 - Report any file whose content hash (`sha`) differs from `catalog.json`.
+- Compare all content notes on disk in `directory/`, `campaigns/`, and `systems/` against the `entries` list in `catalog.json`. Flag any non-stub notes that exist on disk but are absent from `catalog.json` (unindexed notes caused by overly restrictive `include_paths` or accidental exclusion in `.agents/context/tier1_sources.yml`).
 
 ### 7. Missing front matter
 
@@ -114,6 +115,7 @@ Generated: [date]
 - X unused images
 - X deprecated hooks
 - X catalogue / front matter issues
+- X unindexed notes (allowlist exclusions)
 - X duplicate titles
 
 ## Dead Links
@@ -145,6 +147,10 @@ Generated: [date]
 | File | Issue |
 |---|---|
 | ... | Missing `title` |
+
+## Unindexed Notes (Catalogue Exclusions)
+
+- `directory/Region/Note.md` — present on disk but missing from `catalog.json`. Verify `include_paths` in `.agents/context/tier1_sources.yml`.
 
 ## Duplicate Titles
 

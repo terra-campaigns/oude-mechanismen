@@ -1,6 +1,11 @@
 # Explicit configuration of directories and files included in Tier 1 Canon.
 # Only markdown notes matching include_paths and not matching exclude_paths
 # will be indexed into .agents/context/catalog.json.
+#
+# Best Practice: Include top-level domain folders (e.g. campaigns, directory, systems).
+# Use exclude_paths to quarantine drafts, non-canon experiments, or legacy arcs.
+# Do NOT list individual subfolders here (e.g. avoid directory/RegionA, directory/RegionB),
+# as newly scaffolded locations will be silently excluded from catalog.json.
 
 # Path to external reference sourcebooks and Markdown digests (optional)
 drive_dir: /path/to/campaign/source_folder
@@ -9,6 +14,7 @@ include_paths:
   - campaigns
   - directory
   - systems
+  - trading
 
 exclude_paths:
   - _inklings.md
