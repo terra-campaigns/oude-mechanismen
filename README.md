@@ -87,6 +87,8 @@ This automatically:
 3. Creates `.agents/venv` and installs shared Python dependencies (`pyyaml`, `pypdf`).
 4. Verifies Tier 1 catalogue compilation with `data_extractor.rb`.
 
+Ensure `bin` is included in your campaign vault's `_config.yml` under `exclude:` so Jekyll does not publish `bin/setup` to the static site.
+
 ### Linking Skills to a Campaign Repository
 
 In your campaign vault's `.agents/skills.json`, include redundant fallback paths for local development and shared workspaces:
