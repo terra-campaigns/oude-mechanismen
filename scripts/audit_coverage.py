@@ -146,15 +146,19 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
         ext = fpath.suffix.lower()
         if ext in [".pdf", ".gdoc", ".gsheet"]:
             if fpath.name not in known_names:
-                action_hint = "Extract digest to `_digests/`"
-                if ext == ".gsheet":
+                rel = str(fpath.relative_to(drive_dir))
+                if ext == ".pdf":
+                    action_hint = f"Run `python3 .agents/scripts/generate_digests.py --scaffold \"{rel}\"`"
+                elif ext == ".gsheet":
                     action_hint = "Spreadsheet ledger or trade table"
                 elif ext == ".gdoc":
                     action_hint = "Campaign document or background notes"
+                else:
+                    action_hint = "Reference file"
 
                 results["unindexed_files"].append({
                     "name": fpath.name,
-                    "rel_path": str(fpath.relative_to(drive_dir)),
+                    "rel_path": rel,
                     "type": "spreadsheet" if ext == ".gsheet" else ("document" if ext == ".gdoc" else "sourcebook"),
                     "size_bytes": fpath.stat().st_size if fpath.exists() else 0,
                     "action_hint": action_hint,

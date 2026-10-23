@@ -44,7 +44,8 @@ oude-mechanismen/
 │   ├── weave-threads/
 │   └── scribe-session/
 ├── scripts/                    # Shared campaign tooling
-│   ├── generate_digests.py     # Compiles Tier 3 Markdown digests and references.json
+│   ├── generate_digests.py     # Scaffolds Tier 3 digests from PDFs & compiles references.json
+│   ├── compile_references.py   # Symlink alias for generate_digests.py
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
 │   └── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction
 ├── jekyll/                     # Source-of-truth Jekyll engine
@@ -92,6 +93,20 @@ The procedural scripts (`generate_digests.py`, `audit_coverage.py`, `transcribe_
 
 ```bash
 pip install -r requirements.txt
+```
+
+### Tier 3 Reference Scaffolding & Indexing
+
+To scaffold a new Tier 3 Markdown digest directly from a PDF in Google Drive (extracting chapter bookmarks and page ranges):
+
+```bash
+python3 .agents/scripts/generate_digests.py --scaffold "cores/MyNewBook.pdf"
+```
+
+To recompile `.agents/context/references.json` across all existing Markdown digests in `_digests/`:
+
+```bash
+python3 .agents/scripts/generate_digests.py
 ```
 
 ### Syncing Jekyll Engine Files

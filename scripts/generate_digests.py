@@ -13,7 +13,13 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import yaml
+
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
 
 
 def ensure_heading_blank_lines(text: str) -> str:
@@ -195,17 +201,225 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
     print(f"[INDEX] Successfully compiled {len(sources)} reference sources from {digests_dir} to {out_file}")
 
 
+def slugify(text: str) -> str:
+    """Convert text into a clean snake_case slug."""
+    text = re.sub(r"[\s\-]+", "_", text.strip())
+    text = re.sub(r"[^\w_]", "", text)
+    return text.lower()
+
+
+def format_title_from_stem(stem: str) -> str:
+    """Format a human-readable title from a PDF filename stem."""
+    s = re.sub(r"[-_]v\d+.*$", "", stem, flags=re.IGNORECASE)
+    s = re.sub(r"[-_]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s.title()
+
+
+def find_pdf(drive_dir: Path, query: str) -> Optional[Path]:
+    """Find a PDF by relative path, filename, or unique substring in Google Drive."""
+    p = Path(query)
+    if p.is_absolute() and p.exists():
+        return p
+    if (drive_dir / query).exists():
+        return drive_dir / query
+
+    q_norm = query.lower().strip()
+    candidates: List[Path] = []
+    for f in drive_dir.rglob("*.pdf"):
+        if f.name.lower() == q_norm or str(f.relative_to(drive_dir)).lower() == q_norm:
+            return f
+        if q_norm in f.name.lower():
+            candidates.append(f)
+
+    if len(candidates) == 1:
+        return candidates[0]
+    elif len(candidates) > 1:
+        exact = [c for c in candidates if c.stem.lower() == q_norm]
+        if len(exact) == 1:
+            return exact[0]
+        c_list = "\n".join(f"  - {c.relative_to(drive_dir)}" for c in candidates)
+        raise ValueError(
+            f"Ambiguous PDF query '{query}'. Multiple matches found:\n{c_list}\nPlease specify a more exact relative path."
+        )
+
+    return None
+
+
+def extract_pdf_outline(reader: Any) -> List[Tuple[str, int, int]]:
+    """Extract top-level outline items with computed page ranges (title, start_page, end_page)."""
+    if not getattr(reader, "outline", None):
+        return []
+
+    def flatten(items: Any) -> List[Tuple[str, int]]:
+        res: List[Tuple[str, int]] = []
+        for it in items:
+            if isinstance(it, list):
+                res.extend(flatten(it))
+            else:
+                try:
+                    p = reader.get_destination_page_number(it) + 1
+                    t = getattr(it, "title", str(it)).strip()
+                    if t:
+                        res.append((t, p))
+                except Exception:
+                    pass
+        return res
+
+    raw_items = flatten(reader.outline)
+    if not raw_items:
+        return []
+
+    # Deduplicate preserving order
+    seen: set = set()
+    dedup: List[Tuple[str, int]] = []
+    for t, p in raw_items:
+        if (t, p) not in seen:
+            seen.add((t, p))
+            dedup.append((t, p))
+
+    sorted_items = sorted(dedup, key=lambda x: x[1])
+    total_pages = len(reader.pages)
+    ranges: List[Tuple[str, int, int]] = []
+    for idx, (title, start_p) in enumerate(sorted_items):
+        if idx + 1 < len(sorted_items):
+            next_p = sorted_items[idx + 1][1]
+            end_p = max(start_p, next_p - 1)
+        else:
+            end_p = max(start_p, total_pages)
+        ranges.append((title, start_p, end_p))
+
+    return ranges
+
+
+def scaffold_digest(
+    repo_root: Path,
+    drive_dir: Path,
+    pdf_query: str,
+    custom_slug: Optional[str] = None,
+    category: Optional[str] = None,
+    force: bool = False
+) -> Path:
+    """Scaffold a new Tier 3 Markdown digest from a Google Drive PDF using pypdf outline metadata."""
+    if pypdf is None:
+        raise ImportError(
+            "pypdf is required for digest scaffolding. Please install it using 'pip install pypdf'."
+        )
+
+    pdf_path = find_pdf(drive_dir, pdf_query)
+    if not pdf_path:
+        raise FileNotFoundError(f"Could not locate PDF matching '{pdf_query}' in {drive_dir}")
+
+    try:
+        rel_path = str(pdf_path.relative_to(drive_dir))
+    except ValueError:
+        rpg_root = drive_dir.parents[1] if len(drive_dir.parents) >= 2 else drive_dir.parent
+        try:
+            rel_path = str(pdf_path.relative_to(rpg_root))
+        except ValueError:
+            rel_path = str(pdf_path)
+
+    if custom_slug:
+        slug = slugify(custom_slug)
+    else:
+        clean_stem = re.sub(r"[-_]v\d+.*$", "", pdf_path.stem, flags=re.IGNORECASE)
+        slug = slugify(clean_stem)
+
+    digests_dir = drive_dir / "_digests"
+    out_file = digests_dir / f"{slug}.md"
+
+    if out_file.exists() and not force:
+        raise FileExistsError(
+            f"Digest already exists at {out_file}. Pass --force to overwrite."
+        )
+
+    reader = pypdf.PdfReader(str(pdf_path))
+    total_pages = len(reader.pages)
+
+    doc_title = None
+    if reader.metadata and reader.metadata.title:
+        candidate_title = str(reader.metadata.title).strip()
+        if candidate_title and not candidate_title.lower().endswith(".pdf"):
+            doc_title = candidate_title
+
+    if not doc_title:
+        doc_title = format_title_from_stem(pdf_path.stem)
+
+    if not category:
+        parent_name = pdf_path.parent.name.lower()
+        if "core" in parent_name or "core" in slug:
+            category = "core_setting"
+        elif "module" in parent_name or "incursion" in slug or "adventure" in slug:
+            category = "module"
+        elif "suplement" in parent_name or "supplement" in parent_name:
+            category = "supplement"
+        else:
+            category = "supplement"
+
+    ranges = extract_pdf_outline(reader)
+    contents_lines: List[str] = []
+    if ranges:
+        for t, s, e in ranges:
+            page_cite = f"p. {s}" if s == e else f"pp. {s}–{e}"
+            contents_lines.append(f"- **{t}** [{page_cite}]: Summary of sections and content.")
+    else:
+        p_split = min(10, total_pages)
+        contents_lines.append(f"- **Overview & Introduction** [pp. 1–{p_split}]: Premise, core rules, and themes.")
+        if total_pages > p_split:
+            contents_lines.append(f"- **Main Rules & Tables** [pp. {p_split + 1}–{total_pages}]: Reference procedures and generators.")
+
+    campaign_title = repo_root.name.replace("-", " ").replace("_", " ").title()
+
+    lines = [
+        f"# {doc_title} — Reference Digest",
+        "",
+        "> [!NOTE]",
+        f"> Tier 3 Canon (Influence & Reference Only). Source: `{rel_path}`. Nothing here is automatic {campaign_title} campaign canon unless formally adopted in Tier 1 notes or Tier 2 rulings.",
+        "",
+        "## Contents & Page Map",
+        "",
+        *contents_lines,
+        "",
+        "## Key Procedures & Mechanics",
+        "",
+        "- Key procedure or table summary.",
+        ""
+    ]
+
+    out_content = ensure_heading_blank_lines("\n".join(lines))
+    digests_dir.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(out_content, encoding="utf-8")
+    print(f"[SCAFFOLD] Successfully created digest scaffold at {out_file}")
+
+    compile_references(repo_root, drive_dir)
+    return out_file
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index from Google Drive Markdown digests.")
+    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index or scaffold new digests from Google Drive.")
     parser.add_argument("--repo-root", "--repo-dir", dest="repo_root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Path to Google Drive campaign folder")
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
+    parser.add_argument("--scaffold", type=str, default=None, metavar="PDF_QUERY", help="Scaffold a new Tier 3 Markdown digest from a PDF in Google Drive")
+    parser.add_argument("--slug", type=str, default=None, help="Custom slug/filename for scaffolded digest")
+    parser.add_argument("--category", type=str, default=None, help="Category for scaffolded digest (core_setting, supplement, module, rules, bestiary)")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing digest file during scaffolding")
     args = parser.parse_args()
 
     repo_root = find_repo_root(args.repo_root)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
 
-    compile_references(repo_root, drive_dir, clean_headings=args.clean_headings)
+    if args.scaffold:
+        scaffold_digest(
+            repo_root,
+            drive_dir,
+            args.scaffold,
+            custom_slug=args.slug,
+            category=args.category,
+            force=args.force
+        )
+    else:
+        compile_references(repo_root, drive_dir, clean_headings=args.clean_headings)
 
 
 if __name__ == "__main__":
