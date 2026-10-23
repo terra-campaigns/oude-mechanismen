@@ -76,7 +76,7 @@ In your campaign vault's `.agents/skills.json`:
 {
   "entries": [
     {
-      "path": "../../oude-mechanismen/skills"
+      "path": "../oude-mechanismen/skills"
     }
   ]
 }
