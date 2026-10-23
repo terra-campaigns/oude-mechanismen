@@ -111,11 +111,28 @@ python3 .agents/scripts/generate_digests.py
 
 ### Syncing Jekyll Engine Files
 
-To propagate Jekyll engine updates and Git hooks to your campaign repositories:
+To propagate Jekyll engine updates, runner wrappers, and Git hooks to downstream campaign repositories:
 
 ```bash
 ./sync.sh ../charged ../hostile
 ```
+
+#### Safe Auditing & Diffing
+
+`sync.sh` provides built-in drift detection and dirty-tree safety checks:
+
+- **Check status without modifying files**:
+  ```bash
+  ./sync.sh --check ../charged
+  ```
+- **Inspect unified diffs of outdated files**:
+  ```bash
+  ./sync.sh --check --diff ../charged
+  ```
+- **Force overwrite dirty files with uncommitted local changes**:
+  ```bash
+  ./sync.sh --force ../charged
+  ```
 
 ### Audio Transcription & Session Scribe Pipeline (macOS)
 
