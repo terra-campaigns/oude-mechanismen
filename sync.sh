@@ -65,6 +65,7 @@ MANAGED_FILES=(
   "requirements.txt:.agents/requirements.txt:false"
   "templates/runners/generate_digests.py.template:.agents/scripts/generate_digests.py:true"
   "templates/runners/audit_coverage.py.template:.agents/scripts/audit_coverage.py:true"
+  "templates/bin/setup.template:bin/setup:true"
 )
 
 TOTAL_OUTDATED=0

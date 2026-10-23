@@ -73,18 +73,57 @@ oude-mechanismen/
 
 ## Usage
 
+### Setting Up a Campaign Repository
+
+Every campaign vault synchronised with `oude-mechanismen` includes a fast, idempotent setup script at `bin/setup`. In a newly cloned campaign vault:
+
+```bash
+./bin/setup
+```
+
+This automatically:
+1. Detects `oude-mechanismen` across standard paths (or via `$OUDE_MECHANISMEN_DIR`).
+2. Configures Git hooks (`.githooks/pre-commit`).
+3. Creates `.agents/venv` and installs shared Python dependencies (`pyyaml`, `pypdf`).
+4. Verifies Tier 1 catalogue compilation with `data_extractor.rb`.
+
 ### Linking Skills to a Campaign Repository
 
-In your campaign vault's `.agents/skills.json`:
+In your campaign vault's `.agents/skills.json`, include redundant fallback paths for local development and shared workspaces:
 
 ```json
 {
   "entries": [
     {
       "path": "../oude-mechanismen/skills"
+    },
+    {
+      "path": "~/Repos/oude-mechanismen/skills"
     }
   ]
 }
+```
+
+### Multi-Repository CI Workflow
+
+For GitHub Actions workflows requiring access to shared engine scripts or skills, checkout both repositories side-by-side:
+
+```yaml
+- name: Checkout Campaign Vault
+  uses: actions/checkout@v4
+  with:
+    path: charged
+
+- name: Checkout Engine
+  uses: actions/checkout@v4
+  with:
+    repository: terra-campaigns/oude-mechanismen
+    path: oude-mechanismen
+
+- name: Setup Campaign Environment
+  run: |
+    cd charged
+    ./bin/setup
 ```
 
 ### Python Dependencies
