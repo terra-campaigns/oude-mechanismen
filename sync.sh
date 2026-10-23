@@ -40,7 +40,11 @@ for REPO in "${TARGET_REPOS[@]}"; do
   chmod +x "$ABS_REPO/.githooks/pre-commit"
   git -C "$ABS_REPO" config core.hooksPath .githooks 2>/dev/null || true
 
-  echo "  ✓ Engine files and pre-commit hook synced to $ABS_REPO."
+  # 5. Agent Python dependencies
+  mkdir -p "$ABS_REPO/.agents"
+  cp "$SCRIPT_DIR/requirements.txt" "$ABS_REPO/.agents/requirements.txt"
+
+  echo "  ✓ Engine files, requirements, and pre-commit hook synced to $ABS_REPO."
 done
 
 echo "==> All target repositories synced successfully."

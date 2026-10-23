@@ -32,6 +32,7 @@ Powering [Charged](https://github.com/terra-campaigns/charged) and [Hostile](htt
 ```text
 oude-mechanismen/
 ├── README.md
+├── requirements.txt            # Python dependencies for shared scripts (pypdf, pyyaml)
 ├── sync.sh                     # Syncs Jekyll plugins, includes, and git hooks to campaign repos
 ├── skills/                     # Shared Antigravity skills
 │   ├── lookup-context/
@@ -62,7 +63,9 @@ oude-mechanismen/
     ├── AGENTS.md.template
     ├── tier1_sources.yml.template
     ├── decisions.md.template
-    └── skills.json.template
+    ├── skills.json.template
+    ├── route_graph.json.template
+    └── requirements.txt.template
 ```
 
 ---
@@ -81,6 +84,14 @@ In your campaign vault's `.agents/skills.json`:
     }
   ]
 }
+```
+
+### Python Dependencies
+
+The procedural scripts (`generate_digests.py`, `audit_coverage.py`, `transcribe_session.py`) require `pyyaml` and `pypdf`. In your campaign vault or virtual environment:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ### Syncing Jekyll Engine Files
