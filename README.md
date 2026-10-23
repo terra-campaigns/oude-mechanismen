@@ -11,7 +11,7 @@ Powering [Charged](https://github.com/terra-campaigns/charged) and [Hostile](htt
 `oude-mechanismen` decouples **procedural workflows (the engine)** from **creative direction (the specification & lore)** across campaign vaults:
 
 1. **Procedural Agent Skills (`skills/`)**:
-   - Universal workflows for campaign maintenance: progressive context retrieval (`lookup-context`), wiki structural linting (`lint-wiki`), surgical style reviews (`review-style`), chapter creation (`add-chapter`), NPC/PC dossiers (`add-character`), session preparation (`prep-session`), and narrative thread weaving (`weave-threads`).
+   - Universal workflows for campaign maintenance: progressive context retrieval (`lookup-context`), wiki structural linting (`lint-wiki`), surgical style reviews (`review-style`), chapter creation (`add-chapter`), NPC/PC dossiers (`add-character`), session preparation (`prep-session`), narrative thread weaving (`weave-threads`), and automated recording transcription & chapter scribing (`scribe-session`).
    - Dynamically loaded into local Antigravity sessions via `.agents/skills.json` without duplicating code.
    - Parameterised: each skill queries the target project's `.agents/AGENTS.md` (and context layer) for setting tone, genre conventions, PDF reference locations, and calibration examples.
 
@@ -40,10 +40,12 @@ oude-mechanismen/
 │   ├── add-chapter/
 │   ├── add-character/
 │   ├── prep-session/
-│   └── weave-threads/
+│   ├── weave-threads/
+│   └── scribe-session/
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Compiles Tier 3 Markdown digests and references.json
-│   └── audit_coverage.py       # Structural audit of campaign coverage and topology
+│   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
+│   └── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction
 ├── jekyll/                     # Source-of-truth Jekyll engine
 │   ├── _plugins/
 │   │   ├── data_extractor.rb
@@ -88,3 +90,47 @@ To propagate Jekyll engine updates and Git hooks to your campaign repositories:
 ```bash
 ./sync.sh ../charged ../hostile
 ```
+
+### Audio Transcription & Session Scribe Pipeline (macOS)
+
+`scribe-session` provides a single-pass end-to-end pipeline that transcribes table session recordings locally on Apple Silicon Metal GPUs and synthesises both Google Drive archival notes and an in-voice repository chapter.
+
+#### 1. One-Time macOS Setup
+
+Install the required CLI dependencies and download OpenAI's Whisper Large-v3-Turbo model:
+
+```bash
+brew install ffmpeg whisper-cpp
+mkdir -p ~/.whisper-models
+curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
+```
+
+*(Optional)* If capturing Discord voice calls locally, install OBS Studio:
+
+```bash
+brew install --cask obs
+```
+
+In OBS, configure **macOS Audio Capture** (*Application Capture* $\rightarrow$ `Discord`) and **Audio Input Capture** (hardware microphone) recording to `.mkv` or `.mp4`.
+
+#### 2. Running the Pipeline
+
+From within any campaign repository in Antigravity:
+
+```text
+/scribe-session ~/Movies/Session_12.mkv
+```
+
+Alternatively, invoke the acoustic pre-processor directly via the command line:
+
+```bash
+python3 ../oude-mechanismen/scripts/transcribe_session.py ~/Movies/Session_12.mkv
+```
+
+The pipeline:
+1. Compiles a dynamic proper-noun glossary from `.agents/context/catalog.json` and prompts Whisper.
+2. Normalises the recording to 16 kHz mono WAV and transcribes on Apple Metal GPU in minutes.
+3. Synthesises structured archival GM session notes in `<drive_dir>/_sessions/<slug>_session_notes.md`.
+4. Drafts a canonical, cross-linked chapter in `campaigns/<Campaign>/<chapter>.md` calibrated to the setting voice.
+5. Refreshes `.agents/context/catalog.json` and leaves repository files unstaged for review.

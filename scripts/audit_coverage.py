@@ -126,7 +126,7 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
     drive_files: List[Path] = []
     try:
         for root, dirs, files in os.walk(drive_dir):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "_digests"]
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("_digests", "_sessions")]
             for f in files:
                 if not f.startswith(".") and not f.startswith("~"):
                     drive_files.append(Path(root) / f)

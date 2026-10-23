@@ -79,5 +79,9 @@ This section parameterises the shared skills in oude-mechanismen.
 
 - Default Campaign Subfolder: `campaigns/[DefaultCampaign]/`
 - Campaign Hub Page: `[index](../../directory/[DefaultHub]/index.md)`
+- Chapter Naming Convention: `ep_001.md` # or `001.md` / `chap001.md`
+- Chapter Timestamp Format: `YYYY-MM-DD` # or `YYYY-MM-DD HH:MM`
+- Location Front Matter Key: `region` # or `location`
 - Character Archetypes / Vocations: [Available setting classes, roles, or affiliations]
 - Session Prep Mode: [Expedition / Station Crawl / Urban Mystery]
+- Party Roster / Player Characters: [Optional character names or folder for Whisper phonetic disambiguation]
