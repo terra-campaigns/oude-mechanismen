@@ -22,7 +22,7 @@ Then begin.
 - `.agents/context/tier1_sources.yml` (if present) — to identify active content directories.
 - All markdown files in content folders (`campaigns/`, `directory/`, `systems/`, `statblocks/`, `trading/`, and `misc/`).
 - `index.md` at the repo root.
-- `all-content.md` and `all-agent.md` — to understand what feeds the site build.
+- `all-content.md` — to understand what feeds the site build.
 - Image files in `imgs/` — list filenames (no need to open them).
 
 Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, or `.git/`.
@@ -78,7 +78,7 @@ Every content file in `campaigns/`, `directory/`, and `systems/` should have at 
 - `title`
 - `parent`
 
-Report files missing either field. Also flag files with `layout:` set to something other than `default` (which is the Just the Docs default and normally omitted), unless the file is `all-content.md`, `all-agent.md`, `index.md`, or a `404` page.
+Report files missing either field. Also flag files with `layout:` set to something other than `default` (which is the Just the Docs default and normally omitted), unless the file is `all-content.md`, `index.md`, or a `404` page.
 
 ### 8. Duplicate titles
 

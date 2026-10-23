@@ -316,11 +316,13 @@ def get_directory_status(repo_root: Path, route_graph: Optional[Dict[str, Any]])
             child_notes = [p.stem for p in folder_path.glob("*.md") if p.name != "index.md"]
 
         content_lines = 0
+        has_trade_table = False
         if has_index and folder_path:
             try:
                 txt = (folder_path / "index.md").read_text(encoding="utf-8")
                 body = re.sub(r"^---.*?---\s*", "", txt, flags=re.DOTALL)
                 content_lines = len([l for l in body.splitlines() if l.strip()])
+                has_trade_table = "Most profitable trade" in txt or "Location Price" in txt
             except Exception:
                 pass
 
@@ -333,6 +335,7 @@ def get_directory_status(repo_root: Path, route_graph: Optional[Dict[str, Any]])
             "folder": str(folder_path.relative_to(repo_root)) if (has_folder and folder_path) else None,
             "child_entities": child_notes,
             "content_lines": content_lines,
+            "has_trade_table": has_trade_table,
         }
 
     return status
@@ -363,6 +366,7 @@ def calculate_proximity_gaps(
                 "state": dstate.get("state", "Untapped"),
                 "folder": dstate.get("folder"),
                 "child_entities": dstate.get("child_entities", []),
+                "has_trade_table": dstate.get("has_trade_table", False),
             })
 
         if hops < max_hops:
@@ -526,11 +530,20 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
         lines.append("")
         prox = report["proximity_gaps"]
         if prox:
-            lines.append("| Destination | Hops | Travel Time | Current State | Directory Folder |")
+            lines.append("| Destination | Hops | Travel Time | Current State | Notes & Deficiencies |")
             lines.append("|---|---|---|---|---|")
             for p in prox:
                 folder_desc = f"`{p['folder']}`" if p["folder"] else "*None*"
-                lines.append(f"| **{p['station']}** | {p['hops']} | {p['total_weeks']} weeks | {p['state']} | {folder_desc} |")
+                notes = []
+                if p["state"] == "Untapped":
+                    notes.append("No entry in `directory/`.")
+                elif p["state"] == "Stub":
+                    notes.append("Folder exists but has under 8 lines of body content.")
+                else:
+                    ent_cnt = len(p.get("child_entities", []))
+                    market_info = "; market table present" if p.get("has_trade_table") else ""
+                    notes.append(f"{ent_cnt} entities in {folder_desc}{market_info}")
+                lines.append(f"| **{p['station']}** | {p['hops']} | {p['total_weeks']} weeks | {p['state']} | {' '.join(notes)} |")
             lines.append("")
         else:
             lines.append("No destination gaps identified within the specified search radius.")
@@ -538,21 +551,44 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
 
         factions = report.get("factions", {})
         curr = factions.get("current_station", {})
+        intro_curr = curr.get("introduced", [])
+        if intro_curr:
+            lines.append(f"### Introduced Entities at {curr.get('name')}")
+            lines.append("")
+            for ent in intro_curr:
+                desc = ent.get("role") or ent.get("summary", "")
+                desc_str = f": {desc}" if desc else ""
+                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}){desc_str}")
+            lines.append("")
+
         untapped_curr = curr.get("untapped", [])
         if untapped_curr:
             lines.append(f"### Untapped Lore & Entities at {curr.get('name')}")
             lines.append("")
             for ent in untapped_curr:
-                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}): {ent.get('summary', '')}")
+                desc = ent.get("role") or ent.get("summary", "")
+                desc_str = f": {desc}" if desc else ""
+                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}){desc_str}")
+            lines.append("")
+
+        hazards = curr.get("hazards", [])
+        if hazards:
+            lines.append(f"### Regional Environmental Hazards at {curr.get('name')}")
+            lines.append("")
+            for haz in hazards:
+                lines.append(f"- {haz}")
             lines.append("")
 
         prox_untapped = factions.get("proximate_untapped_entities", [])
         if prox_untapped:
             lines.append("### Untapped Entities in Proximate Locations")
             lines.append("")
+            lines.append("| Destination | Hop | Entity | Role / Summary |")
+            lines.append("|---|---|---|---|")
             for pu in prox_untapped:
                 ent = pu["entity"]
-                lines.append(f"- **{ent['name']}** ({ent.get('type', 'Entity')}, at {pu['station']}, {pu['hops']} hop): {ent.get('summary', '')}")
+                desc = ent.get("role") or ent.get("summary", "")
+                lines.append(f"| {pu['station']} | {pu['hops']} | **{ent['name']}** ({ent.get('type', 'Entity')}) | {desc} |")
             lines.append("")
     elif not has_graph:
         lines.append("## Geographic Proximity")

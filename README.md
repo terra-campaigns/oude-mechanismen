@@ -53,7 +53,6 @@ oude-mechanismen/
 │   │   ├── header_chapter.md
 │   │   ├── header_directories.md
 │   │   └── image_gallery.html
-│   ├── all-agent.md
 │   └── all-content.md
 ├── githooks/
 │   └── pre-commit              # Git hook to refresh catalog.json on commit

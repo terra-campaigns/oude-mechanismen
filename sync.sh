@@ -30,8 +30,8 @@ for REPO in "${TARGET_REPOS[@]}"; do
   cp "$SCRIPT_DIR/jekyll/_includes/header_directories.md" "$ABS_REPO/_includes/"
   cp "$SCRIPT_DIR/jekyll/_includes/image_gallery.html" "$ABS_REPO/_includes/"
 
-  # 3. Dynamic context dumps
-  cp "$SCRIPT_DIR/jekyll/all-agent.md" "$ABS_REPO/all-agent.md"
+  # 3. Dynamic content dump
+  rm -f "$ABS_REPO/all-agent.md" "$ABS_REPO/_site/all-agent.html"
   cp "$SCRIPT_DIR/jekyll/all-content.md" "$ABS_REPO/all-content.md"
 
   # 4. Git hook

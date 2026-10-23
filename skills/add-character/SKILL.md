@@ -84,11 +84,14 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
 {% endcomment %}
 ```
 
+> [!NOTE]
+> The link `[campaign-relationship](<relative_path_to_campaign_index.md>)` inside the comment block is parsed by Jekyll's native `_plugins/data_extractor.rb` to generate cross-link backlinks between the character and the campaign page. Calculate the relative path from the character's file location to the target campaign's `index.md` (e.g. `../../campaigns/UVG24XX/index.md` from `directory/Atles/`).
+
 ## 4. Prose Formatting
 
 ### For Player Characters (PCs)
 
-Format background traits in bold question-and-answer pairs, separated by empty Markdown lines, followed by any debt contract or corporate indenture:
+Format background traits using setting-specific questions from `## Campaign Specification` in `.agents/AGENTS.md` (or general background questions if unspecified), separated by empty Markdown lines, followed by any debt contract or corporate indenture:
 
 ```markdown
 **[Question 1]:** [Detail].

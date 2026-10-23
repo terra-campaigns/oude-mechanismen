@@ -71,7 +71,10 @@ If **Deep** is selected, read the most relevant PDF(s) from the path specified u
 4. Read the target file.
 5. Read 2–3 nearby files in the same folder (siblings or parent index) to calibrate local tone and naming.
 6. If **Vicinity** or **Broad** scope: identify the full set of files to review based on the selected scope.
-7. For each file in scope, identify passages where the prose is flat, generic, overly modern, or out-of-voice.
+7. For each file in scope, identify passages where the prose is flat, generic, overly modern, or out-of-voice. Focus on:
+   - Descriptions that lack sensory texture, physical grit, or setting economy.
+   - Sentences that are overly long, explanatory, or purple.
+   - Mechanical text that is awkward but could be tightened without changing meaning.
 8. Edit each file directly. The user will review changes line-by-line in the IDE.
 9. If a file is already well-voiced, say so and skip it.
 
