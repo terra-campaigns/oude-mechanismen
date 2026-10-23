@@ -98,6 +98,63 @@ def load_route_graph(repo_root: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
+def extract_gdrive_pointer_id(fpath: Path) -> Optional[str]:
+    """Extract doc_id from a Google Drive .gsheet or .gdoc pointer file."""
+    if not fpath.is_file():
+        return None
+    try:
+        if fpath.stat().st_size < 10000:
+            data = json.loads(fpath.read_text(encoding="utf-8", errors="ignore"))
+            if isinstance(data, dict):
+                val = data.get("doc_id")
+                return str(val).strip() if val else None
+    except Exception:
+        pass
+    return None
+
+
+def resolve_unindexed_file_action(
+    fpath: Path,
+    ext: str,
+    rel: str,
+    scripts_cache: List[Tuple[str, str]],
+    docs_cache: List[Tuple[str, str]],
+) -> str:
+    """Dynamically discover action hint for an unindexed Drive file by inspecting vault references."""
+    if ext == ".pdf":
+        return f"Run `python3 .agents/scripts/generate_digests.py --scaffold \"{rel}\"`"
+
+    doc_id = extract_gdrive_pointer_id(fpath)
+    identifiers: List[str] = [x for x in [doc_id, fpath.name] if x]
+    if len(fpath.stem) >= 6:
+        identifiers.append(fpath.stem)
+
+    # 1. Check if synced or managed by an agent script
+    for ident in identifiers:
+        for script_rel, script_text in scripts_cache:
+            if ident in script_text:
+                file_type_label = "spreadsheet" if ext == ".gsheet" else "document"
+                return f"Live {file_type_label} (synced via `{script_rel}`)"
+
+    # 2. Check if linked in any campaign note (extract markdown link label if present)
+    for ident in identifiers:
+        for doc_rel, doc_text in docs_cache:
+            if ident in doc_text:
+                m = re.search(r"\[([^\]]+)\]\([^)]*" + re.escape(ident) + r"[^)]*\)", doc_text)
+                if m:
+                    anchor = m.group(1).strip()
+                    return f"{anchor} (linked in `{doc_rel}`)"
+                file_type_label = "Spreadsheet" if ext == ".gsheet" else "Document"
+                return f"{file_type_label} linked in `{doc_rel}`"
+
+    # 3. Fallbacks for unreferenced Drive files
+    if ext == ".gsheet":
+        return "Unlinked spreadsheet — link in a directory note or add to sync script"
+    elif ext == ".gdoc":
+        return "Unlinked document — link in a directory note or transcribe"
+    return "Reference file"
+
+
 def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, Any]:
     """Audit physical Google Drive files against references.json and _digests/."""
     results: Dict[str, Any] = {
@@ -142,25 +199,40 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
 
     known_names = {Path(s.get("source_pdf", "")).name for s in indexed_map.values()}
 
+    scripts_cache: Optional[List[Tuple[str, str]]] = None
+    docs_cache: Optional[List[Tuple[str, str]]] = None
+
+    def get_vault_caches() -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        nonlocal scripts_cache, docs_cache
+        if scripts_cache is None or docs_cache is None:
+            scripts_cache = []
+            scripts_dir = repo_root / ".agents" / "scripts"
+            if scripts_dir.is_dir():
+                for p in sorted(scripts_dir.glob("*.py")):
+                    try:
+                        scripts_cache.append((str(p.relative_to(repo_root)), p.read_text(encoding="utf-8", errors="ignore")))
+                    except Exception:
+                        pass
+
+            docs_cache = []
+            for root, dirs, files in os.walk(repo_root):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("_site", ".jekyll-cache", "node_modules", "vendor")]
+                for f in files:
+                    if f.endswith(".md"):
+                        p = Path(root) / f
+                        try:
+                            docs_cache.append((str(p.relative_to(repo_root)), p.read_text(encoding="utf-8", errors="ignore")))
+                        except Exception:
+                            pass
+        return scripts_cache, docs_cache
+
     for fpath in drive_files:
         ext = fpath.suffix.lower()
         if ext in [".pdf", ".gdoc", ".gsheet"]:
             if fpath.name not in known_names:
                 rel = str(fpath.relative_to(drive_dir))
-                if ext == ".pdf":
-                    action_hint = f"Run `python3 .agents/scripts/generate_digests.py --scaffold \"{rel}\"`"
-                elif ext == ".gsheet":
-                    fname_lower = fpath.name.lower()
-                    if "trad" in fname_lower:
-                        action_hint = "Live trade catalogue (synced via sync_trade.py to trading/)"
-                    elif "caravan" in fname_lower or "atles" in fname_lower:
-                        action_hint = "Expedition ledger (linked to directory/Atles/index.md)"
-                    else:
-                        action_hint = "Spreadsheet ledger or trade table"
-                elif ext == ".gdoc":
-                    action_hint = "Campaign document or background notes"
-                else:
-                    action_hint = "Reference file"
+                sc, dc = get_vault_caches() if ext in [".gsheet", ".gdoc"] else ([], [])
+                action_hint = resolve_unindexed_file_action(fpath, ext, rel, sc, dc)
 
                 results["unindexed_files"].append({
                     "name": fpath.name,
