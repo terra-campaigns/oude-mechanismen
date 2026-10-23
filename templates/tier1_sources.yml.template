@@ -2,6 +2,9 @@
 # Only markdown notes matching include_paths and not matching exclude_paths
 # will be indexed into .agents/context/catalog.json.
 
+# Path to external reference sourcebooks and Markdown digests (optional)
+drive_dir: /path/to/campaign/source_folder
+
 include_paths:
   - campaigns
   - directory

@@ -32,6 +32,7 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: str = None) -> Path:
         p = Path(explicit_drive_dir).expanduser()
         if p.exists():
             return p
+        raise FileNotFoundError(f"Explicit drive_dir '{explicit_drive_dir}' does not exist.")
 
     # Check tier1_sources.yml
     config_file = repo_root / ".agents" / "context" / "tier1_sources.yml"
@@ -42,18 +43,18 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: str = None) -> Path:
                 p = Path(cfg["drive_dir"]).expanduser()
                 if p.exists():
                     return p
+                raise FileNotFoundError(
+                    f"Configured 'drive_dir' path '{cfg['drive_dir']}' does not exist. "
+                    f"Please verify {config_file}."
+                )
         except Exception as e:
+            if isinstance(e, FileNotFoundError):
+                raise
             print(f"[WARN] Failed to read drive_dir from {config_file}: {e}", file=sys.stderr)
 
-    # Standard Google Drive paths for this machine
-    repo_name = repo_root.name
-    candidate = Path.home() / "Library" / "CloudStorage" / "GoogleDrive-estevao.alvarenga@gmail.com" / "My Drive" / "RPG" / "campaigns" / repo_name
-    if candidate.exists():
-        return candidate
-
     raise FileNotFoundError(
-        f"Could not locate Google Drive campaign folder for '{repo_name}'. "
-        f"Specify 'drive_dir' in .agents/context/tier1_sources.yml or pass --drive-dir."
+        f"Could not locate reference digests for campaign '{repo_root.name}'. "
+        f"Please define 'drive_dir' in {config_file} or pass --drive-dir."
     )
 
 
