@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Illustration Filter Studio</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    /* Custom slider styling using design tokens */
+    input[type=range] {
+      accent-color: var(--primary, #3b82f6);
+    }
+    .checkerboard {
+      background-size: 20px 20px;
+      background-position: 0 0, 10px 10px;
+      background-image: 
+        linear-gradient(45deg, rgba(128,128,128,0.08) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.08) 75%, rgba(128,128,128,0.08)),
+        linear-gradient(45deg, rgba(128,128,128,0.08) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.08) 75%, rgba(128,128,128,0.08));
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-4 min-h-screen">
+
+  <!-- Header -->
+  <header class="flex flex-wrap items-center justify-between pb-4 mb-4 border-b border-[var(--border)] gap-4">
+    <div>
+      <h1 class="text-xl font-bold tracking-tight text-[var(--foreground)]" id="studio-title">Campaign Illustration Studio</h1>
+      <p class="text-xs text-[var(--muted-foreground)]" id="studio-subtitle">Blend aesthetic presets, tune inking, and dial in optical texture in real time.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btn-copy-yaml" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--accent)] transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+        <span>Copy YAML</span>
+      </button>
+      <button id="btn-export" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity shadow-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        <span>Download Artwork</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+    <!-- Viewport Column (Canvas) -->
+    <div class="lg:col-span-7 flex flex-col gap-3">
+      <div class="relative bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden shadow-sm checkerboard flex items-center justify-center min-h-[460px] max-h-[720px]" id="canvas-container">
+        <canvas id="preview-canvas" class="max-w-full max-h-[700px] object-contain cursor-default select-none"></canvas>
+        
+        <!-- Loading State -->
+        <div id="loading-overlay" class="absolute inset-0 bg-[var(--background)]/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+          <div class="w-7 h-7 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin"></div>
+          <p class="text-xs text-[var(--muted-foreground)]">Loading preset channels...</p>
+        </div>
+
+        <!-- Crosshair Indicator for Flare Mode -->
+        <div id="flare-reticle" class="hidden absolute pointer-events-none w-8 h-8 -ml-4 -mt-4 border-2 border-[var(--primary)] rounded-full animate-ping opacity-75"></div>
+      </div>
+
+      <!-- Canvas Toolbar -->
+      <div class="flex items-center justify-between text-xs text-[var(--muted-foreground)] px-1">
+        <div class="flex items-center gap-3">
+          <span id="resolution-indicator">0 &times; 0 px</span>
+          <span>&bull;</span>
+          <span id="fps-indicator">60 FPS</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-toggle-flare-mode" class="px-2 py-1 rounded border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--accent)] transition-colors inline-flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span id="flare-mode-text">Click Canvas to Set Flare</span>
+          </button>
+          <button id="btn-reset" class="px-2 py-1 rounded border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--accent)] transition-colors">
+            Reset All
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls Column -->
+    <div class="lg:col-span-5 flex flex-col gap-4">
+
+      <!-- Section: Preset Blend Sliders -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-[var(--foreground)]">Aesthetic Presets Blend</h2>
+          <span class="text-xs text-[var(--muted-foreground)]">Multi-Channel Weights</span>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)]">Blend between distinct campaign colour profiles in real time.</p>
+        
+        <div id="preset-sliders-list" class="flex flex-col gap-3 mt-1">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+
+      <!-- Section: Line Art & Tonal Remap -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
+        <h2 class="text-sm font-semibold text-[var(--foreground)]">Graphic-Novel Inking &amp; Tone</h2>
+
+        <!-- Inking Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-inking" class="font-medium text-[var(--foreground)]">Comic Inking Weight (DoG)</label>
+            <span id="val-inking" class="text-[var(--muted-foreground)]">100%</span>
+          </div>
+          <input id="slider-inking" type="range" min="0" max="150" value="100" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Saturation Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-saturation" class="font-medium text-[var(--foreground)]">Colour Saturation</label>
+            <span id="val-saturation" class="text-[var(--muted-foreground)]">100%</span>
+          </div>
+          <input id="slider-saturation" type="range" min="0" max="200" value="100" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Contrast Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-contrast" class="font-medium text-[var(--foreground)]">Tonal Contrast</label>
+            <span id="val-contrast" class="text-[var(--muted-foreground)]">100%</span>
+          </div>
+          <input id="slider-contrast" type="range" min="50" max="160" value="100" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+      </div>
+
+      <!-- Section: Analogue & Optical Effects -->
+      <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm flex flex-col gap-3">
+        <h2 class="text-sm font-semibold text-[var(--foreground)]">Analogue &amp; Optical Texture</h2>
+
+        <!-- Risograph Grain Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-grain" class="font-medium text-[var(--foreground)]">Risograph / Phosphor Grain</label>
+            <span id="val-grain" class="text-[var(--muted-foreground)]">25%</span>
+          </div>
+          <input id="slider-grain" type="range" min="0" max="100" value="25" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Chromatic Aberration Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-chromatic" class="font-medium text-[var(--foreground)]">Chromatic Aberration</label>
+            <span id="val-chromatic" class="text-[var(--muted-foreground)]">0 px</span>
+          </div>
+          <input id="slider-chromatic" type="range" min="0" max="12" value="0" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Lens Flare Intensity Slider -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between text-xs">
+            <label for="slider-flare" class="font-medium text-[var(--foreground)]">Diffraction Lens Flare</label>
+            <span id="val-flare" class="text-[var(--muted-foreground)]">50%</span>
+          </div>
+          <input id="slider-flare" type="range" min="0" max="100" value="50" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+        </div>
+
+        <!-- Flare Colour Palette -->
+        <div class="flex items-center justify-between text-xs pt-1">
+          <span class="text-[var(--muted-foreground)]">Flare Tint:</span>
+          <div class="flex items-center gap-1.5" id="flare-color-palette">
+            <button class="w-5 h-5 rounded-full border-2 border-[var(--primary)] bg-[#ffeaad]" data-color="#ffeaad" title="Solar Amber"></button>
+            <button class="w-5 h-5 rounded-full border border-[var(--border)] bg-[#8ce4ff]" data-color="#8ce4ff" title="Cyan Arc"></button>
+            <button class="w-5 h-5 rounded-full border border-[var(--border)] bg-[#ff3366]" data-color="#ff3366" title="Carmine Discharge"></button>
+            <button class="w-5 h-5 rounded-full border border-[var(--border)] bg-[#ffffff]" data-color="#ffffff" title="Pure White"></button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 transform translate-y-12 opacity-0 transition-all duration-300 pointer-events-none bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold px-3 py-2 rounded-lg shadow-lg">
+    YAML configuration copied to clipboard!
+  </div>
+
+  <!-- Embedded Campaign Data Definition -->
+  <script id="studio-data" type="application/json">
+  {
+    "title": "Illustration Studio Preview",
+    "subtitle": "Interactive multi-preset blending engine",
+    "entity": "Artwork",
+    "flare_origin": [0.5, 0.35],
+    "presets": [
+      {
+        "id": "moebius_steppe",
+        "label": "Moebius Steppe",
+        "description": "Burnt sienna and brass armour with acid turquoise sky.",
+        "image": "moebius_steppe.jpg",
+        "weight": 70
+      },
+      {
+        "id": "ultraviolet_resonance",
+        "label": "Ultraviolet Resonance",
+        "description": "Royal ultraviolet, carmine pink, and solar amber.",
+        "image": "ultraviolet_resonance.jpg",
+        "weight": 30
+      },
+      {
+        "id": "vomish_hallucination",
+        "label": "Vomish Hallucination",
+        "description": "Maximalist electric violet, liquid mirage, and ocular beams.",
+        "image": "vomish_hallucination.jpg",
+        "weight": 0
+      }
+    ]
+  }
+  </script>
+
+  <script>
+    (function() {
+      // Parse studio configuration
+      let studioData = {
+        title: "Campaign Illustration Studio",
+        subtitle: "Multi-preset graphic novel filter mixer",
+        entity: "Artwork",
+        flare_origin: [0.5, 0.4],
+        presets: []
+      };
+
+      const dataScript = document.getElementById('studio-data');
+      if (dataScript) {
+        try {
+          const parsed = JSON.parse(dataScript.textContent);
+          studioData = Object.assign(studioData, parsed);
+        } catch (e) {
+          console.warn("Could not parse #studio-data JSON", e);
+        }
+      }
+
+      // DOM Elements
+      const canvas = document.getElementById('preview-canvas');
+      const ctx = canvas.getContext('2d');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const resIndicator = document.getElementById('resolution-indicator');
+      const fpsIndicator = document.getElementById('fps-indicator');
+      const toast = document.getElementById('toast');
+      const presetContainer = document.getElementById('preset-sliders-list');
+
+      // Sliders & Controls
+      const inkingSlider = document.getElementById('slider-inking');
+      const saturationSlider = document.getElementById('slider-saturation');
+      const contrastSlider = document.getElementById('slider-contrast');
+      const grainSlider = document.getElementById('slider-grain');
+      const chromaticSlider = document.getElementById('slider-chromatic');
+      const flareSlider = document.getElementById('slider-flare');
+      const btnToggleFlareMode = document.getElementById('btn-toggle-flare-mode');
+      const flareModeText = document.getElementById('flare-mode-text');
+      const flareReticle = document.getElementById('flare-reticle');
+      const btnExport = document.getElementById('btn-export');
+      const btnCopyYaml = document.getElementById('btn-copy-yaml');
+      const btnReset = document.getElementById('btn-reset');
+
+      // State
+      let loadedImages = {}; // id -> HTMLImageElement
+      let presetWeights = {}; // id -> number (0 - 100)
+      let noisePattern = null;
+      let activeFlareColor = "#ffeaad";
+      let flareNormalizedCoords = studioData.flare_origin || [0.5, 0.35];
+      let settingFlarePos = false;
+      let renderScheduled = false;
+      let lastFrameTime = performance.now();
+      let frameCount = 0;
+
+      // Update titles
+      if (studioData.title) document.getElementById('studio-title').textContent = studioData.title;
+      if (studioData.subtitle) document.getElementById('studio-subtitle').textContent = studioData.subtitle;
+
+      // Generate procedural grain texture
+      function createNoiseCanvas() {
+        const nc = document.createElement('canvas');
+        nc.width = 256;
+        nc.height = 256;
+        const nctx = nc.getContext('2d');
+        const imgData = nctx.createImageData(256, 256);
+        const buf = new Uint32Array(imgData.data.buffer);
+        for (let i = 0; i < buf.length; i++) {
+          const val = (Math.random() * 255) | 0;
+          // Monochrome noise with variable alpha
+          buf[i] = (val << 24) | (val << 16) | (val << 8) | val;
+        }
+        nctx.putImageData(imgData, 0, 0);
+        return nc;
+      }
+      const noiseCanvas = createNoiseCanvas();
+
+      // Build preset slider UI
+      function buildPresetSliders() {
+        presetContainer.innerHTML = '';
+        studioData.presets.forEach((p, idx) => {
+          presetWeights[p.id] = (p.weight !== undefined) ? p.weight : (idx === 0 ? 100 : 0);
+
+          const row = document.createElement('div');
+          row.className = "flex flex-col gap-1 border-b border-[var(--border)] pb-2.5 last:border-0 last:pb-0";
+
+          row.innerHTML = `
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-1.5">
+                <span class="font-medium text-[var(--foreground)]">${p.label || p.id}</span>
+                <button class="btn-solo text-[11px] px-1.5 py-0.5 rounded border border-[var(--border)] hover:bg-[var(--accent)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" data-id="${p.id}" title="Solo this preset">Solo</button>
+              </div>
+              <span id="val-preset-${p.id}" class="text-[var(--muted-foreground)] font-mono">${presetWeights[p.id]}%</span>
+            </div>
+            ${p.description ? `<p class="text-[11px] text-[var(--muted-foreground)] leading-tight">${p.description}</p>` : ''}
+            <input id="slider-preset-${p.id}" type="range" min="0" max="100" value="${presetWeights[p.id]}" class="w-full h-1.5 bg-[var(--border)] rounded-lg cursor-pointer">
+          `;
+
+          presetContainer.appendChild(row);
+
+          const slider = row.querySelector(`#slider-preset-${p.id}`);
+          const display = row.querySelector(`#val-preset-${p.id}`);
+          const soloBtn = row.querySelector('.btn-solo');
+
+          slider.addEventListener('input', (e) => {
+            presetWeights[p.id] = parseInt(e.target.value, 10);
+            display.textContent = `${presetWeights[p.id]}%`;
+            requestRender();
+          });
+
+          soloBtn.addEventListener('click', () => {
+            studioData.presets.forEach(other => {
+              presetWeights[other.id] = (other.id === p.id) ? 100 : 0;
+              const otherSlider = document.getElementById(`slider-preset-${other.id}`);
+              const otherDisplay = document.getElementById(`val-preset-${other.id}`);
+              if (otherSlider) otherSlider.value = presetWeights[other.id];
+              if (otherDisplay) otherDisplay.textContent = `${presetWeights[other.id]}%`;
+            });
+            requestRender();
+          });
+        });
+      }
+
+      // Load images
+      function loadAllPresets() {
+        let remaining = studioData.presets.length;
+        if (remaining === 0) {
+          loadingOverlay.classList.add('hidden');
+          return;
+        }
+
+        studioData.presets.forEach(p => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            loadedImages[p.id] = img;
+            remaining--;
+            if (canvas.width === 300) { // Set native dimensions on first image
+              canvas.width = img.naturalWidth || 1400;
+              canvas.height = img.naturalHeight || 900;
+              resIndicator.textContent = `${canvas.width} \u00D7 ${canvas.height} px`;
+            }
+            if (remaining <= 0) {
+              loadingOverlay.classList.add('hidden');
+              requestRender();
+            }
+          };
+          img.onerror = () => {
+            console.warn(`Failed to load preset image: ${p.image}`);
+            remaining--;
+            if (remaining <= 0) {
+              loadingOverlay.classList.add('hidden');
+              requestRender();
+            }
+          };
+          img.src = p.image;
+        });
+      }
+
+      // Render Loop
+      function requestRender() {
+        if (!renderScheduled) {
+          renderScheduled = true;
+          requestAnimationFrame(render);
+        }
+      }
+
+      function render() {
+        renderScheduled = false;
+        if (!canvas.width || !canvas.height) return;
+
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Calculate sum of active weights
+        let totalWeight = 0;
+        const activePresets = [];
+        studioData.presets.forEach(p => {
+          const wt = presetWeights[p.id] || 0;
+          if (wt > 0 && loadedImages[p.id]) {
+            totalWeight += wt;
+            activePresets.push({ img: loadedImages[p.id], weight: wt });
+          }
+        });
+
+        // 1. Blend Presets
+        if (activePresets.length > 0 && totalWeight > 0) {
+          let runningSum = 0;
+          activePresets.forEach(item => {
+            runningSum += item.weight;
+            const alpha = item.weight / runningSum;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(item.img, 0, 0, w, h);
+            ctx.restore();
+          });
+        } else if (studioData.presets.length > 0 && loadedImages[studioData.presets[0].id]) {
+          // Fallback to first image
+          ctx.drawImage(loadedImages[studioData.presets[0].id], 0, 0, w, h);
+        }
+
+        // 2. Global Tonal Adjustments (Brightness, Contrast, Saturation)
+        const sat = saturationSlider.value;
+        const cont = contrastSlider.value;
+        if (sat != 100 || cont != 100) {
+          ctx.save();
+          ctx.filter = `saturate(${sat}%) contrast(${cont}%)`;
+          ctx.globalCompositeOperation = 'copy';
+          ctx.drawImage(canvas, 0, 0);
+          ctx.restore();
+        }
+
+        // 3. Comic Inking Weight Simulation
+        const inkVal = parseInt(inkingSlider.value, 10);
+        if (inkVal > 100) {
+          // Deepen ink lines by re-multiplying darker areas
+          ctx.save();
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.globalAlpha = (inkVal - 100) / 100 * 0.45;
+          ctx.drawImage(canvas, 0, 0);
+          ctx.restore();
+        }
+
+        // 4. Chromatic Aberration
+        const caShift = parseInt(chromaticSlider.value, 10);
+        if (caShift > 0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = 0.5;
+          ctx.drawImage(canvas, -caShift, 0, w, h);
+          ctx.drawImage(canvas, caShift, 0, w, h);
+          ctx.restore();
+        }
+
+        // 5. Analogue Risograph / Stipple Grain
+        const grainVal = parseInt(grainSlider.value, 10);
+        if (grainVal > 0) {
+          ctx.save();
+          ctx.globalAlpha = (grainVal / 100) * 0.28;
+          ctx.globalCompositeOperation = 'overlay';
+          if (!noisePattern) noisePattern = ctx.createPattern(noiseCanvas, 'repeat');
+          ctx.fillStyle = noisePattern;
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+        }
+
+        // 6. Diffraction Lens Flare
+        const flareVal = parseInt(flareSlider.value, 10);
+        if (flareVal > 0) {
+          const fx = flareNormalizedCoords[0] * w;
+          const fy = flareNormalizedCoords[1] * h;
+          const flareRadius = Math.max(w, h) * 0.18 * (flareVal / 100);
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = (flareVal / 100) * 0.85;
+
+          // Soft radial glow
+          const grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, flareRadius);
+          grad.addColorStop(0.0, activeFlareColor);
+          grad.addColorStop(0.2, activeFlareColor);
+          grad.addColorStop(0.6, 'rgba(255, 255, 255, 0.2)');
+          grad.addColorStop(1.0, 'transparent');
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(fx, fy, flareRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Diffraction spike rays
+          ctx.strokeStyle = activeFlareColor;
+          ctx.lineWidth = 1.5;
+          const spikeLen = flareRadius * 1.6;
+          for (let i = 0; i < 4; i++) {
+            const angle = (i * Math.PI / 4);
+            ctx.beginPath();
+            ctx.moveTo(fx - Math.cos(angle) * spikeLen, fy - Math.sin(angle) * spikeLen);
+            ctx.lineTo(fx + Math.cos(angle) * spikeLen, fy + Math.sin(angle) * spikeLen);
+            ctx.stroke();
+          }
+
+          ctx.restore();
+        }
+
+        // Update FPS meter
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFrameTime >= 1000) {
+          fpsIndicator.textContent = `${frameCount} FPS`;
+          frameCount = 0;
+          lastFrameTime = now;
+        }
+      }
+
+      // Value label listeners
+      inkingSlider.addEventListener('input', (e) => {
+        document.getElementById('val-inking').textContent = `${e.target.value}%`;
+        requestRender();
+      });
+      saturationSlider.addEventListener('input', (e) => {
+        document.getElementById('val-saturation').textContent = `${e.target.value}%`;
+        requestRender();
+      });
+      contrastSlider.addEventListener('input', (e) => {
+        document.getElementById('val-contrast').textContent = `${e.target.value}%`;
+        requestRender();
+      });
+      grainSlider.addEventListener('input', (e) => {
+        document.getElementById('val-grain').textContent = `${e.target.value}%`;
+        requestRender();
+      });
+      chromaticSlider.addEventListener('input', (e) => {
+        document.getElementById('val-chromatic').textContent = `${e.target.value} px`;
+        requestRender();
+      });
+      flareSlider.addEventListener('input', (e) => {
+        document.getElementById('val-flare').textContent = `${e.target.value}%`;
+        requestRender();
+      });
+
+      // Flare Color Picker
+      document.querySelectorAll('#flare-color-palette button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#flare-color-palette button').forEach(b => b.classList.remove('border-2', 'border-[var(--primary)]'));
+          btn.classList.add('border-2', 'border-[var(--primary)]');
+          activeFlareColor = btn.getAttribute('data-color');
+          requestRender();
+        });
+      });
+
+      // Set Flare Position via Canvas Click
+      btnToggleFlareMode.addEventListener('click', () => {
+        settingFlarePos = !settingFlarePos;
+        if (settingFlarePos) {
+          canvas.style.cursor = 'crosshair';
+          btnToggleFlareMode.classList.add('bg-[var(--primary)]', 'text-[var(--primary-foreground)]');
+          flareModeText.textContent = "Click on Canvas to Place Flare...";
+        } else {
+          canvas.style.cursor = 'default';
+          btnToggleFlareMode.classList.remove('bg-[var(--primary)]', 'text-[var(--primary-foreground)]');
+          flareModeText.textContent = "Click Canvas to Set Flare";
+        }
+      });
+
+      canvas.addEventListener('click', (e) => {
+        if (!settingFlarePos) return;
+        const rect = canvas.getBoundingClientRect();
+        const clickX = (e.clientX - rect.left) / rect.width;
+        const clickY = (e.clientY - rect.top) / rect.height;
+        flareNormalizedCoords = [
+          Math.max(0.0, Math.min(1.0, clickX)),
+          Math.max(0.0, Math.min(1.0, clickY))
+        ];
+        settingFlarePos = false;
+        canvas.style.cursor = 'default';
+        btnToggleFlareMode.classList.remove('bg-[var(--primary)]', 'text-[var(--primary-foreground)]');
+        flareModeText.textContent = "Click Canvas to Set Flare";
+        requestRender();
+      });
+
+      // Reset All Controls
+      btnReset.addEventListener('click', () => {
+        inkingSlider.value = 100;
+        saturationSlider.value = 100;
+        contrastSlider.value = 100;
+        grainSlider.value = 25;
+        chromaticSlider.value = 0;
+        flareSlider.value = 50;
+
+        document.getElementById('val-inking').textContent = '100%';
+        document.getElementById('val-saturation').textContent = '100%';
+        document.getElementById('val-contrast').textContent = '100%';
+        document.getElementById('val-grain').textContent = '25%';
+        document.getElementById('val-chromatic').textContent = '0 px';
+        document.getElementById('val-flare').textContent = '50%';
+
+        studioData.presets.forEach((p, idx) => {
+          presetWeights[p.id] = (idx === 0) ? 100 : 0;
+          const s = document.getElementById(`slider-preset-${p.id}`);
+          const d = document.getElementById(`val-preset-${p.id}`);
+          if (s) s.value = presetWeights[p.id];
+          if (d) d.textContent = `${presetWeights[p.id]}%`;
+        });
+
+        flareNormalizedCoords = studioData.flare_origin || [0.5, 0.35];
+        requestRender();
+      });
+
+      // Export Download
+      btnExport.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = `${(studioData.entity || "artwork").toLowerCase().replace(/\\s+/g, '_')}_filtered.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        link.click();
+      });
+
+      // Copy YAML Recipe
+      btnCopyYaml.addEventListener('click', () => {
+        let yaml = `custom_style_recipe:\n`;
+        yaml += `  entity: "${studioData.entity || "Artwork"}"\n`;
+        yaml += `  presets_blend:\n`;
+        for (const [id, wt] of Object.entries(presetWeights)) {
+          if (wt > 0) yaml += `    ${id}: ${wt}%\n`;
+        }
+        yaml += `  inking_weight: ${inkingSlider.value}%\n`;
+        yaml += `  saturation: ${saturationSlider.value}%\n`;
+        yaml += `  contrast: ${contrastSlider.value}%\n`;
+        yaml += `  grain: ${grainSlider.value}%\n`;
+        yaml += `  chromatic_aberration: ${chromaticSlider.value}px\n`;
+        yaml += `  flare:\n`;
+        yaml += `    intensity: ${flareSlider.value}%\n`;
+        yaml += `    origin: [${flareNormalizedCoords[0].toFixed(3)}, ${flareNormalizedCoords[1].toFixed(3)}]\n`;
+        yaml += `    tint: "${activeFlareColor}"\n`;
+
+        navigator.clipboard.writeText(yaml).then(() => {
+          toast.classList.remove('translate-y-12', 'opacity-0');
+          setTimeout(() => {
+            toast.classList.add('translate-y-12', 'opacity-0');
+          }, 2400);
+        });
+      });
+
+      // Initialise
+      buildPresetSliders();
+      loadAllPresets();
+
+    })();
+  </script>
+</body>
+</html>

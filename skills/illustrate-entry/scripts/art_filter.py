@@ -11,6 +11,7 @@ import argparse
 import math
 import os
 import sys
+from pathlib import Path
 import urllib.request
 import urllib.parse
 import numpy as np
@@ -496,6 +497,53 @@ def main():
         rendered.save(out_path, quality=95)
         rendered_files.append((key, out_path))
         print(f"  -> Saved: {out_path}")
+
+    # Generate Interactive Studio if template is present
+    template_path = Path(__file__).resolve().parent.parent / "resources" / "filter_studio.html"
+    if template_path.exists() and len(rendered_files) > 0:
+        studio_data = {
+            "title": f"{cfg.get('name', 'Campaign')} Illustration Studio",
+            "subtitle": f"{base_name.replace('_', ' ').title()} — Multi-preset slider mixer",
+            "entity": base_name.replace('_', ' ').title(),
+            "flare_origin": [
+                round(focal_points[0][0] / float(target_w), 3) if focal_points else 0.5,
+                round(focal_points[0][1] / float(target_h), 3) if focal_points else 0.4
+            ],
+            "presets": []
+        }
+        for idx, (k, path) in enumerate(rendered_files):
+            p_cfg = presets.get(k, {})
+            rel_img = os.path.basename(path)
+            studio_data["presets"].append({
+                "id": k,
+                "label": p_cfg.get("label", k),
+                "description": p_cfg.get("description", ""),
+                "image": rel_img,
+                "weight": 100 if idx == 0 else 0
+            })
+
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                template_html = f.read()
+
+            import json
+            json_blob = json.dumps(studio_data, indent=2)
+            start_tag = '<script id="studio-data" type="application/json">'
+            end_tag = '</script>'
+            if start_tag in template_html:
+                pre = template_html.split(start_tag, 1)[0]
+                post = template_html.split(start_tag, 1)[1]
+                rest = post.split(end_tag, 1)[1]
+                custom_html = f"{pre}{start_tag}\n{json_blob}\n  {end_tag}{rest}"
+            else:
+                custom_html = template_html
+
+            studio_out_path = os.path.join(out_dir, f"{base_name}_studio.html")
+            with open(studio_out_path, "w", encoding="utf-8") as f:
+                f.write(custom_html)
+            print(f"  -> Generated Interactive Studio: {studio_out_path}")
+        except Exception as e:
+            print(f"Warning: Could not generate interactive studio HTML: {e}")
 
     print(f"\nCompleted: {len(rendered_files)} filtered asset(s) rendered to {out_dir}")
     return 0

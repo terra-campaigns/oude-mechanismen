@@ -69,13 +69,18 @@ The engine applies:
 
 ---
 
-### Step 3: Showcase Carousel & User Review
+### Step 3: Interactive Filter Studio & Showcase
 
-Present the filtered results to the user using an artifact carousel:
+Present the filtered results to the user with real-time multi-preset blending:
 
-1. Copy the generated candidate images into `<appDataDir>/brain/<conversation-id>/`.
-2. Create or update a showcase artifact using ````carousel syntax comparing each filtered preset alongside the original archival source.
-3. Highlight open choices (e.g. which preset style fits best, or if flare positions/colours require fine-tuning).
+1. **Copy generated assets to artifacts**:
+   Copy the generated candidate images and the automatically produced `<entity_clean_name>_studio.html` from `imgs/gallery/` into `<appDataDir>/brain/<conversation-id>/`.
+2. **Surface the Interactive Studio**:
+   Provide the interactive HTML studio artifact (derived from `resources/filter_studio.html`), allowing the user to dial in preset blend weights (0–100%), inking contrast, grain, chromatic aberration, and click-to-place lens flare coordinates in real time.
+3. **Showcase Carousel (optional static companion)**:
+   Include a markdown artifact using ````carousel syntax comparing each filtered preset alongside the original archival source for quick reference.
+4. **Gather user decision**:
+   Once the user blends their preferred balance or selects an export, capture their recipe or winning file for Step 4.
 
 ---
 
