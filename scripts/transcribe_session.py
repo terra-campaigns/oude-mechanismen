@@ -285,24 +285,50 @@ def build_dynamic_glossary(
             other.append(e)
 
     # Prioritise entities and sessions connected to the active campaign
-    camp_sub = (defaults or {}).get("campaign_subfolder", "campaigns")
+    camp_sub = (defaults or {}).get("campaign_subfolder", "campaigns").rstrip("/")
     camp_sessions = [s for s in sessions if (s.get("path") or "").startswith(camp_sub)]
     sessions_to_use = camp_sessions if camp_sessions else sessions
 
     hub_pages = (defaults or {}).get("hub_pages", [])
-    camp_paths = {s.get("path") for s in sessions_to_use}
+    clean_hub_dirs = []
+    for hub in hub_pages:
+        d = str(Path(hub).parent).replace("../", "").strip("/")
+        if d:
+            clean_hub_dirs.append(d)
+
+    core_active_paths = set()
+    other_campaign_paths = set()
+    for e in entries:
+        p = e.get("path") or ""
+        if p.startswith(camp_sub + "/") or p == camp_sub:
+            core_active_paths.add(p)
+        elif p.startswith("campaigns/") and p != "campaigns/index.md":
+            other_campaign_paths.add(p)
+        for d in clean_hub_dirs:
+            if p.startswith(d + "/") or p == d:
+                core_active_paths.add(p)
 
     def is_connected_to_campaign(item: Dict[str, Any]) -> bool:
         p = item.get("path", "")
-        for hub in hub_pages:
-            clean_hub_dir = str(Path(hub).parent).replace("../", "").strip("/")
-            if clean_hub_dir and clean_hub_dir in p:
-                return True
+        if p in core_active_paths:
+            return True
         out_links = set(item.get("links_out", []))
         in_links = set(item.get("links_in", []))
-        if (out_links | in_links) & camp_paths:
+        if (out_links | in_links) & core_active_paths:
             return True
         return False
+
+    # In multi-campaign vaults, restrict glossary & ASR prompt to active campaign entities
+    if other_campaign_paths and core_active_paths:
+        active_people = [x for x in people if is_connected_to_campaign(x)]
+        active_locations = [x for x in locations if is_connected_to_campaign(x)]
+        active_factions = [x for x in factions if is_connected_to_campaign(x)]
+        if active_people:
+            people = active_people
+        if active_locations:
+            locations = active_locations
+        if active_factions:
+            factions = active_factions
 
     people.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
     locations.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
@@ -501,7 +527,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Transcribe tabletop RPG session audio with local Metal GPU Whisper and generate campaign glossary."
     )
-    parser.add_argument("input_file", type=str, help="Path to input audio/video recording (.mkv, .mp4, .wav, .m4a)")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        default=None,
+        type=str,
+        help="Path to input audio/video recording (.mkv, .mp4, .wav, .m4a) or transcript (.txt)"
+    )
     parser.add_argument("--repo-root", type=str, default=None, help="Campaign repository root (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Override Google Drive campaign folder")
     parser.add_argument("--session-slug", type=str, default=None, help="Custom slug (e.g. 2026-10-23_ep012)")
@@ -529,12 +561,12 @@ def main():
     sessions_dir = drive_dir / "_sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
-    input_path = Path(args.input_file).expanduser().resolve()
-    is_text_input = input_path.suffix.lower() in (".txt", ".md", ".vtt", ".srt")
+    input_path = Path(args.input_file).expanduser().resolve() if args.input_file else None
+    is_text_input = bool(input_path and input_path.suffix.lower() in (".txt", ".md", ".vtt", ".srt"))
     skip_transcribe = args.skip_transcribe or is_text_input
 
-    if not skip_transcribe and not input_path.exists():
-        print(f"Error: Input recording '{input_path}' does not exist.", file=sys.stderr)
+    if not skip_transcribe and (not input_path or not input_path.exists()):
+        print(f"Error: Input recording '{args.input_file}' does not exist.", file=sys.stderr)
         sys.exit(1)
 
     # 2. Campaign defaults and next chapter discovery
@@ -585,11 +617,17 @@ def main():
                 temp_wav.unlink()
     else:
         # Pre-transcribed input or reuse of existing transcript
-        if input_path.exists() and input_path.is_file() and input_path != transcript_path:
+        is_generated_artifact = bool(
+            input_path and (
+                input_path in (transcript_path, glossary_path, notes_path)
+                or input_path.name.endswith(("_glossary.md", "_session_notes.md"))
+            )
+        )
+        if input_path and input_path.exists() and input_path.is_file() and not is_generated_artifact:
             if not args.json:
                 print(f"==> Ingesting pre-transcribed text from '{input_path.name}' into {transcript_path}...")
             shutil.copy2(input_path, transcript_path)
-        elif not transcript_path.exists():
+        elif not transcript_path.exists() and not args.skip_transcribe:
             print(f"Error: Transcript file not found at '{input_path}' or '{transcript_path}'.", file=sys.stderr)
             sys.exit(1)
 
