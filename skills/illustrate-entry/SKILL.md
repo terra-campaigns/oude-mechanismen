@@ -63,9 +63,9 @@ python3 .agents/scripts/art_filter.py \
 ```
 
 The engine applies:
-- **Difference of Gaussians (DoG) comic inking**: Normalised edge-detection extracting organic black pen contours along rivets, joints, folds, and anatomical features.
-- **Tonal remapping**: Linear colour interpolation using the campaign's custom gradient ramps.
-- **Optical & texture effects**: Chromatic aberration channel splitting, risograph stipple grain, liquid light mirage wave warping, and diffraction lens flares.
+- **Difference of Gaussians (DoG) comic inking & luminous edge glow**: Normalised edge-detection extracting organic black pen contours along rivets, joints, folds, and anatomical features, or additive neon emission tracing over dark bulkheads.
+- **Tonal remapping & Sabattier solarisation**: Linear colour interpolation using the campaign's custom gradient ramps, with optional tone-folding inversion for medical tomographic scans (`--solarise`).
+- **Optical & texture effects**: Polar-coordinate singularity vortex pinching (`--polar-vortex`), chromatic aberration channel splitting, risograph stipple grain, liquid light mirage wave warping, and diffraction lens flares.
 
 ---
 
@@ -101,3 +101,16 @@ Once the user selects their preferred style:
    - Leave only the selected artwork in the working tree.
 5. **Verify site build**:
    Run `bundle exec jekyll build` to ensure data extracts refresh and the page renders without errors.
+
+---
+
+## Operational Checklist for New Campaign Artwork
+
+Before selecting and integrating filtered archival artwork into any campaign entry:
+
+- [ ] **Establish Archival Provenance**: Confirm the source image is a genuine historical artefact, museum specimen, technical plate, patent illustration, or period photograph (strictly no AI generation). Verify public domain (CC0, CC BY, or CC BY-SA) status and record the canonical attribution URL.
+- [ ] **Establish Subject Grounding**: Does the image depict blue-collar spacers, antique hardware, android anatomy, diving gear, or claustrophobic industrial scale? Avoid generic high-tech fantasy tropes.
+- [ ] **Enforce Palette Purity**: Constrain the colour ramp to established campaign regimes in `.agents/context/aesthetics.yml` (e.g. Abyssal Cyan, Surgical Crimson, Subcutaneous Mauve, Nostromo Grime, or Amber CRT). Do not mix arbitrary colours.
+- [ ] **Verify Line & Edge Treatment**: Ensure edges exhibit either organic ink contours (DoG inking) or luminous neon discharge tracing. Avoid flat digital fills.
+- [ ] **Apply Analogue Texture**: Confirm film grain, scanlines, or stipple dispersion are present to prevent sterile digital gradients.
+- [ ] **Verify Attribution Integrity**: Check that YAML `footer_content:` contains full canonical attribution linking to the contributing cultural institution or open archive.

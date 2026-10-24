@@ -135,6 +135,63 @@ def apply_liquid_wave_distortion(rgb_arr, amplitude=7.0, wavelength=100.0):
     return rgb_arr[y_coords, new_x]
 
 
+def apply_sabattier_solarisation(gray_np, power=1.4):
+    """
+    Applies photographic Sabattier solarisation / tone folding.
+    Inverts midtones while keeping extremes, creating medical tomography aesthetic.
+    """
+    arr = np.clip(gray_np, 0.0, 255.0) / 255.0
+    solarised = np.abs(arr - 0.5) * 2.0
+    solarised = np.power(solarised, power)
+    return (solarised * 255.0).astype(np.float32)
+
+
+def apply_polar_vortex_distortion(rgb_arr, strength=6.0, center_x=None, center_y=None):
+    """
+    Re-maps Cartesian coordinates into polar coordinates and applies a non-linear spiral pinch.
+    Visualises Monarch's neural singularity and reality distortion.
+    """
+    if strength == 0.0:
+        return rgb_arr
+    h, w = rgb_arr.shape[:2]
+    cx = float(center_x) if center_x is not None else (w / 2.0)
+    cy = float(center_y) if center_y is not None else (h / 2.0)
+    max_radius = max(min(cx, cy), 1.0)
+
+    y_grid, x_grid = np.ogrid[:h, :w]
+    dx = x_grid - cx
+    dy = y_grid - cy
+    r = np.sqrt(dx * dx + dy * dy)
+    theta = np.arctan2(dy, dx)
+
+    factor = np.clip(1.0 - (r / max_radius), 0.0, 1.0)
+    theta_twisted = theta + (factor ** 2) * strength
+
+    src_x = np.clip(cx + r * np.cos(theta_twisted), 0, w - 1).astype(np.int32)
+    src_y = np.clip(cy + r * np.sin(theta_twisted), 0, h - 1).astype(np.int32)
+
+    return rgb_arr[src_y, src_x]
+
+
+def apply_luminous_edge_glow(rgb_arr, gray_img, color=(255, 17, 51), intensity=1.2, sigma1=0.7, sigma2=2.0):
+    """
+    Extracts Difference of Gaussians (DoG) edges and composites them as additive neon glow.
+    """
+    if intensity <= 0:
+        return rgb_arr
+    b1 = gray_img.filter(ImageFilter.GaussianBlur(sigma1))
+    b2 = gray_img.filter(ImageFilter.GaussianBlur(sigma2))
+    dog = np.abs(np.array(b1, dtype=np.float32) - np.array(b2, dtype=np.float32))
+    edge_mask = np.clip((dog - 3.5) / 8.0, 0.0, 1.0)
+
+    glow = np.zeros_like(rgb_arr, dtype=np.float32)
+    col_np = np.array(color, dtype=np.float32)
+    for c in range(3):
+        glow[..., c] = edge_mask * col_np[c] * intensity
+
+    return np.clip(rgb_arr.astype(np.float32) + glow, 0, 255).astype(np.uint8)
+
+
 def draw_lens_flare(draw, x, y, size=120, color=(255, 255, 255), num_spikes=8):
     """
     Renders a multi-tiered diffraction lens flare with halation and needle spikes.
@@ -223,7 +280,7 @@ def detect_focal_points(gray_np, max_points=4):
     return focal
 
 
-def process_image(img, preset_name, preset_cfg, focal_points=None, separate_matte=True):
+def process_image(img, preset_name, preset_cfg, focal_points=None, separate_matte=True, extra_opts=None):
     """
     Renders a single aesthetic preset on an image.
     """
@@ -241,8 +298,16 @@ def process_image(img, preset_name, preset_cfg, focal_points=None, separate_matt
     ink_lines = extract_comic_ink_lines(gray, sigma1=s1, sigma2=s2, threshold=thresh, span=span)
     ink_lines_3c = np.stack([ink_lines]*3, axis=-1)
 
-    # Normalise foreground tonal range
-    subject_norm = np.clip((gray_np - 12.0) / 115.0, 0.0, 1.0) * 255.0
+    # Sabattier solarisation / tone folding
+    solar_cfg = preset_cfg.get("solarisation")
+    do_solar = (solar_cfg and solar_cfg.get("enabled", False)) or (extra_opts and getattr(extra_opts, "solarise", False))
+    if do_solar:
+        power = solar_cfg.get("power", 1.4) if solar_cfg else 1.4
+        gray_np = apply_sabattier_solarisation(gray_np, power=power)
+        subject_norm = np.clip(gray_np, 0.0, 255.0)
+    else:
+        # Normalise foreground tonal range
+        subject_norm = np.clip((gray_np - 12.0) / 115.0, 0.0, 1.0) * 255.0
 
     # Ramps
     ramp = create_color_ramp(preset_cfg["ramp"])
@@ -269,9 +334,30 @@ def process_image(img, preset_name, preset_cfg, focal_points=None, separate_matt
     else:
         comp = subject_col
 
-    # Apply comic ink lines
-    comp = comp * ink_lines_3c
+    # Apply comic ink lines if enabled
+    if ink_cfg.get("enabled", True):
+        comp = comp * ink_lines_3c
     comp = np.clip(comp, 0, 255).astype(np.uint8)
+
+    # Luminous neon edge glow
+    lum_cfg = preset_cfg.get("luminous_edge")
+    do_lum = (lum_cfg and lum_cfg.get("enabled", False)) or (extra_opts and getattr(extra_opts, "luminous_edge", False))
+    if do_lum:
+        lum_color = lum_cfg.get("color", [255, 17, 51]) if lum_cfg else [255, 17, 51]
+        lum_intensity = float(lum_cfg.get("intensity", 1.2)) if lum_cfg else 1.2
+        comp = apply_luminous_edge_glow(comp, gray, color=lum_color, intensity=lum_intensity)
+
+    # Polar coordinate singularity vortex
+    vortex_cfg = preset_cfg.get("polar_vortex")
+    vortex_strength = 0.0
+    if vortex_cfg and vortex_cfg.get("enabled", False):
+        vortex_strength = float(vortex_cfg.get("strength", 6.0))
+    elif extra_opts and getattr(extra_opts, "polar_vortex", None) is not None:
+        vortex_strength = float(extra_opts.polar_vortex)
+
+    if vortex_strength != 0.0:
+        vx_cx, vx_cy = focal_points[0] if (focal_points and len(focal_points) > 0) else (w / 2.0, h / 2.0)
+        comp = apply_polar_vortex_distortion(comp, strength=vortex_strength, center_x=vx_cx, center_y=vx_cy)
 
     # Liquid wave mirage distortion
     mirage_cfg = preset_cfg.get("mirage_wave")
@@ -340,6 +426,9 @@ def main():
     parser.add_argument("--no-matte", action="store_true", help="Do not separate foreground subject from backdrop.")
     parser.add_argument("--no-flares", action="store_true", help="Disable specular and lens flares.")
     parser.add_argument("--flare-coords", help="Explicit focal coordinates as 'x,y' for flare placement.")
+    parser.add_argument("--solarise", action="store_true", help="Force Sabattier solarisation / tone folding.")
+    parser.add_argument("--polar-vortex", type=float, metavar="STRENGTH", help="Apply polar coordinate singularity vortex.")
+    parser.add_argument("--luminous-edge", action="store_true", help="Inject additive luminous neon edge contour.")
 
     args = parser.parse_args()
 
@@ -399,7 +488,8 @@ def main():
             key,
             p_cfg,
             focal_points=focal_points,
-            separate_matte=not args.no_matte
+            separate_matte=not args.no_matte,
+            extra_opts=args
         )
         out_filename = f"{base_name}_{key}.jpg"
         out_path = os.path.join(out_dir, out_filename)
