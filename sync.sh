@@ -47,8 +47,12 @@ while [ $# -gt 0 ]; do
 done
 
 if [ ${#TARGET_REPOS[@]} -eq 0 ]; then
-  echo "Usage: ./sync.sh [--check] [--diff] [--force] <path_to_campaign_repo_1> [path_to_campaign_repo_2 ...]"
-  exit 1
+  if [ "$PWD" != "$SCRIPT_DIR" ]; then
+    TARGET_REPOS=(".")
+  else
+    echo "Usage: ./sync.sh [--check] [--diff] [--force] <path_to_campaign_repo_1> [path_to_campaign_repo_2 ...]"
+    exit 1
+  fi
 fi
 
 # Manifest of engine-managed files:
