@@ -21,7 +21,19 @@ An automated, single-pass pipeline to process a tabletop RPG session recording i
 
 ## Workflow Procedure
 
-### Step 1: Pre-Processing & Acoustic Transcription
+### Overnight Local Mode (Zero Cloud Data)
+
+To execute the entire acoustic transcription and LLM synthesis locally without sending any data to external cloud APIs (e.g. before going to bed):
+
+```bash
+python3 .agents/scripts/scribe_session.py "<input_file>"
+```
+
+This autonomously coordinates local Metal GPU Whisper transcription and local Ollama inference (`scribe-14b` or `scribe-14b-bilingual`), generating both the archival session notes in Google Drive and the canonical draft chapter in the repository.
+
+---
+
+### Step 1: Pre-Processing & Acoustic Transcription (Interactive Mode)
 
 Execute the shared orchestrator script from the campaign workspace:
 
