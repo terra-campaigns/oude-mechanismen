@@ -1,8 +1,11 @@
 .DS_Store
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+.agents/venv/
 _site/
 .jekyll-cache/
 .sass-cache/
+.env

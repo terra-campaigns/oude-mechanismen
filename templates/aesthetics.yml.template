@@ -1,0 +1,92 @@
+# Campaign Aesthetics Configuration Template
+# Used by the illustrate-entry skill and art_filter.py to style archival imagery into campaign artwork.
+# Copy this file to .agents/context/aesthetics.yml in your campaign vault.
+
+name: "My Campaign"
+genre: "Science fantasy / Graphic novel"
+influences:
+  - "Moebius (Jean Giraud)"
+  - "Hergé (Ligne Claire)"
+  - "Classic European Graphic Novels"
+
+default_output_dir: "imgs/gallery"
+
+presets:
+  classic_graphic_novel:
+    label: "Classic Graphic Novel"
+    description: "Bold ink contours with warm parchment, burnt sienna, and brass wash."
+    ramp:
+      - [0.00, "#120c08"]
+      - [0.25, "#4a2412"]
+      - [0.55, "#a85f2a"]
+      - [0.80, "#db9f4e"]
+      - [0.95, "#f2d89b"]
+      - [1.00, "#fffef5"]
+    bg_ramp:
+      - [0.00, "#1b252b"]
+      - [0.45, "#3b5563"]
+      - [0.75, "#7ba2b5"]
+      - [1.00, "#d8eaf2"]
+    inking:
+      sigma1: 1.0
+      sigma2: 2.8
+      threshold: 2.2
+      span: 5.0
+    grain_sigma: 5.0
+    chromatic_aberration: 3
+    flares:
+      enabled: true
+      size: 90
+      color: [255, 235, 185]
+      spikes: 6
+
+  ligne_claire:
+    label: "Ligne Claire"
+    description: "Crisp uniform ink lines with bright, clear pastel tones and subtle desert turquoise sky."
+    ramp:
+      - [0.00, "#101018"]
+      - [0.25, "#383d52"]
+      - [0.55, "#7a6e65"]
+      - [0.78, "#c49a6c"]
+      - [0.92, "#f0caa1"]
+      - [1.00, "#fffcf7"]
+    bg_ramp:
+      - [0.00, "#12313b"]
+      - [0.40, "#296273"]
+      - [0.75, "#5da8b8"]
+      - [1.00, "#c7eff5"]
+    inking:
+      sigma1: 0.9
+      sigma2: 2.4
+      threshold: 1.9
+      span: 4.0
+    grain_sigma: 3.5
+    chromatic_aberration: 2
+    flares:
+      enabled: false
+
+  monochrome_ink:
+    label: "Monochrome Woodcut & Ink"
+    description: "High-contrast archival black-and-white ink with intense risograph stipple grain."
+    ramp:
+      - [0.00, "#080808"]
+      - [0.30, "#1c1c1c"]
+      - [0.60, "#525252"]
+      - [0.85, "#ababab"]
+      - [1.00, "#ffffff"]
+    bg_ramp:
+      - [0.00, "#000000"]
+      - [0.50, "#2a2a2a"]
+      - [1.00, "#888888"]
+    inking:
+      sigma1: 1.1
+      sigma2: 3.0
+      threshold: 2.4
+      span: 4.5
+    grain_sigma: 8.0
+    chromatic_aberration: 0
+    flares:
+      enabled: true
+      size: 110
+      color: [255, 255, 255]
+      spikes: 4

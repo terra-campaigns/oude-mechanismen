@@ -1,0 +1,25 @@
+---
+title: Home
+layout: home
+nav_order: 1
+
+footer_content: Powered by <a href="https://github.com/efsa/oude-mechanismen" target="_blank">Oude Mechanismen</a> and <a href="https://just-the-docs.com" target="_blank">Just the Docs</a>.
+---
+
+# Campaign Chronicles
+
+Welcome to the campaign chronicles and gazetteer.
+
+## Overview
+
+Use this space to introduce the setting, active campaign arcs, and major factions.
+
+## Navigation
+
+- **[Campaigns](campaigns/index.md)**: Session logs, chapter chronicles, and play reports.
+- **[Directory](directory/index.md)**: Dossiers on characters, factions, locations, and creatures.
+- **[Systems](systems/index.md)**: Rules, procedures, character generation, and spark tables.
+
+## Moodboard
+
+{% include image_gallery.html %}

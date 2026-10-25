@@ -114,8 +114,8 @@ Once the user selects their preferred style:
 Before selecting and integrating filtered archival artwork into any campaign entry:
 
 - [ ] **Establish Archival Provenance**: Confirm the source image is a genuine historical artefact, museum specimen, technical plate, patent illustration, or period photograph (strictly no AI generation). Verify public domain (CC0, CC BY, or CC BY-SA) status and record the canonical attribution URL.
-- [ ] **Establish Subject Grounding**: Does the image depict blue-collar spacers, antique hardware, android anatomy, diving gear, or claustrophobic industrial scale? Avoid generic high-tech fantasy tropes.
-- [ ] **Enforce Palette Purity**: Constrain the colour ramp to established campaign regimes in `.agents/context/aesthetics.yml` (e.g. Abyssal Cyan, Surgical Crimson, Subcutaneous Mauve, Nostromo Grime, or Amber CRT). Do not mix arbitrary colours.
+- [ ] **Establish Subject Grounding**: Does the image align with the campaign's visual motifs, themes, and technology level specified in `.agents/AGENTS.md`? Avoid generic or incongruous tropes.
+- [ ] **Enforce Palette Purity**: Constrain the colour ramp to established campaign presets in `.agents/context/aesthetics.yml`. Do not mix arbitrary colours outside the defined palette.
 - [ ] **Verify Line & Edge Treatment**: Ensure edges exhibit either organic ink contours (DoG inking) or luminous neon discharge tracing. Avoid flat digital fills.
 - [ ] **Apply Analogue Texture**: Confirm film grain, scanlines, or stipple dispersion are present to prevent sterile digital gradients.
 - [ ] **Verify Attribution Integrity**: Check that YAML `footer_content:` contains full canonical attribution linking to the contributing cultural institution or open archive.

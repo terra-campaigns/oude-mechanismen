@@ -1,0 +1,46 @@
+# Just the Docs configuration for campaign vault
+title: "Campaign Wiki"
+description: "Tabletop RPG Campaign Vault & Setting Gazetteer"
+theme: "just-the-docs"
+
+# Configure your publishing URL and base path (if hosting on GitHub Pages)
+url: "https://your-username.github.io"
+baseurl: ""
+
+permalink: pretty
+
+plugins:
+  - jekyll-relative-links
+  - jekyll-redirect-from
+
+# Theme color scheme (options: nil [vanilla light], "dark", or custom)
+color_scheme: nil
+
+# Search configuration
+search_enabled: true
+search:
+  heading_level: 3
+  previews: 2
+
+# Navigation
+nav_sort: nav_order
+
+# Exclude repository and engine metadata from Jekyll static build
+exclude:
+  - ".agents"
+  - ".githooks"
+  - ".obsidian"
+  - "bin"
+  - "Gemfile"
+  - "Gemfile.lock"
+  - "README.md"
+  - "LICENSE"
+  - "sync.sh"
+  - "vendor"
+
+# Sass configuration
+sass:
+  quiet_deps: true
+  silence_deprecations:
+    - color-functions
+    - import
