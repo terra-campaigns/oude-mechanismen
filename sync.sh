@@ -109,7 +109,7 @@ for REPO in "${TARGET_REPOS[@]}"; do
       if [ ! -f "$dest" ] && [ -f "$src" ]; then
         mkdir -p "$(dirname "$dest")"
         cp "$src" "$dest"
-        local rel_dest="${dest#$ABS_REPO/}"
+        local rel_dest="${dest#"$ABS_REPO"/}"
         echo "  + Scaffolded $rel_dest"
       fi
     }
