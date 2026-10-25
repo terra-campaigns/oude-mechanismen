@@ -13,6 +13,7 @@ A structured, interactive procedure to prepare the next session of a campaign. T
 - **Iterative and Conversational**: Do not dump all steps in a single monolithic response. Guide the GM through each step one at a time, presenting options, incorporating their steer, and refining before advancing to the next step.
 - **Canon Grounding**: Draw consistently from Tier 1 published notes (`campaigns/`, `directory/`), Tier 2 active rulings (`.agents/context/decisions.md`), and Tier 3 reference digests in `_digests/`.
 - **Setting Flavour**: Align tone, hazards, naming conventions, and aesthetics with the `## Campaign Specification` in `.agents/AGENTS.md`.
+- **Notebook-Optimised Delivery (No Read-Aloud Text)**: Never generate boxed narrative text (`> Table Read-Aloud`) or scripted monologue paragraphs. The GM copies prep into a physical notebook. Keep output ultra-terse, delivering maximum operational density with minimum word count.
 
 ## Step-by-Step Procedure
 
@@ -44,7 +45,10 @@ A structured, interactive procedure to prepare the next session of a campaign. T
 
 - Design a punchy, atmospheric opening scene that thrusts the party immediately into the middle of action, tension, or dilemma.
 - Elevate recently documented or discovered lore from recent session logs and local directory entries rather than starting in passive downtime.
-- Craft the scene using sensory anchors (smells, tactile grit, acoustics, atmospheric pressure) and immediate stakes demanding a decision or reaction from the players.
+- Format strictly as terse, notebook-ready bullet cues rather than scripted read-aloud prose:
+  - 1-line sensory triggers (sound, smell, sight).
+  - 1-line physical and tactical realities (positions, hazards, countdowns).
+  - 2–3 sharp, actionable player dilemmas.
 
 ### Step 3 — MIS: Regional Hazards & Misfortune Table
 
