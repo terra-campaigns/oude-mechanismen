@@ -150,7 +150,7 @@ def apply_sabattier_solarisation(gray_np, power=1.4):
 def apply_polar_vortex_distortion(rgb_arr, strength=6.0, center_x=None, center_y=None):
     """
     Re-maps Cartesian coordinates into polar coordinates and applies a non-linear spiral pinch.
-    Visualises Monarch's neural singularity and reality distortion.
+    Simulates spatial pinch, neural singularity, and optical reality distortion.
     """
     if strength == 0.0:
         return rgb_arr

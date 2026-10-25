@@ -1,0 +1,54 @@
+name: CI Health Check
+
+on:
+  push:
+    branches: [ "main", "before-publish" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile and validate Python scripts
+        run: |
+          python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('skills/illustrate-entry/scripts/*.py')]"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Validate Ruby plugins syntax
+        run: |
+          for f in jekyll/_plugins/*.rb; do
+            ruby -c "$f"
+          done
+
+      - name: Validate Shell scripts syntax
+        run: |
+          bash -n sync.sh
+          bash -n templates/bin/setup.template
+          bash -n githooks/pre-commit
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -s bash sync.sh templates/bin/setup.template githooks/pre-commit
+          fi
+
+      - name: Validate Markdown headings blank line rule
+        run: |
+          awk '/^#/{if (getline && $0 != "") { print "Error: Missing blank line after heading at line " (NR-1) " in " FILENAME ": " $0; exit 1 }}' skills/*/SKILL.md README.md CHANGELOG.md AGENTS.md templates/*.md.template templates/jekyll/*.md.template
