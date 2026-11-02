@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Fully local, setting-aware session scribing orchestrator for tabletop RPG campaign vaults.
+Fully local, setting-aware session notes orchestrator for tabletop RPG campaign vaults.
 
 Pipeline stages handled:
 1. Executes acoustic audio transcription via Metal GPU Whisper (whisper-cli) with dynamic glossary bias.
-2. Ingests raw transcript, campaign glossary, table decisions, continuity anchors, and AGENTS.md conventions.
-3. Selects the appropriate local Ollama model (scribe-14b or scribe-14b-bilingual) based on campaign settings.
-4. Generates Archival GM Session Notes (8 canonical sections) in Google Drive.
-5. Generates the Canonical Draft Chapter in the campaign repository with setting voice and cross-links.
-6. Refreshes the Tier 1 semantic catalogue via data_extractor.rb.
+2. Ingests raw transcript into local disk air-gap (~/Private/rpg-sessions/<campaign>/).
+3. Synthesises Archival GM Session Notes (8 canonical sections) in Google Drive (_sessions/) via local Ollama.
+4. Leaves raw audio and speech text strictly local; synthesised notes are ready for Gemini in-voice chapter drafting.
 
 All outputs, prompts, and logs strictly adhere to British English.
 """
@@ -217,20 +215,10 @@ def resolve_model_name(
     manifest: Dict[str, Any],
     agents_text: str,
 ) -> str:
-    """Determine whether to use scribe-14b or scribe-14b-bilingual."""
+    """Determine which local Ollama model to use for GM notes extraction."""
     if explicit_model:
         return explicit_model
-
-    session_lang = manifest.get("session_language", "en").lower()
-    is_bilingual = bool(
-        "Bilingual" in agents_text
-        or session_lang.startswith("pt")
-        or "Portuguese" in agents_text
-    )
-
-    if is_bilingual:
-        return "scribe-14b-bilingual"
-    return "scribe-14b"
+    return "qwen2.5:14b"
 
 
 def synthesise_archival_notes(
@@ -311,138 +299,14 @@ Immediate cliffhangers, party intentions, and open threads for the upcoming sess
     return enforce_markdown_cleanliness(raw_notes)
 
 
-def synthesise_draft_chapter(
-    ollama_url: str,
-    model: str,
-    manifest: Dict[str, Any],
-    context: Dict[str, str],
-    notes_markdown: str,
-) -> str:
-    """Prompt local model to produce the canonical in-voice draft chapter file."""
-    campaign = manifest["campaign"]
-    defaults = manifest["campaign_defaults"]
-    next_info = manifest.get("next_chapter_info", {})
-    target_path = Path(next_info.get("next_chapter_path", "campaigns/chapter.md"))
-    parent_title = next_info.get("previous_parent") or campaign
-    location_key = defaults.get("location_key", "region")
-    location_val = next_info.get("previous_region") or "Unknown"
-    date_val = next_info.get("previous_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    hubs = defaults.get("hub_pages", [])
-    hub_links_str = "\n".join(f"- [index]({h})" for h in hubs) if hubs else "- [index](index.md)"
-
-    is_bilingual = bool("bilingual" in model.lower())
-
-    prompt = f"""You are the chronicler drafting the canonical campaign chapter for '{campaign}'.
-Draft the official chapter file based on the synthesised GM notes.
-
-Target File: `{target_path.name}`
-Parent Index: `{parent_title}`
-Front Matter Location Key: `{location_key}: {location_val}`
-Front Matter nav_order: `{date_val}`
-
-Formatting Constraints:
-1. Canonical Front Matter:
----
-layout: default
-type: session
-nav_exclude: false
-
-parent: {parent_title}
-title: <Evocative Episode Title>
-{location_key}: {location_val}
-nav_order: {date_val}
-footer_content: 
-
-images:
-
----
-
-2. Immediate Scaffolding Block:
-{{% include header_chapter.md %}}
-{{% comment %}}
-`=map(this.images, (x) => "![im|200](" + x + ")")`
-```dataview
-LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + ", from " + regexreplace(file.folder, "^[^\\/]*\\/", "") FROM ([[]]) OR outgoing([[]]) WHERE file.path != this.file.path SORT file.folder DESC
-```
----
-
-{hub_links_str}
-
-{{% endcomment %}}
-
-3. Chapter Body Constraints:
-- Structure into 2 to 4 themed subsections using `## Heading`.
-- Leave an empty blank line immediately following EVERY Markdown heading (#, ##, ###).
-- Each subsection must contain between 2 and 4 distinct paragraphs, separated by blank lines.
-- Each paragraph must contain between 2 and 4 sentences. Place each sentence on its own line (one sentence per line) where practical.
-- Embed relative Markdown links (`[Entity](../../directory/...)`) on the first mention of catalogued PCs, NPCs, factions, and locations from the glossary.
-- Voice & Tone: Strictly follow the cadence, register, and style conventions described in the Campaign Specification below.
-"""
-
-    if is_bilingual:
-        prompt += """
-- Bilingual Delivery:
-  - Generate the Brazilian Portuguese prose first, preceded by:
-    English version below
-    {: .text-delta .text-right}
-  - Follow immediately with a horizontal rule: `---`
-  - Provide the equivalent British English mirror translation below the divider.
-"""
-    else:
-        prompt += """
-- Language: Strictly British English spelling throughout (colour, armour, synthesise).
-"""
-
-    prompt += f"""
----
-### Campaign Specification (Voice & Cadence):
-{context['agents_instructions'][:3000]}
-
----
-### Session Glossary:
-{context['glossary'][:4000]}
-
----
-### Synthesised GM Session Notes:
-{notes_markdown}
-"""
-
-    raw_chapter = query_ollama_stream(
-        ollama_url,
-        model,
-        prompt,
-        temperature=0.25,
-        log_prefix="    [Chapter] ",
-    )
-    return enforce_markdown_cleanliness(raw_chapter)
-
-
-def refresh_catalogue(repo_root: Path) -> None:
-    """Run data_extractor.rb to re-index the campaign catalogue."""
-    extractor = repo_root / "_plugins" / "data_extractor.rb"
-    if extractor.exists():
-        print("==> Refreshing Tier 1 semantic catalogue via data_extractor.rb...")
-        try:
-            subprocess.run(
-                ["ruby", "--disable-gems", str(extractor)],
-                cwd=str(repo_root),
-                capture_output=True,
-                check=False,
-            )
-            print("    [OK] Catalogue refreshed successfully.")
-        except Exception as e:
-            print(f"    [WARN] Catalogue refresh failed: {e}", file=sys.stderr)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run local Metal GPU transcription and overnight Ollama synthesis for campaign sessions."
+        description="Run local Metal GPU transcription and Ollama archival session notes synthesis for campaign sessions."
     )
     parser.add_argument("input_file", help="Path to session audio/video recording (.mkv, .mp4, .wav, etc.) or pre-transcribed text file (.txt).")
     parser.add_argument("--repo-root", help="Explicit path to campaign repository root.")
     parser.add_argument("--airgap-dir", help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>).")
-    parser.add_argument("--model", help="Explicit Ollama model override (e.g. scribe-14b, scribe-14b-bilingual).")
+    parser.add_argument("--model", help="Explicit Ollama model override (default: qwen2.5:14b).")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama API base URL (default: http://localhost:11434).")
     parser.add_argument("--skip-transcribe", action="store_true", help="Skip Whisper acoustic transcription and reuse existing transcript.")
     parser.add_argument("--language", help="Whisper language code override (e.g. 'en', 'pt').")
@@ -456,7 +320,7 @@ def main() -> None:
 
     start_time = time.time()
     print("=" * 70)
-    print("OUDE MECHANISMEN — LOCAL OVERNIGHT SESSION SCRIBE")
+    print("OUDE MECHANISMEN — LOCAL SESSION NOTES SCRIBE")
     print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
     print(f"Campaign:  {repo_root.name}")
     print(f"Input:     {input_file.name}")
@@ -469,7 +333,7 @@ def main() -> None:
         sys.exit(1)
 
     # 2. Stage 1: Acoustic Transcription & Manifest Extraction
-    print("\n==> [Stage 1/4] Running acoustic transcription and context discovery...")
+    print("\n==> [Stage 1/3] Running acoustic transcription and context discovery...")
     manifest = run_acoustic_pipeline(
         repo_root,
         input_file,
@@ -479,7 +343,7 @@ def main() -> None:
     )
 
     # 3. Stage 2: Context Ingestion & Model Selection
-    print("\n==> [Stage 2/4] Ingesting campaign context and selecting model profile...")
+    print("\n==> [Stage 2/3] Ingesting campaign context and selecting model profile...")
     context = read_context_files(repo_root, manifest)
     model_name = resolve_model_name(args.model, manifest, context["agents_instructions"])
     print(f"    Selected Ollama Model: '{model_name}'")
@@ -487,7 +351,7 @@ def main() -> None:
     print(f"    Dynamic Glossary:     {len(context['glossary'].splitlines())} lines")
 
     # 4. Stage 3: Synthesise Archival GM Session Notes (Google Drive)
-    print(f"\n==> [Stage 3/4] Synthesising Archival GM Session Notes via '{model_name}'...")
+    print(f"\n==> [Stage 3/3] Synthesising Archival GM Session Notes via '{model_name}'...")
     notes_markdown = synthesise_archival_notes(
         args.ollama_url,
         model_name,
@@ -503,32 +367,14 @@ def main() -> None:
     else:
         print(f"\n    [Dry-Run] Skipped writing to {notes_path}")
 
-    # 5. Stage 4: Synthesise Canonical Draft Chapter (Git Vault)
-    print(f"\n==> [Stage 4/4] Drafting Canonical Chapter via '{model_name}'...")
-    chapter_markdown = synthesise_draft_chapter(
-        args.ollama_url,
-        model_name,
-        manifest,
-        context,
-        notes_markdown,
-    )
-
-    target_chapter_path = Path(manifest["next_chapter_info"]["next_chapter_path"])
-    if not args.dry_run:
-        target_chapter_path.parent.mkdir(parents=True, exist_ok=True)
-        target_chapter_path.write_text(chapter_markdown, encoding="utf-8")
-        print(f"\n    [Saved] {target_chapter_path} ({len(chapter_markdown.split())} words)")
-        refresh_catalogue(repo_root)
-    else:
-        print(f"\n    [Dry-Run] Skipped writing to {target_chapter_path}")
-
     elapsed = time.time() - start_time
     print("\n" + "=" * 70)
-    print("SESSION SCRIBING COMPLETE")
+    print("SESSION ARCHIVAL NOTES GENERATION COMPLETE")
     print(f"Elapsed Time: {elapsed / 60:.1f} minutes")
-    print(f"GM Notes:     {notes_path}")
-    print(f"Chapter:      {target_chapter_path}")
-    print("All files kept locally. Zero data transmitted externally.")
+    print(f"Transcript:   {manifest['transcript_path']} (Tier 0 Air-Gap)")
+    print(f"GM Notes:     {notes_path} (Tier 2 Google Drive)")
+    print("All private table banter kept strictly in local air-gap.")
+    print("Ready for canonical chapter drafting via Gemini in Antigravity chat.")
     print("=" * 70)
 
 

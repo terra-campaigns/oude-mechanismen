@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Three-Tier Storage Separation & Privacy Air-Gap**:
+  - Implemented local disk air-gap resolution (`~/Private/rpg-sessions/<campaign>/`) in `scripts/transcribe_session.py` and `scripts/scribe_session.py`, completely excluding raw table audio and verbatim speech transcripts from Git and Google Drive for player privacy.
+  - Formalised Google Drive `<drive_dir>/_sessions/` (`<slug>_session_notes.md`, `<slug>_prep.md`, `<slug>_glossary.md`) as active Tier 2 Canon across `AGENTS.md`, `templates/AGENTS.md.template`, and `skills/lookup-context/SKILL.md`.
+  - Added `--airgap-dir` CLI override and `RPG_SESSIONS_DIR` environment variable support.
+  - Added automated unit and integration test suite in `tests/test_transcribe_session.py`.
+
+---
+
 ## [0.1.0] - 2026-10-25
 
 ### Added

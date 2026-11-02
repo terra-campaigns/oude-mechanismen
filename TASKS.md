@@ -2,28 +2,6 @@
 
 ## Incoming Feedback / Inbox
 
-### [AUTO] Three-Tier Storage Separation & Privacy Air-Gap for Session Pipeline
-
-- **Timestamp:** 2026-11-02
-- **Origin:** `hostile` on `oudemechanismen`
-- **Component:** `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `skills/scribe-session`, `skills/lookup-context`, `templates/AGENTS.md.template`, engine canon architecture
-- **Operational Context:** Processing raw tabletop RPG session recordings and categorising campaign artefacts across storage tiers.
-- **Specific Friction & Defect:** The current scribing pipeline placed raw session recordings and verbatim transcripts into Google Drive (`_sessions/`), and the canon architecture did not formally tier session notes and prep files. The user established an empirical three-tier storage model across repositories:
-  1. *Private Air-Gap (Local Disk):* Raw recordings and verbatim speech transcripts must reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/` with strict naming conventions (`<YYYY-MM-DD>_<slug>_rec.<ext>` and `<YYYY-MM-DD>_<slug>_transcript.txt`), completely excluded from both Git and Google Drive due to privacy.
-  2. *Tier 2 Canon (Google Drive `_sessions/`):* Session prep (`<slug>_prep.md`), AI-summarised session notes (`<slug>_session_notes.md`), and acoustic glossaries (`<slug>_glossary.md`) reside in Google Drive `<drive_dir>/_sessions/` and must be formally treated as Tier 2 Canon (confirmed rulings and table events, outranked only by published Tier 1 notes).
-  3. *Tier 1 Canon (Campaign Repository):* Only finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) live in the Git repository and are indexed as Tier 1 Canon.
-- **Actionable Remediation:**
-  1. Update `scripts/transcribe_session.py` and `scripts/scribe_session.py` to:
-     - Automatically locate and ingest input recordings from `~/Private/rpg-sessions/<campaign>/` by default.
-     - Save verbatim transcripts strictly to `~/Private/rpg-sessions/<campaign>/<YYYY-MM-DD>_<slug>_transcript.txt`.
-     - Save renamed/archived audio recordings to `~/Private/rpg-sessions/<campaign>/<YYYY-MM-DD>_<slug>_rec.<ext>`.
-     - Write only synthesised session notes (`<slug>_session_notes.md`), prep files (`<slug>_prep.md`), and glossaries to Google Drive `<drive_dir>/_sessions/`.
-  2. Update Canon Hierarchy in `AGENTS.md` (engine and templates) and `skills/lookup-context`:
-     - Formalise that Google Drive `<drive_dir>/_sessions/` constitutes active **Tier 2 Canon** alongside `.agents/context/decisions.md`.
-     - Ensure `lookup-context` and agent research skills inspect recent `_sessions/*_session_notes.md` when querying table decisions, historical events, and unresolved hooks.
-  3. Update `skills/scribe-session/SKILL.md` and `sync.sh` templates to reflect this three-tier storage separation and naming convention.
-- **Status:** Implemented (Phase 1 verified via unit & integration tests)
-
 ### [SEMI] Benchmark & Select Optimal Local Models for Session Scribing Workflow
 
 - **Timestamp:** 2026-11-01
