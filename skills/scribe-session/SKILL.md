@@ -15,7 +15,10 @@ An automated, single-pass pipeline to process a tabletop RPG session recording i
 - **Dual Deliverables:**
   1. *Archival GM Session Notes:* Stored in Google Drive (`<drive_dir>/_sessions/<slug>_session_notes.md`) containing exhaustive chronological beats, faction shifts, inventory/trade ledgers, and candidate Tier 2 rulings.
   2. *Canonical Draft Chapter:* Stored in the campaign repository (`campaigns/<Campaign>/<chapter>.md`) containing calibrated in-voice prose, canonical YAML front matter, Dataview/hub backlinks, and relative directory links.
-- **Storage Separation:** Audio recordings, transcripts, and GM notes reside in Google Drive, keeping the Git repository strictly for published Tier 1 Markdown.
+- **Three-Tier Storage Separation & Privacy Air-Gap:**
+  1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
+  2. *Tier 2 Canon (Google Drive `_sessions/`):* Synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+  3. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
 
 ---
 
@@ -45,7 +48,8 @@ python3 .agents/scripts/transcribe_session.py "<input_file>" --json
 
 Parse the resulting JSON manifest to capture:
 - `session_slug`: Date and episode identifier (e.g. `2026-10-23_ep012`).
-- `transcript_path`: Verbatim speech text in Google Drive (`_sessions/<slug>_transcript.txt`).
+- `airgap_dir`: Local disk air-gap root (`~/Private/rpg-sessions/<campaign>/`).
+- `transcript_path`: Verbatim speech text in local air-gap (`~/Private/rpg-sessions/<campaign>/<slug>_transcript.txt`).
 - `glossary_path`: Compiled campaign glossary in Google Drive (`_sessions/<slug>_glossary.md`).
 - `session_notes_path`: Destination path for structured notes (`_sessions/<slug>_session_notes.md`).
 - `campaign_defaults`: Naming pattern, timestamp format, and location key from `AGENTS.md`.

@@ -10,7 +10,10 @@ This repository contains the shared procedural engine, agent skills library, and
 
 1. **Engine Agnosticism**: Never inject setting-specific lore, faction names, or custom house rules into `oude-mechanismen`. All procedural skills, Jekyll templates, and Python scripts must remain generic and parameterised.
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
-3. **Storage Separation**: Markdown lore notes remain in the Git repository. Raw session audio, transcripts, and GM archival notes reside in Google Drive (`<drive_dir>/_sessions/`).
+3. **Storage Separation & Privacy Air-Gap**:
+   - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
+   - **Tier 2 Canon (Google Drive `_sessions/`)**: Synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+   - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
 
 ---
 
@@ -110,7 +113,7 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
 - **Tier 1 (Canonical Published Notes)**: Published markdown files indexed by `_plugins/data_extractor.rb` into `.agents/context/catalog.json`. This is hard canon.
-- **Tier 2 (Active Table Decisions)**: Confirmed rulings and conventions recorded in `.agents/context/decisions.md`. Outranked by published Tier 1 notes; outranks external reference PDFs.
+- **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes and prep in Google Drive (`<drive_dir>/_sessions/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_digests/*.md`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
 ### Low-Token Progressive Retrieval Protocol

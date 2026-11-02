@@ -142,6 +142,7 @@ def run_acoustic_pipeline(
     input_file: Path,
     skip_transcribe: bool = False,
     language: Optional[str] = None,
+    airgap_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute transcribe_session.py to acquire acoustic transcript and discovery manifest."""
     script_candidates = [
@@ -158,6 +159,8 @@ def run_acoustic_pipeline(
         cmd.append("--skip-transcribe")
     if language:
         cmd.extend(["--language", language])
+    if airgap_dir:
+        cmd.extend(["--airgap-dir", str(airgap_dir)])
 
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -438,6 +441,7 @@ def main() -> None:
     )
     parser.add_argument("input_file", help="Path to session audio/video recording (.mkv, .mp4, .wav, etc.) or pre-transcribed text file (.txt).")
     parser.add_argument("--repo-root", help="Explicit path to campaign repository root.")
+    parser.add_argument("--airgap-dir", help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>).")
     parser.add_argument("--model", help="Explicit Ollama model override (e.g. scribe-14b, scribe-14b-bilingual).")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama API base URL (default: http://localhost:11434).")
     parser.add_argument("--skip-transcribe", action="store_true", help="Skip Whisper acoustic transcription and reuse existing transcript.")
@@ -471,6 +475,7 @@ def main() -> None:
         input_file,
         skip_transcribe=args.skip_transcribe,
         language=args.language,
+        airgap_dir=args.airgap_dir,
     )
 
     # 3. Stage 2: Context Ingestion & Model Selection
