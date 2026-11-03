@@ -278,7 +278,9 @@ Required Structure:
         temperature=0.2,
         log_prefix="    [Tactical Facts 2A] ",
     )
-    return enforce_markdown_cleanliness(raw_facts)
+    # Strip prompt boundary leakage if the model echoes the prompt delimiters
+    clean_facts = re.split(r"\n---\s*\n### Session Glossary:", raw_facts, maxsplit=1)[0].strip()
+    return enforce_markdown_cleanliness(clean_facts)
 
 
 def extract_sensory_textures(
@@ -352,7 +354,9 @@ Required Structure:
         temperature=0.3,
         log_prefix="    [Sensory Textures 2B] ",
     )
-    return enforce_markdown_cleanliness(raw_textures)
+    # Strip prompt boundary leakage if the model echoes the prompt delimiters
+    clean_textures = re.split(r"\n---\s*\n### Session Glossary:", raw_textures, maxsplit=1)[0].strip()
+    return enforce_markdown_cleanliness(clean_textures)
 
 
 def main() -> None:
