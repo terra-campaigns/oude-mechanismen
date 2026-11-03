@@ -616,9 +616,17 @@ def main():
     if args.session_slug:
         slug = args.session_slug
     else:
-        date_prefix = datetime.now().strftime("%Y-%m-%d")
-        ep_prefix = Path(next_chapter_info["next_filename"]).stem
-        slug = f"{date_prefix}_{ep_prefix}"
+        file_stem = input_path.stem if input_path else ""
+        slug_match = re.match(
+            r"^(\d{4}-\d{2}-\d{2}_[a-zA-Z0-9_\-]+?)(?:_rec|_transcript|_session_notes|_prep|_glossary)?$",
+            file_stem,
+        )
+        if slug_match:
+            slug = slug_match.group(1)
+        else:
+            date_prefix = datetime.now().strftime("%Y-%m-%d")
+            ep_prefix = Path(next_chapter_info["next_filename"]).stem
+            slug = f"{date_prefix}_{ep_prefix}"
 
     # Tier 2 Canon (Google Drive)
     glossary_path = sessions_dir / f"{slug}_glossary.md"

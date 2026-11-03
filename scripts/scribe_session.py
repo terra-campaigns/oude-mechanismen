@@ -142,6 +142,7 @@ def run_acoustic_pipeline(
     skip_transcribe: bool = False,
     language: Optional[str] = None,
     airgap_dir: Optional[str] = None,
+    session_slug: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Execute transcribe_session.py to acquire acoustic transcript and discovery manifest."""
     script_candidates = [
@@ -160,6 +161,8 @@ def run_acoustic_pipeline(
         cmd.extend(["--language", language])
     if airgap_dir:
         cmd.extend(["--airgap-dir", str(airgap_dir)])
+    if session_slug:
+        cmd.extend(["--session-slug", str(session_slug)])
 
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -358,6 +361,7 @@ def main() -> None:
     )
     parser.add_argument("input_file", help="Path to session audio/video recording (.mkv, .mp4, .wav, etc.) or pre-transcribed text file (.txt).")
     parser.add_argument("--repo-root", help="Explicit path to campaign repository root.")
+    parser.add_argument("--session-slug", help="Custom session slug (e.g. 2026-11-01_003 or 2026-11-01_003_pilot).")
     parser.add_argument("--airgap-dir", help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>).")
     parser.add_argument("--model", help="Explicit Ollama model override for all extraction passes (default: qwen2.5:14b).")
     parser.add_argument("--model-tactical", help="Explicit Ollama model override for Pass 2A tactical facts (default: qwen2.5:14b).")
@@ -395,6 +399,7 @@ def main() -> None:
         skip_transcribe=args.skip_transcribe,
         language=args.language,
         airgap_dir=args.airgap_dir,
+        session_slug=args.session_slug,
     )
 
     context = read_context_files(repo_root, manifest)
