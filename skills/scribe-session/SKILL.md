@@ -16,7 +16,7 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
   1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
   2. *Tier 2 Canon (Google Drive `_sessions/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
   3. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
-- **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and runs automated quality gates with critique-and-refine loops (up to 3 iterations) before human review.
+- **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and drafts the canonical chapter and archival notes.
 - **Objective In-World Observer Perspective:** All archival GM notes are narrated from the perspective of an invisible, objective in-world observer witnessing events within the universe. Zero player meta-talk, zero table out-of-character banter, zero boxed read-aloud prose.
 - **The 2-4 Prose Architecture:** 2 to 4 subsections (`## Heading`), 2 to 4 paragraphs per subsection, 2 to 4 sentences per paragraph, and strictly **one sentence per line** within each paragraph.
 - **Deterministic Structural Boundaries:** LLMs never format YAML front matter, Liquid includes, Dataview queries, or relative directory links; Python glue constructs these deterministically.
@@ -25,31 +25,12 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 
 ## Workflow Procedure
 
-### Step 0: Pre-Flight Repository Reconnaissance
-
-Before executing transcription or modifying files, run Stage 0 pre-flight inspection:
-
-```bash
-python3 .agents/scripts/scribe_session.py "<input_file>" --stage 0
-```
-
-The script empirically verifies:
-1. Active Git branch (`git branch --show-current`).
-2. Working tree cleanliness (`git status --short`). If uncommitted modifications exist in campaign content, halts execution unless `--force` is supplied.
-3. Target chapter numbering and collision check (verifying target chapter filename does not already exist on disk).
-4. Pending prep notes in Google Drive (`_sessions/*_prep.md`) or campaign subfolder.
-5. Semantic catalogue validity (`.agents/context/catalog.json`).
-
-Output is presented as a concise 5-line Pre-Flight Status Card.
-
----
-
 ### Step 1: Local Air-Gapped Transcription & Two-Pass Extraction
 
-Execute Stage 1 and Stage 2 from the campaign workspace:
+Execute the local extraction script from the campaign workspace:
 
 ```bash
-python3 .agents/scripts/scribe_session.py "<input_file>"
+python3 scripts/scribe_session.py "<input_file>"
 ```
 
 *(Note: If `<input_file>` is omitted, the script auto-discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`).*
@@ -74,7 +55,7 @@ The Gemini agent in chat reads the non-Tier-0 materials from Google Drive:
 3. **Session Acoustic Glossary:** Read `<drive_dir>/_sessions/<slug>_glossary.md`.
 4. **Active Table Decisions (Tier 2):** Read `.agents/context/decisions.md`.
 5. **Campaign Specification:** Inspect `.agents/AGENTS.md` for style, cadence, vocabulary, and calibration examples.
-6. **Previous Chapter File:** Inspect the preceding chapter for calendar progression, tone, and parentage.
+6. **Past Chapter Files:** Inspect the past 2–3 chapters (or as many as needed) to ground voice, style calibration, calendar progression, and narrative continuity.
 
 ---
 
@@ -148,7 +129,7 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
   - 2 to 4 sentences per paragraph.
   - **Sentence-per-line:** Every sentence placed on its own line (separated by single newlines) within each paragraph.
 - **Markdown Spacing Rule:** Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
-- **Tone & Cadence:** Gene Wolfe anchor-and-veil structure (concrete sensory anchors paired with cool philosophical detachment; 80/20 clarity-to-obscurity ratio).
+- **Tone & Cadence:** Derived strictly from `## Campaign Specification` (cadence, vocabulary, calibration examples) in the target campaign's `.agents/AGENTS.md`. Never hardcode setting-specific tropes.
 - **Zero Boxed Read-Aloud Text:** Never generate boxed text (`> Table Read-Aloud`) or scripted GM monologues.
 - **Entity Cross-Linking:** Embed relative Markdown links (`[Entity](../../directory/...)`) on first mention of catalogued entities.
 - **Bilingual Mirror Translation (when configured):**
@@ -164,7 +145,7 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
 1. **Reconcile Character Dossiers:**
    Parse Section 5 (Combat, Hazards & Encounters) and Section 2 (Plot Beats) of the session notes for newly sustained wounds, trauma, and tracker updates.
 2. **Surgically Update Front Matter:**
-   Execute reconciliation via `scripts/scribe_session.py --reconcile` or direct agent tool:
+   Update character dossiers in `directory/<hub>/<character>.md`:
    - Updates `conditions:` list (appending non-duplicate conditions, removing cleared conditions).
    - Synchronises declared campaign markers (`stress`, `bends`, `charge`, `status`) in YAML front matter.
    - Leaves biographical markdown bodies, equipment tables, and notes completely untouched.

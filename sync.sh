@@ -76,7 +76,6 @@ MANAGED_FILES=(
   "templates/runners/generate_digests.py.template:.agents/scripts/generate_digests.py:true"
   "templates/runners/audit_coverage.py.template:.agents/scripts/audit_coverage.py:true"
   "templates/runners/transcribe_session.py.template:.agents/scripts/transcribe_session.py:true"
-  "templates/runners/scribe_session.py.template:.agents/scripts/scribe_session.py:true"
   "templates/runners/art_filter.py.template:.agents/scripts/art_filter.py:true"
   "templates/bin/setup.template:bin/setup:true"
 )

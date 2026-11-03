@@ -2,16 +2,16 @@
 """
 Unit tests for scripts/scribe_session.py and scripts/benchmark_models.py.
 Verifies:
-1. Stage 0 Pre-Flight Repository Reconnaissance (clean/dirty, collision detection, --force override).
+1. Campaign root location and discovery.
 2. Markdown cleanliness enforcement (blank line following every heading).
-3. Surgical character dossier YAML front matter updates (conditions list, trackers, preserving markdown body).
-4. Benchmark auditing metrics (sentence-per-line, 2-4 rule, glossary recall).
+3. Context ingestion (transcripts, glossaries, active decisions).
+4. Prompt structure and de-personalisation directives for Pass 2A and Pass 2B.
+5. Benchmark runner execution and Markdown report compilation.
 """
 
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,21 +31,26 @@ class TestScribeSession(unittest.TestCase):
         self.repo_root.mkdir()
         (self.repo_root / ".agents" / "context").mkdir(parents=True)
         (self.repo_root / "_config.yml").write_text("title: Test Campaign\n", encoding="utf-8")
-        (self.repo_root / "campaigns" / "test").mkdir(parents=True)
-        (self.repo_root / "directory" / "PCs").mkdir(parents=True)
 
-        # Initialize git repo in test directory
-        subprocess.run(["git", "init", "-b", "main"], cwd=self.repo_root, capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "Test Agent"], cwd=self.repo_root, check=True)
-        subprocess.run(["git", "config", "user.email", "agent@test.local"], cwd=self.repo_root, check=True)
+        # Fake files
+        self.transcript_file = self.repo_root / "sample_transcript.txt"
+        self.transcript_file.write_text("Olmo and Ezekiel enter the airlock.\n", encoding="utf-8")
 
-        # Commit initial state
-        (self.repo_root / ".agents" / "context" / "catalog.json").write_text(json.dumps([{"title": "Olmo"}]), encoding="utf-8")
-        subprocess.run(["git", "add", "."], cwd=self.repo_root, check=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=self.repo_root, check=True)
+        self.glossary_file = self.repo_root / "sample_glossary.md"
+        self.glossary_file.write_text("- Olmo: Android\n- Ezekiel: Spacer\n", encoding="utf-8")
+
+        self.decisions_file = self.repo_root / ".agents" / "context" / "decisions.md"
+        self.decisions_file.write_text("- Decision: Androids leak synthetic hydraulic fluid.\n", encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
+
+    def test_find_campaign_root(self):
+        """Verify find_campaign_root resolves repository root from subdir or explicitly."""
+        sub = self.repo_root / "nested" / "folder"
+        sub.mkdir(parents=True)
+        found = scribe_session.find_campaign_root(str(sub))
+        self.assertEqual(found, self.repo_root)
 
     def test_markdown_cleanliness_enforcement(self):
         """Verify that enforce_markdown_cleanliness inserts an empty blank line after headings."""
@@ -54,126 +59,101 @@ class TestScribeSession(unittest.TestCase):
         expected = "# Heading 1\n\nText directly below heading\n## Subheading\n\nLine 1\nLine 2\n"
         self.assertEqual(cleaned, expected)
 
-    def test_stage_0_recon_clean(self):
-        """Verify Stage 0 recon passes on clean working tree without collisions."""
-        recon = scribe_session.stage_0_recon(self.repo_root, force=False)
-        self.assertTrue(recon["is_clean"])
-        self.assertFalse(recon["is_blocked"])
-        self.assertEqual(recon["branch"], "main")
-        self.assertIn("valid (1 entries)", recon["catalogue_status"])
+    def test_read_context_files(self):
+        """Verify read_context_files reads transcript, glossary, and decisions."""
+        manifest = {
+            "transcript_path": str(self.transcript_file),
+            "glossary_path": str(self.glossary_file),
+        }
+        ctx = scribe_session.read_context_files(self.repo_root, manifest)
+        self.assertIn("Olmo and Ezekiel", ctx["transcript"])
+        self.assertIn("Android", ctx["glossary"])
+        self.assertIn("hydraulic fluid", ctx["decisions"])
 
-    def test_stage_0_recon_dirty_blocks_without_force(self):
-        """Verify Stage 0 recon blocks when working tree is dirty and force=False."""
-        dirty_file = self.repo_root / "campaigns" / "test" / "uncommitted.md"
-        dirty_file.write_text("Uncommitted changes\n", encoding="utf-8")
+    @patch("scribe_session.query_ollama_stream")
+    def test_extract_tactical_facts(self, mock_query):
+        """Verify extract_tactical_facts sends appropriate prompt and de-personalisation instructions."""
+        mock_query.return_value = "# Tactical Facts\n\n- Scene 1: Entered airlock."
 
-        with self.assertRaises(RuntimeError) as ctx:
-            scribe_session.stage_0_recon(self.repo_root, force=False)
-        self.assertIn("Uncommitted changes detected", str(ctx.exception))
+        manifest = {
+            "session_slug": "2026-11-03_ep001",
+            "campaign": "test_campaign",
+            "campaign_defaults": {"location_key": "region"},
+        }
+        context = {
+            "transcript": "Olmo and Ezekiel advance.",
+            "glossary": "- Olmo: Scrapper",
+            "decisions": "- Decision 1",
+        }
 
-    def test_stage_0_recon_dirty_allowed_with_force(self):
-        """Verify Stage 0 recon permits dirty working tree when force=True."""
-        dirty_file = self.repo_root / "campaigns" / "test" / "uncommitted.md"
-        dirty_file.write_text("Uncommitted changes\n", encoding="utf-8")
-
-        recon = scribe_session.stage_0_recon(self.repo_root, force=True)
-        self.assertFalse(recon["is_clean"])
-        self.assertFalse(recon["is_blocked"])
-
-    def test_stage_0_recon_target_collision_detection(self):
-        """Verify Stage 0 recon detects existing non-empty chapter file and blocks unless force=True."""
-        target_chapter = self.repo_root / "campaigns" / "test" / "001.md"
-        target_chapter.write_text("Existing chapter content\n", encoding="utf-8")
-
-        next_info = {"next_chapter_file": "campaigns/test/001.md"}
-
-        # Blocked without force
-        with self.assertRaises(RuntimeError) as ctx:
-            scribe_session.stage_0_recon(self.repo_root, force=False, next_chapter_info=next_info)
-        self.assertIn("Target chapter file already exists", str(ctx.exception))
-
-        # Allowed with force
-        recon = scribe_session.stage_0_recon(self.repo_root, force=True, next_chapter_info=next_info)
-        self.assertTrue(recon["collision_detected"])
-
-    def test_update_character_front_matter_preserves_body(self):
-        """Verify update_character_front_matter modifies YAML trackers while leaving body untouched."""
-        char_file = self.repo_root / "directory" / "PCs" / "Olmo.md"
-        original_body = "\n\n{% include header_directories.md %}\n\n## Bio\nOlmo is an android scrapper.\n"
-        char_content = f"""---
-layout: default
-type: people
-title: Olmo
-role: Scrapper
-bends: 10
-stress: d8
-conditions:
-  - Leaking hydraulic joint
----{original_body}"""
-        char_file.write_text(char_content, encoding="utf-8")
-
-        modified, diff = scribe_session.update_character_front_matter(
-            char_file,
-            new_conditions=["Concussion from airlock pressure surge"],
-            cleared_conditions=["Leaking hydraulic joint"],
-            tracker_updates={"stress": "d10", "bends": 12},
-            dry_run=False,
+        output = scribe_session.extract_tactical_facts(
+            "http://localhost:11434",
+            "qwen2.5:14b",
+            manifest,
+            context,
         )
 
-        self.assertTrue(modified)
-        self.assertIn("+ condition: Concussion from airlock pressure surge", diff)
-        self.assertIn("- condition: Leaking hydraulic joint", diff)
-        self.assertIn("~ stress: d8 -> d10", diff)
+        self.assertIn("# Tactical Facts", output)
+        mock_query.assert_called_once()
+        prompt_arg = mock_query.call_args[0][2]
+        self.assertIn("DE-PERSONALISATION MANDATE", prompt_arg)
+        self.assertIn("Chronological sequence", prompt_arg)
 
-        updated_text = char_file.read_text(encoding="utf-8")
-        # Ensure markdown body is byte-for-byte identical
-        self.assertTrue(updated_text.endswith(original_body))
-        # Ensure conditions updated
-        self.assertIn("Concussion from airlock pressure surge", updated_text)
-        self.assertNotIn("Leaking hydraulic joint", updated_text)
-        self.assertIn("bends: 12", updated_text)
+    @patch("scribe_session.query_ollama_stream")
+    def test_extract_sensory_textures(self, mock_query):
+        """Verify extract_sensory_textures requests environmental and acoustic textures."""
+        mock_query.return_value = "# Sensory Textures\n\n- Rancid copper odour."
 
-    def test_reconcile_character_conditions_parsing(self):
-        """Verify reconcile_character_conditions parses bullet points and updates directory files."""
-        char_file = self.repo_root / "directory" / "PCs" / "Ezekiel.md"
-        char_content = """---
-layout: default
-type: people
-title: Ezekiel
-role: Spacer
-conditions: []
----
+        manifest = {
+            "session_slug": "2026-11-03_ep001",
+            "campaign": "test_campaign",
+            "campaign_defaults": {"location_key": "region"},
+        }
+        context = {
+            "transcript": "Flickering lights in corridor.",
+            "glossary": "- Olmo: Scrapper",
+            "decisions": "",
+        }
 
-## Notes
-Spacer notes.
-"""
-        char_file.write_text(char_content, encoding="utf-8")
+        output = scribe_session.extract_sensory_textures(
+            "http://localhost:11434",
+            "mistral-nemo:12b",
+            manifest,
+            context,
+        )
 
-        notes_text = """## 5. Combat, Hazards & Encounters
-- Ezekiel: Acute panic and tremors
-"""
-        reconciled = scribe_session.reconcile_character_conditions(self.repo_root, notes_text, dry_run=False)
-        self.assertEqual(len(reconciled), 1)
-        self.assertTrue(reconciled[0]["modified"])
+        self.assertIn("# Sensory Textures", output)
+        mock_query.assert_called_once()
+        prompt_arg = mock_query.call_args[0][2]
+        self.assertIn("DE-PERSONALISATION MANDATE", prompt_arg)
+        self.assertIn("Lighting & visual palette", prompt_arg)
 
-        updated_text = char_file.read_text(encoding="utf-8")
-        self.assertIn("Acute panic and tremors", updated_text)
-        self.assertTrue(updated_text.endswith("\n\n## Notes\nSpacer notes.\n"))
+    @patch("benchmark_models.query_ollama_timed")
+    def test_benchmark_model_and_report(self, mock_timed):
+        """Verify benchmark_model executes 2A & 2B and compile_benchmark_report writes markdown."""
+        mock_timed.side_effect = [
+            ("# Tactical output", 2.0, 100, 50.0),
+            ("# Sensory output", 3.0, 150, 50.0),
+        ]
 
-    def test_benchmark_auditing_metrics(self):
-        """Verify metric evaluation functions in benchmark_models.py."""
-        clean_md = "# Title\n\n## Section 1\n\nSentence one.\nSentence two.\n"
-        dirty_md = "# Title\nNo blank line.\n"
+        res = benchmark_models.benchmark_model(
+            "http://localhost:11434",
+            "qwen2.5:14b",
+            "Sample transcript text",
+            "- Olmo: Android",
+        )
 
-        self.assertEqual(benchmark_models.audit_heading_cleanliness(clean_md), 100.0)
-        self.assertEqual(benchmark_models.audit_heading_cleanliness(dirty_md), 0.0)
+        self.assertEqual(res["model"], "qwen2.5:14b")
+        self.assertEqual(res["total_time_sec"], 5.0)
+        self.assertEqual(res["avg_tokens_per_sec"], 50.0)
 
-        spl_text = "Sentence one.\nSentence two.\nSentence three.\n"
-        self.assertEqual(benchmark_models.audit_sentence_per_line(spl_text), 100.0)
+        report_out = Path(self.test_dir) / "report.md"
+        benchmark_models.compile_benchmark_report([res], str(self.transcript_file), report_out)
 
-        glossary_sample = "- Olmo: Scrapper\n- Ezekiel: Spacer\n- Cloudbank: Station"
-        text_with_glossary = "Olmo and Ezekiel arrived at Cloudbank."
-        self.assertEqual(benchmark_models.audit_glossary_recall(text_with_glossary, glossary_sample), 100.0)
+        self.assertTrue(report_out.exists())
+        content = report_out.read_text(encoding="utf-8")
+        self.assertIn("Local Model Benchmark Report", content)
+        self.assertIn("`qwen2.5:14b`", content)
 
 
 if __name__ == "__main__":
