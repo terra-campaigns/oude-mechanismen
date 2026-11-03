@@ -623,6 +623,8 @@ def main():
     # Tier 2 Canon (Google Drive)
     glossary_path = sessions_dir / f"{slug}_glossary.md"
     notes_path = sessions_dir / f"{slug}_session_notes.md"
+    tactical_facts_path = sessions_dir / f"{slug}_tactical_facts.md"
+    sensory_textures_path = sessions_dir / f"{slug}_sensory_textures.md"
 
     # Tier 0 (Local Disk Air-Gap)
     transcript_base = airgap_dir / f"{slug}_transcript"
@@ -661,8 +663,8 @@ def main():
         # Pre-transcribed input or reuse of existing transcript
         is_generated_artifact = bool(
             input_path and (
-                input_path in (transcript_path, glossary_path, notes_path)
-                or input_path.name.endswith(("_glossary.md", "_session_notes.md"))
+                input_path in (transcript_path, glossary_path, notes_path, tactical_facts_path, sensory_textures_path)
+                or input_path.name.endswith(("_glossary.md", "_session_notes.md", "_tactical_facts.md", "_sensory_textures.md"))
             )
         )
         if input_path and input_path.exists() and input_path.is_file() and not is_generated_artifact:
@@ -685,6 +687,8 @@ def main():
         "transcript_path": str(transcript_path),
         "glossary_path": str(glossary_path),
         "session_notes_path": str(notes_path),
+        "tactical_facts_path": str(tactical_facts_path),
+        "sensory_textures_path": str(sensory_textures_path),
         "campaign_defaults": campaign_defaults,
         "next_chapter_info": next_chapter_info,
         "proper_nouns_count": len(proper_nouns),

@@ -1,110 +1,106 @@
 ---
 name: scribe-session
-description: Single-pass end-to-end transcription and synthesis workflow. Ingests raw session recordings (.mkv, .mp4, .wav, .m4a) or verbatim transcripts, transcribes via local Metal GPU Whisper with dynamic glossary prompting, and synthesises both structured GM archival notes in Google Drive and a canonical in-voice draft chapter file in the campaign repository.
+description: Decomposed, air-gapped transcription and synthesis workflow. Ingests raw session recordings (.mkv, .mp4, .wav) or transcripts, transcribes via local Metal GPU Whisper into local air-gap, extracts de-personalised tactical facts (Pass 2A) and sensory textures (Pass 2B) via local Ollama into Google Drive, synthesises canonical 8-section GM notes via Gemini chat (Pass 2C, Objective In-World Observer), drafts canonical chapter prose (Pass 3, 2-4 rule, sentence-per-line), and reconciles character front-matter conditions.
 argument-hint: path to session audio/video file or existing transcript (.txt)
 ---
 
 # Scribe Session
 
-An automated, single-pass pipeline to process a tabletop RPG session recording into canonical campaign documentation. It executes local Metal GPU speech-to-text with setting-aware glossary prompting, produces comprehensive archival GM session notes in Google Drive, and drafts a fully linked, setting-voiced chapter file in the campaign repository.
+An air-gapped, decomposed pipeline to process a tabletop RPG session recording into canonical campaign documentation. It executes local Metal GPU speech-to-text with setting-aware glossary prompting, produces de-personalised tactical facts and sensory textures via local Ollama into Google Drive, merges them into authoritative 8-section archival GM notes via Gemini in chat, drafts calibrated in-voice chapter prose, and reconciles character conditions.
 
 ## Guiding Principles
 
 - **Zero-Friction Ingestion:** Accepts any standard audio or video container (`.mkv`, `.mp4`, `.m4a`, `.wav`, `.mp3`) or pre-transcribed `.txt` file.
 - **Dynamic Canon Grounding:** Dynamically queries `.agents/context/catalog.json`, `.agents/context/decisions.md`, and `.agents/AGENTS.md` to bias Whisper acoustic recognition and eliminate phonetic misspellings without manual glossary maintenance.
-- **Dual Deliverables:**
-  1. *Archival GM Session Notes:* Stored in Google Drive (`<drive_dir>/_sessions/<slug>_session_notes.md`) containing exhaustive chronological beats, faction shifts, inventory/trade ledgers, and candidate Tier 2 rulings.
-  2. *Canonical Draft Chapter:* Stored in the campaign repository (`campaigns/<Campaign>/<chapter>.md`) containing calibrated in-voice prose, canonical YAML front matter, Dataview/hub backlinks, and relative directory links.
 - **Three-Tier Storage Separation & Privacy Air-Gap:**
   1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
-  2. *Tier 2 Canon (Google Drive `_sessions/`):* Synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+  2. *Tier 2 Canon (Google Drive `_sessions/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
   3. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
+- **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and runs automated quality gates with critique-and-refine loops (up to 3 iterations) before human review.
+- **Objective In-World Observer Perspective:** All archival GM notes are narrated from the perspective of an invisible, objective in-world observer witnessing events within the universe. Zero player meta-talk, zero table out-of-character banter, zero boxed read-aloud prose.
+- **The 2-4 Prose Architecture:** 2 to 4 subsections (`## Heading`), 2 to 4 paragraphs per subsection, 2 to 4 sentences per paragraph, and strictly **one sentence per line** within each paragraph.
+- **Deterministic Structural Boundaries:** LLMs never format YAML front matter, Liquid includes, Dataview queries, or relative directory links; Python glue constructs these deterministically.
 
 ---
 
 ## Workflow Procedure
 
-### Step 1: Air-Gapped Acoustic Transcription & Notes Extraction (Local Run)
+### Step 0: Pre-Flight Repository Reconnaissance
 
-Execute the local orchestrator script from the campaign workspace:
+Before executing transcription or modifying files, run Stage 0 pre-flight inspection:
+
+```bash
+python3 .agents/scripts/scribe_session.py "<input_file>" --stage 0
+```
+
+The script empirically verifies:
+1. Active Git branch (`git branch --show-current`).
+2. Working tree cleanliness (`git status --short`). If uncommitted modifications exist in campaign content, halts execution unless `--force` is supplied.
+3. Target chapter numbering and collision check (verifying target chapter filename does not already exist on disk).
+4. Pending prep notes in Google Drive (`_sessions/*_prep.md`) or campaign subfolder.
+5. Semantic catalogue validity (`.agents/context/catalog.json`).
+
+Output is presented as a concise 5-line Pre-Flight Status Card.
+
+---
+
+### Step 1: Local Air-Gapped Transcription & Two-Pass Extraction
+
+Execute Stage 1 and Stage 2 from the campaign workspace:
 
 ```bash
 python3 .agents/scripts/scribe_session.py "<input_file>"
 ```
 
-*(Note: If `<input_file>` is omitted, the script automatically auto-discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`).*
+*(Note: If `<input_file>` is omitted, the script auto-discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`).*
 
 This local execution:
-1. Normalises the audio and transcribes via local Metal GPU Whisper (`whisper-cli`).
-2. Saves the verbatim transcript strictly to the local disk air-gap at `~/Private/rpg-sessions/<campaign>/<slug>_transcript.txt` (Tier 0, never sent to cloud APIs or Git).
+1. Normalises audio to 16 kHz mono WAV and transcribes via Apple Metal GPU Whisper (`whisper-cli`) using the dynamic proper-noun glossary prompt.
+2. Saves the verbatim transcript strictly to `~/Private/rpg-sessions/<campaign>/<slug>_transcript.txt` (Tier 0 Air-Gap, never uploaded or ingested into cloud chat).
 3. Compiles the session acoustic glossary in Google Drive (`<drive_dir>/_sessions/<slug>_glossary.md`).
-4. Uses local Ollama (`qwen2.5:14b` or `mistral-nemo:12b`) to synthesise the structured **8-section Archival GM Session Notes** in Google Drive at `<drive_dir>/_sessions/<slug>_session_notes.md` (Tier 2 Canon), completely stripped of player banter and table chatter.
+4. **Pass 2A (Tactical Facts Extraction):** Local Ollama (`qwen2.5:14b`) extracts chronological timeline, combat actions, damage, mechanical rolls, sustained wounds/stress, and inventory/credits ledger -> saves `<drive_dir>/_sessions/<slug>_tactical_facts.md` (Tier 2 Canon, de-personalised).
+5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`mistral-nemo:12b` or `qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_sessions/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
+
+At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in Google Drive.
 
 ---
 
-### Step 2: Context Loading in Antigravity Chat
+### Step 2: Ingest De-personalised Notes in Antigravity Chat
 
-Once local notes extraction completes, the Gemini agent loads the clean, non-Tier-0 context to draft the chapter:
+The Gemini agent in chat reads the non-Tier-0 materials from Google Drive:
 
-1. **Archival GM Notes (Tier 2 Canon):** Read `<drive_dir>/_sessions/<slug>_session_notes.md`. *(Notice: The raw transcript is never ingested into chat).*
-2. **Campaign Specification:** Inspect `.agents/AGENTS.md` for voice, cadence (sentence-per-line), vocabulary, and calibration examples.
-3. **Active Table Rulings:** Inspect `.agents/context/decisions.md`.
-4. **Session Glossary:** Inspect `<drive_dir>/_sessions/<slug>_glossary.md` for catalogued entities and spelling anchors.
-5. **Previous Chapter File:** Inspect the previous chapter file to establish immediate narrative continuity, parentage, and calendar progression.
-
----
-
-### Step 3: Archival GM Notes Structure (Reference)
-
-The local model synthesises the raw transcript into the canonical **8-section archival structure**:
-
-```markdown
-# Session Notes: <Session Title>
-
-> [!NOTE]
-> Synthesised from raw session recording for `<Campaign Name>`.
-> Slug: `<session_slug>` | Date: `<In-universe date>` | Location: `<Location/Region>`
-
-## 1. Executive Summary
-
-A punchy title and 2–3 sentence executive recap of the session's major events.
-
-## 2. Chronological Plot Beats
-
-Detailed bullet points of key decisions, roleplay scenes, travels, and revelations in chronological order.
-
-## 3. NPCs & Factions
-
-- Characters encountered, noting disposition changes and world lore revealed.
-- Mark existing entities with their directory link (e.g. `[Kur](../../directory/Atles/Kur.md)`).
-- Mark newly introduced entities as `[New Entity — Candidate for add-character]`.
-
-## 4. Quests, Contracts & Objectives
-
-New hooks acquired, corporate/patron obligations updated, debts incurred, and completed milestones.
-
-## 5. Combat, Hazards & Encounters
-
-Adversaries faced, environmental malfunctions/hazards triggered, tactical decisions, and mechanical outcomes.
-
-## 6. Loot, Trade & Inventory Ledger
-
-Credits, currency, or salvage gained, spent, or lost; cargo trades; equipment wear; debt payments.
-
-## 7. Table Rulings & Candidate Tier 2 Decisions
-
-Any explicit GM rulings, procedural interpretations, or custom naming conventions established during play that should be considered for `.agents/context/decisions.md`.
-
-## 8. Unresolved Hooks & Next Steps
-
-Immediate cliffhangers, party intentions, and open threads for the upcoming session.
-```
+1. **De-personalised Tactical Facts:** Read `<drive_dir>/_sessions/<slug>_tactical_facts.md`.
+2. **De-personalised Sensory Textures:** Read `<drive_dir>/_sessions/<slug>_sensory_textures.md`.
+3. **Session Acoustic Glossary:** Read `<drive_dir>/_sessions/<slug>_glossary.md`.
+4. **Active Table Decisions (Tier 2):** Read `.agents/context/decisions.md`.
+5. **Campaign Specification:** Inspect `.agents/AGENTS.md` for style, cadence, vocabulary, and calibration examples.
+6. **Previous Chapter File:** Inspect the preceding chapter for calendar progression, tone, and parentage.
 
 ---
 
-### Step 4: Canonical Chapter Drafting (Gemini Orchestration)
+### Step 3: Archival GM Notes Synthesis (Pass 2C & Frontier Quality Gate 1)
 
-Gemini crafts the official in-voice chapter file at `campaigns/<subfolder>/<chapter>.md` based on the synthesised GM notes:
+Gemini in chat merges Pass 2A and Pass 2B into the canonical **8-section Archival GM Notes**:
+
+- **Perspective:** Objective In-World Observer (cool, clinical detachment; zero player meta-talk; zero table chatter).
+- **Structure:**
+  1. `# Session Notes: <Evocative Title>` with metadata banner (`slug`, `date`, `location`).
+  2. `## 1. Executive Summary`: 2–3 sentence overview of major narrative events and consequences.
+  3. `## 2. Chronological Plot Beats`: Comprehensive chronological timeline merging tactical sequence with sensory anchors and verbatim dialogue.
+  4. `## 3. NPCs & Factions`: Entities encountered, attitude shifts, affiliation updates, cross-linked to `directory/`.
+  5. `## 4. Quests, Contracts & Objectives`: Corporate/patron directives, debts incurred/repaid, milestones.
+  6. `## 5. Combat, Hazards & Encounters`: Adversaries, tactical decisions, environmental hazards, sustained physical trauma and psychological stress.
+  7. `## 6. Loot, Trade & Inventory Ledger`: Credits, salvage, ammunition expended, gear damaged/acquired.
+  8. `## 7. Table Rulings & Candidate Tier 2 Decisions`: GM rulings and custom procedures to propose for `.agents/context/decisions.md`.
+  9. `## 8. Unresolved Hooks & Next Steps`: Active cliffhangers and immediate player intentions.
+- **Frontier Quality Gate 1:** Audit notes against previous sessions for continuity of ongoing debts and character states. Automated refinement loop (up to 3 iterations) if plot points or ledger entries are incomplete.
+- **Save File:** Write finalised notes to `<drive_dir>/_sessions/<slug>_session_notes.md` in Google Drive (Tier 2).
+
+---
+
+### Step 4: Canonical Chapter Drafting (Pass 3 & Frontier Quality Gate 2)
+
+Gemini in chat drafts the canonical chapter file at `campaigns/<subfolder>/<chapter>.md` based on the synthesised GM notes:
 
 #### 1. YAML Front Matter
 
@@ -144,32 +140,47 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
 {% endcomment %}
 ```
 
-#### 3. Chapter Body & Voice Constraints
+#### 3. Chapter Body & Cadence Invariants
 
-- **2 to 4 Subheaders:** Structure into 2–4 themed subsections using `## Heading`.
+- **The 2-4 Architectural Rule:**
+  - 2 to 4 subsections (`## Heading`).
+  - 2 to 4 paragraphs per subsection.
+  - 2 to 4 sentences per paragraph.
+  - **Sentence-per-line:** Every sentence placed on its own line (separated by single newlines) within each paragraph.
 - **Markdown Spacing Rule:** Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
-- **2 to 4 Paragraphs per Subheader:** Each subsection must contain between 2 and 4 distinct paragraphs, separated by blank lines.
-- **2 to 4 Sentences per Paragraph:** Each paragraph must contain between 2 and 4 sentences. Place each sentence on its own line (one sentence per line) where practical.
-- **Entity Cross-Linking:** Embed relative Markdown links (`[Entity](../../directory/...)`) on the first significant mention of every catalogued PC, NPC, location, or faction.
-- **Setting Voice:** Strictly adhere to the cadence, vocabulary, and calibration examples defined under `## Campaign Specification` in `.agents/AGENTS.md`.
-- **Language & Bilingual Mode:** British English spelling throughout. If `Chapter Output Format:` in `.agents/AGENTS.md` is bilingual (e.g. Portuguese / British English), generate the Portuguese section first, preceded by `English version below` and `{: .text-delta .text-right}`, followed by a horizontal divider `---` and the British English mirror section. Archival GM session notes in Google Drive remain synthesised in British English.
+- **Tone & Cadence:** Gene Wolfe anchor-and-veil structure (concrete sensory anchors paired with cool philosophical detachment; 80/20 clarity-to-obscurity ratio).
+- **Zero Boxed Read-Aloud Text:** Never generate boxed text (`> Table Read-Aloud`) or scripted GM monologues.
+- **Entity Cross-Linking:** Embed relative Markdown links (`[Entity](../../directory/...)`) on first mention of catalogued entities.
+- **Bilingual Mirror Translation (when configured):**
+  - Primary language prose (e.g. Portuguese) drafted first adhering to the 2-4 rule.
+  - Horizontal divider `---`.
+  - British English mirror translation below `---`, strictly preserving the paragraph count and sentence-per-line cadence.
+- **Frontier Quality Gate 2:** Mathematically audit heading count, paragraph counts, sentence counts, and relative link resolution. Up to 3 refinement iterations if cadence drifts.
 
 ---
 
-### Step 5: Character Condition Reconciliation & Build Verification
+### Step 5: Character Condition Reconciliation (Pass 4)
 
-1. **Reconcile Character Front Matter:**
-   Parse Section 5 (Combat, Hazards & Encounters) and Section 2 (Plot Beats) of the GM notes. Surgically update character dossiers in `directory/` by modifying only the front matter (`conditions:` list, and campaign-specific markers like `stress`, `bends`, or `charge`), leaving markdown bodies untouched.
-2. **Refresh Semantic Catalogue:**
+1. **Reconcile Character Dossiers:**
+   Parse Section 5 (Combat, Hazards & Encounters) and Section 2 (Plot Beats) of the session notes for newly sustained wounds, trauma, and tracker updates.
+2. **Surgically Update Front Matter:**
+   Execute reconciliation via `scripts/scribe_session.py --reconcile` or direct agent tool:
+   - Updates `conditions:` list (appending non-duplicate conditions, removing cleared conditions).
+   - Synchronises declared campaign markers (`stress`, `bends`, `charge`, `status`) in YAML front matter.
+   - Leaves biographical markdown bodies, equipment tables, and notes completely untouched.
+3. **Present Diff to GM:** Display the reconciled YAML conditions diff for confirmation.
+
+---
+
+### Step 6: Build Verification & Git Feature Branch Staging (Pass 5)
+
+1. **Refresh Semantic Catalogue:**
    ```bash
    ruby --disable-gems _plugins/data_extractor.rb
    ```
-3. **Verify Jekyll Site Build:**
+2. **Verify Site Build:**
    ```bash
    bundle exec jekyll build
    ```
-4. **Present Verification Dossier to GM:**
-   - Link to Google Drive session notes (`_session_notes.md`).
-   - Link to draft chapter file (`<chapter>.md`).
-   - Visual diff of modified character front matter.
-   - Candidate Tier 2 rulings for GM approval.
+3. **Stage Feature Branch:**
+   Checkout dedicated feature branch `efsalvarenga/session-<num>-<slug>`, stage modified chapter and character files, and present the completion dossier to the GM.

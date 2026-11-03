@@ -97,3 +97,9 @@ This section parameterises the shared skills in oude-mechanismen.
 - Character Archetypes / Vocations: [Available setting classes, roles, or affiliations]
 - Session Prep Mode: [Expedition / Station Crawl / Urban Mystery]
 - Party Roster / Player Characters: [Optional character names or folder for Whisper phonetic disambiguation]
+- Character State Trackers:
+  - conditions: list # Universal engine baseline tracker
+  - stress: integer # Campaign-specific marker (e.g. integer or die step)
+  - bends: integer # Campaign-specific marker
+  - charge: integer # Campaign-specific marker
+  - status: string # General health or operational status

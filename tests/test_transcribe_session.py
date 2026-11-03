@@ -77,14 +77,18 @@ class TestStorageSeparation(unittest.TestCase):
         transcript_path = airgap_dir / f"{slug}_transcript.txt"
         notes_path = sessions_dir / f"{slug}_session_notes.md"
         glossary_path = sessions_dir / f"{slug}_glossary.md"
+        tactical_facts_path = sessions_dir / f"{slug}_tactical_facts.md"
+        sensory_textures_path = sessions_dir / f"{slug}_sensory_textures.md"
 
         # Transcript must be in local air-gap, NOT in Google Drive
         self.assertTrue(str(transcript_path).startswith(str(airgap_dir)))
         self.assertFalse(str(transcript_path).startswith(str(sessions_dir)))
 
-        # Notes and glossary must be in Google Drive
+        # Notes, glossary, tactical facts, and sensory textures must be in Google Drive
         self.assertTrue(str(notes_path).startswith(str(sessions_dir)))
         self.assertTrue(str(glossary_path).startswith(str(sessions_dir)))
+        self.assertTrue(str(tactical_facts_path).startswith(str(sessions_dir)))
+        self.assertTrue(str(sensory_textures_path).startswith(str(sessions_dir)))
 
     def test_end_to_end_pre_transcribed_manifest(self):
         """
@@ -123,6 +127,11 @@ class TestStorageSeparation(unittest.TestCase):
 
         self.assertTrue(glossary_p.exists())
         self.assertEqual(glossary_p.parent, self.fake_drive / "_sessions")
+
+        self.assertIn("tactical_facts_path", manifest)
+        self.assertIn("sensory_textures_path", manifest)
+        self.assertEqual(Path(manifest["tactical_facts_path"]).parent, self.fake_drive / "_sessions")
+        self.assertEqual(Path(manifest["sensory_textures_path"]).parent, self.fake_drive / "_sessions")
 
         # Verify Google Drive contains NO .txt files
         gdrive_txt_files = list((self.fake_drive / "_sessions").glob("*.txt"))
