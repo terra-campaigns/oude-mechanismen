@@ -33,8 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Codified character condition reconciliation as a dedicated chat skill step in `skills/scribe-session/SKILL.md` where Gemini surgically updates `conditions:` lists and declared campaign state markers (e.g. `stress`, `bends`, `charge`, `status`) in `directory/` character YAML front matter, leaving markdown body text byte-for-byte untouched.
   - Documented tracker parameterisation in `templates/AGENTS.md.template`.
 
-- **Local Model Benchmark Runner for Session Extraction**:
+- **Local Model Benchmark Runner & Empirical Evaluation**:
   - Authored empirical benchmark harness in `scripts/benchmark_models.py` evaluating candidate local Ollama models on actual session transcripts across Pass 2A and Pass 2B tokens/second and extraction throughput.
+  - Completed side-by-side empirical benchmark of `qwen2.5:14b` vs `mistral-nemo:latest` across a 10,313-word multilingual session transcript. Selected `qwen2.5:14b` as the canonical default model for local extraction due to zero repetition loops and superior factual accuracy.
 
 - **Automated Unit Test Suite & CI Execution**:
   - Expanded unit test suite in `tests/test_scribe_session.py` covering fence-aware markdown cleanliness, air-gap prompt-echo stripping, session metadata resolution, optional input auto-discovery, setting-agnostic British English prompts, and weighted benchmark reporting (14/14 tests passing across suite and wired into GitHub Actions CI).

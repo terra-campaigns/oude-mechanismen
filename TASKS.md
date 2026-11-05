@@ -2,21 +2,6 @@
 
 ## Incoming Feedback / Inbox
 
-### [SEMI] Benchmark & Select Optimal Local Models for Session Scribing Workflow
-
-- **Timestamp:** 2026-11-01
-- **Origin:** `hostile` on `oudemechanismen`
-- **Component:** `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `skills/scribe-session`, local Ollama & MLX model profiles
-- **Operational Context:** Running local automated session transcription and chapter synthesis without cloud dependency.
-- **Specific Friction & Defect:** The scribing workflow relies on default local model configurations (Whisper `large-v3` / `large-v3-turbo` for ASR transcription, and `scribe-14b` / `scribe-14b-bilingual` for LLM synthesis) without an empirical benchmark comparing alternative local model architectures. The operator raised whether we are using the best local models or if we should run multiple models and benchmark them side-by-side. Key trade-offs in ASR transcription accuracy (especially multilingual Portuguese-English table dialogue and RPG terminology), LLM context retention (15k–25k token transcripts), bilingual translation fidelity, adherence to the 8-section GM notes structure, and Apple Silicon Metal GPU generation throughput remain unmeasured.
-- **Actionable Remediation:**
-  1. Build an empirical test harness in `scripts/benchmark_models.py` running candidate local models against standardised session audio and transcript samples. *(Delivered)*
-  2. Benchmark local ASR transcription models (e.g. `mlx-community/whisper-large-v3`, `large-v3-turbo`, `whisper-base/small/medium`) for Metal GPU speed, memory footprint, and multilingual word error rate (WER).
-  3. Benchmark local LLM synthesis candidates via Ollama (e.g. `qwen2.5:14b`, `qwen2.5:32b`, `mistral-nemo:12b`, `llama3.3:70b`, `command-r`) on context retention, structural compliance, translation quality, and tokens/second.
-  4. Publish benchmark results and document the optimal model choices and recommended Ollama `Modelfile` definitions in `oude-mechanismen`.
-  5. Update model resolution in `scripts/scribe_session.py` and downstream campaign templates with the empirically selected models.
-- **Status:** Staged for Overnight Run (Harness delivered)
-
 ### [SEMI] Automated Archival Image Sourcing, Modification & Review Panel for Unillustrated Wiki Entries
 
 - **Timestamp:** 2026-11-01
