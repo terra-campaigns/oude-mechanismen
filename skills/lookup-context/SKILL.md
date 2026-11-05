@@ -13,7 +13,9 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 ### 1. Consult Tier 1 & Tier 2 Indexes First
 
 - **Tier 1 (Catalogue):** Inspect `.agents/context/catalog.json`. Search the `entries` list for matches against `title`, `type`, `region`, or `parent`.
-- **Tier 2 (Rulings Log):** Inspect `.agents/context/decisions.md` to check if a table ruling or conversational decision has already been agreed with the GM.
+- **Tier 2 (Rulings Log & Session Records):**
+  - Inspect `.agents/context/decisions.md` to check if a table ruling or conversational decision has already been agreed with the GM.
+  - When querying recent table events, party conditions, inventory/debts, or unresolved plot hooks, inspect recent synthesised session notes in Google Drive (`<drive_dir>/_sessions/*_session_notes.md`).
 
 ### 2. Targeted Reading
 
@@ -32,6 +34,6 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 
 - **Label Canon Tiers:** Always mark facts by their canon status:
   - **Tier 1 (Established Canon):** Drawn directly from published campaign notes.
-  - **Tier 2 (Agreed Ruling):** Recorded in `.agents/context/decisions.md`.
+  - **Tier 2 (Agreed Rulings & Table Records):** Recorded in `.agents/context/decisions.md` or Google Drive session notes (`_sessions/*_session_notes.md`).
   - **Tier 3 (Influence / Possibility):** From reference PDFs and digests; not canon until adopted by the GM.
 - **Mark Gaps:** If an entity or fact is not found in the indexes, report it clearly as unestablished. Never invent lore or continuity without explicitly marking it as a proposal for the GM.

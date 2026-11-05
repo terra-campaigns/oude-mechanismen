@@ -10,7 +10,10 @@ This repository contains the shared procedural engine, agent skills library, and
 
 1. **Engine Agnosticism**: Never inject setting-specific lore, faction names, or custom house rules into `oude-mechanismen`. All procedural skills, Jekyll templates, and Python scripts must remain generic and parameterised.
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
-3. **Storage Separation**: Markdown lore notes remain in the Git repository. Raw session audio, transcripts, and GM archival notes reside in Google Drive (`<drive_dir>/_sessions/`).
+3. **Storage Separation & Privacy Air-Gap**:
+   - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
+   - **Tier 2 Canon (Google Drive `_sessions/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+   - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
 
 ---
 
@@ -18,7 +21,7 @@ This repository contains the shared procedural engine, agent skills library, and
 
 ```text
 oude-mechanismen/
-├── VERSION                     # Engine semver (e.g. 0.1.0)
+├── VERSION                     # Engine semver (e.g. 0.2.0)
 ├── CHANGELOG.md                # Human & agent changelog following Keep a Changelog
 ├── LICENSE                     # MIT open-source licence
 ├── requirements.txt            # Python dependencies (pyyaml, pypdf, numpy, Pillow)
@@ -31,14 +34,19 @@ oude-mechanismen/
 │   ├── add-character/          # Character dossier creation
 │   ├── prep-session/           # 8-step structured GM session prep
 │   ├── weave-threads/          # Narrative thread & faction anomaly analysis
-│   ├── scribe-session/         # Metal GPU speech-to-text & chapter scribing
+│   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
 │   └── illustrate-entry/       # Archival art curation, filter studio & styling
 │       ├── resources/          # Interactive Generative UI filter studio template
 │       └── scripts/            # Core art_filter.py graphic novel engine
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Tier 3 PDF digest generator & references.json compiler
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
-│   └── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction
+│   ├── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction (Tier 0 air-gap)
+│   ├── scribe_session.py       # Local Ollama two-pass de-personalised extractor (Pass 2A & 2B)
+│   └── benchmark_models.py     # Empirical local model extraction benchmark harness
+├── tests/                      # Automated unit & integration test suite
+│   ├── test_transcribe_session.py
+│   └── test_scribe_session.py
 ├── jekyll/                     # Source-of-truth Jekyll engine
 │   ├── _plugins/               # In-memory catalogue & LLM dump generators
 │   ├── _includes/              # Reusable galleries, headers, and badge fallbacks
@@ -110,7 +118,7 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
 - **Tier 1 (Canonical Published Notes)**: Published markdown files indexed by `_plugins/data_extractor.rb` into `.agents/context/catalog.json`. This is hard canon.
-- **Tier 2 (Active Table Decisions)**: Confirmed rulings and conventions recorded in `.agents/context/decisions.md`. Outranked by published Tier 1 notes; outranks external reference PDFs.
+- **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes and prep in Google Drive (`<drive_dir>/_sessions/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_digests/*.md`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
 ### Low-Token Progressive Retrieval Protocol
@@ -138,4 +146,4 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 1. **Provide `SKILL.md`**: Must begin with YAML front matter containing `name`, `description`, and `argument-hint`.
 2. **Enforce British English**: All instructions, templates, prompts, and code comments must strictly use British English.
 3. **Follow Markdown Spacing Rule**: Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
-4. **Delegate Setting Flavor**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.
+4. **Delegate Setting Flavour**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.

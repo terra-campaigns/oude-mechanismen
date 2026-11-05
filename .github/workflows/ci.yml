@@ -27,7 +27,11 @@ jobs:
 
       - name: Compile and validate Python scripts
         run: |
-          python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('skills/illustrate-entry/scripts/*.py')]"
+          python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('skills/illustrate-entry/scripts/*.py') + glob.glob('tests/*.py')]"
+
+      - name: Run automated unit tests
+        run: |
+          python3 -m unittest discover -s tests -v
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -51,4 +55,23 @@ jobs:
 
       - name: Validate Markdown headings blank line rule
         run: |
-          awk '/^#/{if (getline && $0 != "") { print "Error: Missing blank line after heading at line " (NR-1) " in " FILENAME ": " $0; exit 1 }}' skills/*/SKILL.md README.md CHANGELOG.md AGENTS.md templates/*.md.template templates/jekyll/*.md.template
+          python3 - << 'PY'
+          import glob, re, sys
+          paths = sorted(set(
+              glob.glob("skills/*/SKILL.md")
+              + ["README.md", "CHANGELOG.md", "AGENTS.md", "TASKS.md"]
+              + glob.glob("templates/*.md.template")
+              + glob.glob("templates/jekyll/*.md.template")
+          ))
+          for path in paths:
+              lines = open(path, encoding="utf-8").read().splitlines()
+              in_fence = False
+              for i, line in enumerate(lines):
+                  if re.match(r"^\s*(```|~~~)", line):
+                      in_fence = not in_fence
+                      continue
+                  if not in_fence and re.match(r"^#{1,6}\s", line):
+                      if i + 1 < len(lines) and lines[i + 1] != "":
+                          print(f"Error: Missing blank line after heading at line {i + 1} in {path}: {lines[i + 1]}", file=sys.stderr)
+                          sys.exit(1)
+          PY

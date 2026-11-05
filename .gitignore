@@ -9,3 +9,5 @@ _site/
 .jekyll-cache/
 .sass-cache/
 .env
+benchmark_results.md
+*_benchmark*.md

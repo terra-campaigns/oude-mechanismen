@@ -78,6 +78,25 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
     )
 
 
+def find_airgap_dir(repo_root: Path, explicit_airgap_dir: Optional[str] = None) -> Path:
+    """Resolve the local disk air-gap directory for un-synced session media and verbatim transcripts."""
+    if explicit_airgap_dir:
+        p = Path(explicit_airgap_dir).expanduser().resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    env_dir = os.environ.get("RPG_SESSIONS_DIR")
+    if env_dir:
+        p = Path(env_dir).expanduser().resolve() / repo_root.name
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    # Default to user's local disk air-gap at ~/Private/rpg-sessions/<campaign>/
+    p = Path.home() / "Private" / "rpg-sessions" / repo_root.name
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def parse_campaign_defaults(repo_root: Path) -> Dict[str, Any]:
     """Parse structural and procedural conventions from .agents/AGENTS.md."""
     defaults: Dict[str, Any] = {
@@ -535,6 +554,7 @@ def main():
         help="Path to input audio/video recording (.mkv, .mp4, .wav, .m4a) or transcript (.txt)"
     )
     parser.add_argument("--repo-root", type=str, default=None, help="Campaign repository root (defaults to CWD)")
+    parser.add_argument("--airgap-dir", type=str, default=None, help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Override Google Drive campaign folder")
     parser.add_argument("--session-slug", type=str, default=None, help="Custom slug (e.g. 2026-10-23_ep012)")
     parser.add_argument(
@@ -549,24 +569,43 @@ def main():
         default=str(DEFAULT_MODEL_PATH),
         help="Path to ggml model binary (default: ~/.whisper-models/ggml-large-v3-turbo.bin)"
     )
-    parser.add_argument("--archive-recording", action="store_true", help="Copy source recording to Google Drive _sessions/")
-    parser.add_argument("--skip-transcribe", action="store_true", help="Skip ASR and reuse existing transcript in _sessions/")
+    parser.add_argument("--archive-recording", action="store_true", help="Copy source recording to local air-gap storage (~/Private/rpg-sessions/<campaign>/)")
+    parser.add_argument("--skip-transcribe", action="store_true", help="Skip ASR and reuse existing transcript in local air-gap storage")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON manifest")
 
     args = parser.parse_args()
 
     # 1. Resolve paths
     repo_root = find_campaign_root(args.repo_root)
+    airgap_dir = find_airgap_dir(repo_root, args.airgap_dir)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
     sessions_dir = drive_dir / "_sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
     input_path = Path(args.input_file).expanduser().resolve() if args.input_file else None
+
+    # Auto-discover input from air-gap if omitted
+    if not input_path:
+        media_exts = (".mkv", ".mp4", ".wav", ".m4a", ".mp3")
+        media_candidates = [p for p in airgap_dir.iterdir() if p.suffix.lower() in media_exts and not p.name.startswith(".")]
+        if media_candidates:
+            media_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            input_path = media_candidates[0]
+            if not args.json:
+                print(f"==> Auto-discovered latest recording in air-gap: {input_path.name}")
+        else:
+            txt_candidates = [p for p in airgap_dir.glob("*.txt") if not p.name.startswith(".")]
+            if txt_candidates:
+                txt_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                input_path = txt_candidates[0]
+                if not args.json:
+                    print(f"==> Auto-discovered latest transcript in air-gap: {input_path.name}")
+
     is_text_input = bool(input_path and input_path.suffix.lower() in (".txt", ".md", ".vtt", ".srt"))
     skip_transcribe = args.skip_transcribe or is_text_input
 
     if not skip_transcribe and (not input_path or not input_path.exists()):
-        print(f"Error: Input recording '{args.input_file}' does not exist.", file=sys.stderr)
+        print(f"Error: Input recording '{args.input_file}' not found locally or in air-gap ({airgap_dir}).", file=sys.stderr)
         sys.exit(1)
 
     # 2. Campaign defaults and next chapter discovery
@@ -577,14 +616,27 @@ def main():
     if args.session_slug:
         slug = args.session_slug
     else:
-        date_prefix = datetime.now().strftime("%Y-%m-%d")
-        ep_prefix = Path(next_chapter_info["next_filename"]).stem
-        slug = f"{date_prefix}_{ep_prefix}"
+        file_stem = input_path.stem if input_path else ""
+        slug_match = re.match(
+            r"^(\d{4}-\d{2}-\d{2}_[a-zA-Z0-9_\-]+?)(?:_rec|_transcript|_session_notes|_prep|_glossary)?$",
+            file_stem,
+        )
+        if slug_match:
+            slug = slug_match.group(1)
+        else:
+            date_prefix = datetime.now().strftime("%Y-%m-%d")
+            ep_prefix = Path(next_chapter_info["next_filename"]).stem
+            slug = f"{date_prefix}_{ep_prefix}"
 
+    # Tier 2 Canon (Google Drive)
     glossary_path = sessions_dir / f"{slug}_glossary.md"
-    transcript_base = sessions_dir / f"{slug}_transcript"
-    transcript_path = sessions_dir / f"{slug}_transcript.txt"
     notes_path = sessions_dir / f"{slug}_session_notes.md"
+    tactical_facts_path = sessions_dir / f"{slug}_tactical_facts.md"
+    sensory_textures_path = sessions_dir / f"{slug}_sensory_textures.md"
+
+    # Tier 0 (Local Disk Air-Gap)
+    transcript_base = airgap_dir / f"{slug}_transcript"
+    transcript_path = airgap_dir / f"{slug}_transcript.txt"
 
     # 4. Dynamic Glossary
     _, proper_nouns = build_dynamic_glossary(repo_root, glossary_path, slug, defaults=campaign_defaults)
@@ -607,10 +659,10 @@ def main():
             transcribe_audio(Path(args.model_path), temp_wav, transcript_base, proper_nouns, language=whisper_lang)
 
             if args.archive_recording:
-                dest_rec = sessions_dir / input_path.name
-                if not dest_rec.exists():
+                dest_rec = airgap_dir / f"{slug}_rec{input_path.suffix}"
+                if not dest_rec.exists() and input_path != dest_rec:
                     if not args.json:
-                        print(f"==> Archiving original recording to {dest_rec}...")
+                        print(f"==> Archiving original recording to local air-gap: {dest_rec}...")
                     shutil.copy2(input_path, dest_rec)
         finally:
             if temp_wav.exists():
@@ -619,14 +671,15 @@ def main():
         # Pre-transcribed input or reuse of existing transcript
         is_generated_artifact = bool(
             input_path and (
-                input_path in (transcript_path, glossary_path, notes_path)
-                or input_path.name.endswith(("_glossary.md", "_session_notes.md"))
+                input_path in (transcript_path, glossary_path, notes_path, tactical_facts_path, sensory_textures_path)
+                or input_path.name.endswith(("_glossary.md", "_session_notes.md", "_tactical_facts.md", "_sensory_textures.md"))
             )
         )
         if input_path and input_path.exists() and input_path.is_file() and not is_generated_artifact:
-            if not args.json:
-                print(f"==> Ingesting pre-transcribed text from '{input_path.name}' into {transcript_path}...")
-            shutil.copy2(input_path, transcript_path)
+            if input_path != transcript_path:
+                if not args.json:
+                    print(f"==> Ingesting pre-transcribed text from '{input_path.name}' into local air-gap {transcript_path}...")
+                shutil.copy2(input_path, transcript_path)
         elif not transcript_path.exists() and not args.skip_transcribe:
             print(f"Error: Transcript file not found at '{input_path}' or '{transcript_path}'.", file=sys.stderr)
             sys.exit(1)
@@ -636,11 +689,14 @@ def main():
         "campaign": repo_root.name,
         "repo_root": str(repo_root),
         "drive_dir": str(drive_dir),
+        "airgap_dir": str(airgap_dir),
         "session_slug": slug,
         "session_language": whisper_lang,
         "transcript_path": str(transcript_path),
         "glossary_path": str(glossary_path),
         "session_notes_path": str(notes_path),
+        "tactical_facts_path": str(tactical_facts_path),
+        "sensory_textures_path": str(sensory_textures_path),
         "campaign_defaults": campaign_defaults,
         "next_chapter_info": next_chapter_info,
         "proper_nouns_count": len(proper_nouns),
@@ -657,7 +713,7 @@ def main():
         print(f"Target Chapter: {next_chapter_info['next_chapter_path']}")
         print(f"Target Session Notes: {notes_path}")
         print("=" * 60)
-        print("Ready for Stage 4 Antigravity synthesis via `scribe-session`.")
+        print("Air-gap transcript ready for local two-pass extraction (`scripts/scribe_session.py`) or `scribe-session` skill.")
 
 
 if __name__ == "__main__":
