@@ -713,7 +713,7 @@ def main():
         print(f"Target Chapter: {next_chapter_info['next_chapter_path']}")
         print(f"Target Session Notes: {notes_path}")
         print("=" * 60)
-        print("Ready for Stage 4 Antigravity synthesis via `scribe-session`.")
+        print("Air-gap transcript ready for local two-pass extraction (`scripts/scribe_session.py`) or `scribe-session` skill.")
 
 
 if __name__ == "__main__":

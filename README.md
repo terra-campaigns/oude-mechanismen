@@ -2,7 +2,7 @@
 
 Shared campaign engine, procedural agent skills, and Jekyll static site tooling for tabletop RPG campaign vaults.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml/badge.svg)](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml)
 
@@ -21,14 +21,16 @@ It solves the common problem of AI assistants hallucinating setting rules, forge
 
 ---
 
-## The Three-Tier Canon Hierarchy
+## The Three-Tier Canon Hierarchy & Privacy Air-Gap
 
-To keep LLM token usage low and prevent hallucinations, `oude-mechanismen` structures information into three explicit tiers:
+To keep LLM token usage low, prevent hallucinations, and protect player privacy, `oude-mechanismen` separates raw table media from campaign canon:
 
+- **Tier 0 (Local Disk Air-Gap)**:
+  Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive.
 1. **Tier 1 (Canonical Published Notes)**:
    Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
-2. **Tier 2 (Active Table Decisions)**:
-   Confirmed GM rulings, procedural interpretations, and table consensus logged in `.agents/context/decisions.md`.
+2. **Tier 2 (Active Table Decisions & Archival Notes)**:
+   Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in Google Drive (`<drive_dir>/_sessions/`).
 3. **Tier 3 (External Reference Material & Sourcebooks)**:
    Offline PDF rulebooks and setting digests in `_digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
 
@@ -42,7 +44,7 @@ When linked to your campaign vault, AI coding assistants (such as Antigravity, C
 | :--- | :--- | :--- | :--- |
 | **`lookup-context`** | `/lookup-context` | Low-token progressive context retrieval across Tiers 1, 2, and 3 | Targeted file snippets & line ranges |
 | **`prep-session`** | `/prep-session` | Guided 8-step GM session prep from current situation to map hooks | Structured session briefing & spark tables |
-| **`scribe-session`** | `/scribe-session <file>` | Single-pass session recording transcription and synthesis | Dual output: Google Drive GM notes + in-voice chapter log |
+| **`scribe-session`** | `/scribe-session [file]` | Air-gapped Metal GPU transcription, two-pass local Ollama extraction, and Gemini synthesis | Tier 2 Google Drive 8-section GM notes + calibrated chapter log + dossier condition updates |
 | **`illustrate-entry`** | `/illustrate-entry <note>` | Public-domain archival art curation and graphic-novel styling | Styled gallery artwork + interactive slider studio |
 | **`add-chapter`** | `/add-chapter` | Drafts a session chapter with canonical front matter and links | Setting-calibrated chapter in `campaigns/` |
 | **`add-character`** | `/add-character` | Dossier authoring for player characters or recurring NPCs | Linked dossier note in `directory/` |
@@ -61,9 +63,10 @@ When linked to your campaign vault, AI coding assistants (such as Antigravity, C
 - **Ruby 3.1+** and **Bundler** (for local Jekyll preview)
 - **Python 3.10+** (for procedural runners)
 
-*(Optional for `/scribe-session` audio transcription)*:
+*(Optional for `/scribe-session` local air-gapped audio transcription & extraction)*:
 ```bash
-brew install ffmpeg whisper-cpp
+brew install ffmpeg whisper-cpp ollama
+ollama pull qwen2.5:14b
 mkdir -p ~/.whisper-models
 curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
   "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
@@ -78,14 +81,14 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
    git clone https://github.com/terra-campaigns/oude-mechanismen.git ~/Repos/oude-mechanismen
    ```
 
-2. Initialize your new campaign vault:
+2. Initialise your new campaign vault:
    ```bash
    cd ~/Repos/oude-mechanismen
    ./sync.sh --init ~/Repos/my-new-campaign
    ```
 
 3. Configure your campaign parameters:
-   Navigate to `~/Repos/my-new-campaign/.agents/AGENTS.md` and customize:
+   Navigate to `~/Repos/my-new-campaign/.agents/AGENTS.md` and customise:
    - Setting Genre, Tone, and Cadence
    - Calibration Examples (Too flat vs In voice)
    - Sourcebook PDF directory in `.agents/context/tier1_sources.yml`

@@ -12,7 +12,7 @@ This repository contains the shared procedural engine, agent skills library, and
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
 3. **Storage Separation & Privacy Air-Gap**:
    - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
-   - **Tier 2 Canon (Google Drive `_sessions/`)**: Synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+   - **Tier 2 Canon (Google Drive `_sessions/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
    - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
 
 ---
@@ -21,7 +21,7 @@ This repository contains the shared procedural engine, agent skills library, and
 
 ```text
 oude-mechanismen/
-├── VERSION                     # Engine semver (e.g. 0.1.0)
+├── VERSION                     # Engine semver (e.g. 0.2.0)
 ├── CHANGELOG.md                # Human & agent changelog following Keep a Changelog
 ├── LICENSE                     # MIT open-source licence
 ├── requirements.txt            # Python dependencies (pyyaml, pypdf, numpy, Pillow)
@@ -34,14 +34,19 @@ oude-mechanismen/
 │   ├── add-character/          # Character dossier creation
 │   ├── prep-session/           # 8-step structured GM session prep
 │   ├── weave-threads/          # Narrative thread & faction anomaly analysis
-│   ├── scribe-session/         # Metal GPU speech-to-text & chapter scribing
+│   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
 │   └── illustrate-entry/       # Archival art curation, filter studio & styling
 │       ├── resources/          # Interactive Generative UI filter studio template
 │       └── scripts/            # Core art_filter.py graphic novel engine
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Tier 3 PDF digest generator & references.json compiler
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
-│   └── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction
+│   ├── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction (Tier 0 air-gap)
+│   ├── scribe_session.py       # Local Ollama two-pass de-personalised extractor (Pass 2A & 2B)
+│   └── benchmark_models.py     # Empirical local model extraction benchmark harness
+├── tests/                      # Automated unit & integration test suite
+│   ├── test_transcribe_session.py
+│   └── test_scribe_session.py
 ├── jekyll/                     # Source-of-truth Jekyll engine
 │   ├── _plugins/               # In-memory catalogue & LLM dump generators
 │   ├── _includes/              # Reusable galleries, headers, and badge fallbacks
@@ -141,4 +146,4 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 1. **Provide `SKILL.md`**: Must begin with YAML front matter containing `name`, `description`, and `argument-hint`.
 2. **Enforce British English**: All instructions, templates, prompts, and code comments must strictly use British English.
 3. **Follow Markdown Spacing Rule**: Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
-4. **Delegate Setting Flavor**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.
+4. **Delegate Setting Flavour**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.

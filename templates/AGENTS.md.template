@@ -99,7 +99,5 @@ This section parameterises the shared skills in oude-mechanismen.
 - Party Roster / Player Characters: [Optional character names or folder for Whisper phonetic disambiguation]
 - Character State Trackers:
   - conditions: list # Universal engine baseline tracker
-  - stress: integer # Campaign-specific marker (e.g. integer or die step)
-  - bends: integer # Campaign-specific marker
-  - charge: integer # Campaign-specific marker
   - status: string # General health or operational status
+  # Add campaign-specific markers below (e.g. stress: integer, bends: integer, charge: integer)

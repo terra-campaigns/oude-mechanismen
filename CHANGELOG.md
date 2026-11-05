@@ -36,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local Model Benchmark Runner for Session Extraction**:
   - Authored empirical benchmark harness in `scripts/benchmark_models.py` evaluating candidate local Ollama models on actual session transcripts across Pass 2A and Pass 2B tokens/second and extraction throughput.
 
-- **Automated Unit Test Suite Expansion**:
-  - Expanded unit test suite in `tests/test_scribe_session.py` covering markdown cleanliness enforcement, context ingestion, prompt structure, and benchmark report compilation (11/11 tests passing across suite).
+- **Automated Unit Test Suite & CI Execution**:
+  - Expanded unit test suite in `tests/test_scribe_session.py` covering fence-aware markdown cleanliness, air-gap prompt-echo stripping, session metadata resolution, optional input auto-discovery, setting-agnostic British English prompts, and weighted benchmark reporting (14/14 tests passing across suite and wired into GitHub Actions CI).
 
 ---
 

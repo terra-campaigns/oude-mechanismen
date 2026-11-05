@@ -19,7 +19,7 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 - **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and drafts the canonical chapter and archival notes.
 - **Objective In-World Observer Perspective:** All archival GM notes are narrated from the perspective of an invisible, objective in-world observer witnessing events within the universe. Zero player meta-talk, zero table out-of-character banter, zero boxed read-aloud prose.
 - **The 2-4 Prose Architecture:** 2 to 4 subsections (`## Heading`), 2 to 4 paragraphs per subsection, 2 to 4 sentences per paragraph, and strictly **one sentence per line** within each paragraph.
-- **Deterministic Structural Boundaries:** LLMs never format YAML front matter, Liquid includes, Dataview queries, or relative directory links; Python glue constructs these deterministically.
+- **Clear Local-vs-Cloud Division:** Local Python scripts (`transcribe_session.py` and `scribe_session.py`) deterministically manage Tier 0/Tier 2 storage paths, dynamic glossary compilation, and on-device de-personalisation, while Gemini in chat merges Tier 2 notes, authors canonical chapter scaffolding and prose, and reconciles character front-matter conditions.
 
 ---
 
@@ -27,13 +27,13 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 
 ### Step 1: Local Air-Gapped Transcription & Two-Pass Extraction
 
-Execute the local extraction script from the campaign workspace:
+Execute the engine's local extraction script from the target campaign workspace (preferring the vault's `.agents/venv` interpreter when present):
 
 ```bash
-python3 scripts/scribe_session.py "<input_file>"
+"${PYTHON_BIN:-python3}" "${OUDE_MECHANISMEN_DIR:-$HOME/Repos/oude-mechanismen}/scripts/scribe_session.py" "<input_file>"
 ```
 
-*(Note: If `<input_file>` is omitted, the script auto-discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`).*
+*(Note: If `<input_file>` is omitted, `scribe_session.py` automatically discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`.)*
 
 This local execution:
 1. Normalises audio to 16 kHz mono WAV and transcribes via Apple Metal GPU Whisper (`whisper-cli`) using the dynamic proper-noun glossary prompt.
