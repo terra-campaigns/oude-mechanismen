@@ -40,7 +40,7 @@ This local execution:
 2. Saves the verbatim transcript strictly to `~/Private/rpg-sessions/<campaign>/<slug>_transcript.txt` (Tier 0 Air-Gap, never uploaded or ingested into cloud chat).
 3. Compiles the session acoustic glossary in Google Drive (`<drive_dir>/_sessions/<slug>_glossary.md`).
 4. **Pass 2A (Tactical Facts Extraction):** Local Ollama (`qwen2.5:14b`) extracts chronological timeline, combat actions, damage, mechanical rolls, sustained wounds/stress, and inventory/credits ledger -> saves `<drive_dir>/_sessions/<slug>_tactical_facts.md` (Tier 2 Canon, de-personalised).
-5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`mistral-nemo:12b` or `qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_sessions/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
+5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_sessions/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
 
 At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in Google Drive.
 

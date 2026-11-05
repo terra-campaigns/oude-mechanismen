@@ -25,7 +25,7 @@
 - **Operational Context:** Structural auditing and diagnostic reporting across narrative campaign lore and static site notes.
 - **Specific Friction & Defect:** Running `lint-wiki` across dozens or hundreds of vault notes currently consumes frontier cloud model quota. Because this audit is advisory and non-critical (checking for dead links, orphan pages, stubs, image references, and catalogue health), burning cloud API limits on routine vault sweeps is inefficient and risks quota exhaustion during active coding sessions.
 - **Actionable Remediation:**
-  1. Update `skills/lint-wiki/SKILL.md` to target local Ollama models (`qwen2.5:14b` or `mistral-nemo:12b`) for contextual summarisation and diagnostic evaluation.
+  1. Update `skills/lint-wiki/SKILL.md` to target local Ollama model (`qwen2.5:14b`) for contextual summarisation and diagnostic evaluation.
   2. Offload deterministic mechanical checks (verifying relative link existence, stub line counts, missing frontmatter keys) to a fast local Python script, reserving the local LLM strictly for contextual analysis and report formatting.
   3. Ensure execution runs 100% on-device with zero cloud API token burn.
 - **Status:** Open

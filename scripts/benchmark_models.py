@@ -294,7 +294,7 @@ def main() -> None:
     elif args.all_models:
         target_models = installed_models
     else:
-        preferred = ["qwen2.5:14b", "mistral-nemo:12b", "mistral-nemo:latest", "qwen2.5:32b"]
+        preferred = ["qwen2.5:14b", "qwen2.5:32b", "qwen2.5:7b"]
         target_models = [m for m in preferred if m in installed_models]
         if not target_models:
             target_models = installed_models[:2]

@@ -50,7 +50,7 @@ Common folders:
 - For Tier 3 setting lore or procedures, consult `_digests/*.md` via `.agents/context/references.json` before opening raw PDFs.
 - Front-matter `hooks` field is deprecated and ignored across all agents and tooling. Do not add `hooks:` to new front matter.
 - Regenerate the Tier 1 catalogue manually with `ruby --disable-gems _plugins/data_extractor.rb` or automatically upon git commit.
-- For heavy batch text processing, extraction, or local summarisation, offload to local Ollama (`llama3.2:latest` or `llama3.1:latest`) over `localhost:11434`, always enforcing British English in prompt instructions.
+- For heavy batch text processing, extraction, or local summarisation, offload to local Ollama (`qwen2.5:14b`) over `localhost:11434`, always enforcing British English in prompt instructions.
 
 ## Markdown & Obsidian Conventions
 

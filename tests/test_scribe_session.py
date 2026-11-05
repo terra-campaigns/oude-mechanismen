@@ -199,7 +199,7 @@ class TestScribeSession(unittest.TestCase):
 
         output = scribe_session.extract_sensory_textures(
             "http://localhost:11434",
-            "mistral-nemo:12b",
+            "qwen2.5:14b",
             manifest,
             context,
             keep_alive="5m",

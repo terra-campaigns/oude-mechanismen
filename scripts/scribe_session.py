@@ -455,7 +455,7 @@ def main() -> None:
     parser.add_argument("--airgap-dir", help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>).")
     parser.add_argument("--model", help="Explicit Ollama model override for all extraction passes (default: qwen2.5:14b).")
     parser.add_argument("--model-tactical", help="Explicit Ollama model override for Pass 2A tactical facts (default: qwen2.5:14b).")
-    parser.add_argument("--model-sensory", help="Explicit Ollama model override for Pass 2B sensory textures (default: mistral-nemo:12b or qwen2.5:14b).")
+    parser.add_argument("--model-sensory", help="Explicit Ollama model override for Pass 2B sensory textures (default: qwen2.5:14b).")
     parser.add_argument("--ollama-url", default="http://localhost:11434", help="Ollama API base URL (default: http://localhost:11434).")
     parser.add_argument("--skip-transcribe", action="store_true", help="Skip Whisper acoustic transcription and reuse existing transcript.")
     parser.add_argument("--language", help="Whisper language code override (e.g. 'en', 'pt').")
