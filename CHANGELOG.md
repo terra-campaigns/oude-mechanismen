@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] - 2026-11-10
+
+### Added
+
+- **Enforced Automatic Branch Deletion on Merge**:
+  - Updated `bin/init_vault.sh` to opportunistically enable `gh repo edit --delete-branch-on-merge` when target repositories possess a configured GitHub remote.
+  - Added `## Agent Behaviour` to `templates/AGENTS.md.template` enshrining the Branch Lifecycle invariant and mandatory post-merge local branch cleanup.
+  - Added Section 7 (`## 7. Git Hygiene & Branch Lifecycle`) to `AGENTS.md`.
+  - Added explicit post-merge local branch cleanup instructions (`git checkout main && git pull`, `git branch -d <branch>`, `git fetch --prune`) to procedural skills (`skills/add-chapter/SKILL.md`, `skills/scribe-session/SKILL.md`, and `skills/add-character/SKILL.md`).
+  - Added automated unit test coverage in `tests/test_init_vault.py` verifying opportunistic remote branch deletion.
+
+---
+
 ## [0.4.0] - 2026-11-09
 
 ### Added

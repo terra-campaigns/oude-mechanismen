@@ -121,3 +121,9 @@ After writing the file:
 3. Ensure British English spelling throughout.
 4. Refresh the Tier 1 catalogue: `ruby --disable-gems _plugins/data_extractor.rb`.
 5. Leave the created file unstaged in git for user review.
+6. If working on a dedicated feature branch for PR review, perform local branch cleanup once merged or closed:
+   ```bash
+   git checkout main && git pull
+   git branch -d <feature-branch>
+   git fetch --prune
+   ```

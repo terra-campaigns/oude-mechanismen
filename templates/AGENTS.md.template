@@ -63,6 +63,11 @@ Common folders:
 - Do not convert working Obsidian/Jekyll patterns into another linking style without being asked.
 - Keep filenames and folder naming consistent with nearby files.
 
+## Agent Behaviour
+
+- **Branch Lifecycle**: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches.
+- **Post-Merge Cleanup**: When a Pull Request is merged or closed, switch to `main`, pull the latest remote changes (`git checkout main && git pull`), delete the local feature branch (`git branch -d <branch>`), and prune remote tracking references (`git fetch --prune`).
+
 ## Campaign Specification
 
 <!--

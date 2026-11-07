@@ -60,4 +60,12 @@ EOF
   echo "  + Scaffolded .gitignore"
 fi
 
+# 4. GitHub remote branch hygiene (if repo has a remote and gh is available)
+if command -v gh >/dev/null 2>&1 && git -C "$ABS_REPO" config --get remote.origin.url >/dev/null 2>&1; then
+  echo "  ==> Configuring GitHub repository settings for $ABS_REPO..."
+  if (cd "$ABS_REPO" && gh repo edit --delete-branch-on-merge >/dev/null 2>&1); then
+    echo "  ✓ Enabled --delete-branch-on-merge for remote repository"
+  fi
+fi
+
 echo "==> Campaign vault initialisation complete: $ABS_REPO"
