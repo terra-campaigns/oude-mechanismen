@@ -35,8 +35,7 @@ oude-mechanismen/
 │   ├── prep-session/           # 8-step structured GM session prep
 │   ├── weave-threads/          # Narrative thread & faction anomaly analysis
 │   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
-│   └── illustrate-entry/       # Archival art curation, filter studio & styling
-│       ├── resources/          # Interactive Generative UI filter studio template
+│   └── illustrate-entry/       # Archival art curation & graphic-novel styling
 │       └── scripts/            # Core art_filter.py graphic novel engine
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Tier 3 PDF digest generator & references.json compiler

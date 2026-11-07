@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Legacy Interactive Filter Studio**:
+  - Removed `skills/illustrate-entry/resources/filter_studio.html` and deleted the HTML generator block from `skills/illustrate-entry/scripts/art_filter.py`, simplifying image curation into a clean, 100% chat-native pair-programming workflow.
+  - Rewrote Step 3 of `skills/illustrate-entry/SKILL.md` to focus on direct in-chat curated candidate showcase and selection.
+  - Pruned obsolete filter studio references from `AGENTS.md` and `README.md`.
+
+### Fixed
+
+- **Session Slug Date Regex Boundary**:
+  - Fixed regex in `scripts/scribe_session.py` (`resolve_session_metadata`) from `r"^(\d{4}-\d{2}-\d{2})\b"` to `r"^(\d{4}-\d{2}-\d{2})(?:[_\b]|$)"`, ensuring session slugs with underscore suffixes (`YYYY-MM-DD_NNN`) correctly extract the recording date across calendar days.
+
 ---
 
 ## [0.2.0] - 2026-11-05

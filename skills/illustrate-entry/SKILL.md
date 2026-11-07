@@ -69,18 +69,16 @@ The engine applies:
 
 ---
 
-### Step 3: Interactive Filter Studio & Showcase
+### Step 3: Curated Options Showcase & User Selection
 
-Present the filtered results to the user with real-time multi-preset blending:
+Present the filtered results directly to the user in chat:
 
 1. **Copy generated assets to artifacts**:
-   Copy the generated candidate images and the automatically produced `<entity_clean_name>_studio.html` from `imgs/gallery/` into `<appDataDir>/brain/<conversation-id>/`.
-2. **Surface the Interactive Studio**:
-   Provide the interactive HTML studio artifact (derived from `resources/filter_studio.html`), allowing the user to dial in preset blend weights (0–100%), inking contrast, grain, chromatic aberration, and click-to-place lens flare coordinates in real time.
-3. **Showcase Carousel (optional static companion)**:
-   Include a markdown artifact using ````carousel syntax comparing each filtered preset alongside the original archival source for quick reference.
-4. **Gather user decision**:
-   Once the user blends their preferred balance or selects an export, capture their recipe or winning file for Step 4.
+   Copy the generated candidate images into `<appDataDir>/brain/<conversation-id>/` for artifact viewing.
+2. **Present options in chat**:
+   Display 2 to 4 styled candidate variants directly in chat (with high-resolution markdown image links or carousel, preset names, and full archival provenance).
+3. **Gather user decision**:
+   The user selects their preferred look (e.g. "Option 2 in Nostromo Grime") or requests adjustments. Capture the winning selection for Step 4.
 
 ---
 
