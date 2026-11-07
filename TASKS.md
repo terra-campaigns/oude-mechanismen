@@ -99,7 +99,7 @@
      - *Gate 2 (Tone & Style Calibration):* Tone check against `AGENTS.md` specifications in both languages.
      - *Gate 3 (Wiki & Asset Lint):* Complete resolution check of all relative markdown links and image references on disk.
   3. Mandate that whenever an agent is asked if a chapter or session is ready to publish, it must autonomously execute and report the results of this 3-Gate Audit before declaring readiness.
-- **Status:** Open
+- **Status:** Complete (Implemented in `scripts/lint_chapter.py`, `skills/add-chapter/SKILL.md`, `templates/AGENTS.md.template`, and `tests/test_lint_chapter.py`; empirically validated on `hostile` Chapter 3 and `charged` Chapter 12)
 
 ### [AUTO] Enforce Automatic Branch Deletion Upon PR Closure Across Campaign Vaults
 
