@@ -505,7 +505,11 @@ def main() -> int:
         if p.is_file() and p.suffix.lower() == ".md":
             files_to_lint.append(p)
         elif p.is_dir():
-            files_to_lint.extend(sorted(p.glob("**/*.md")))
+            for md_file in sorted(p.glob("**/*.md")):
+                # Skip index.md files which serve as navigation hubs, not chapter chronicles
+                if md_file.name.lower() == "index.md":
+                    continue
+                files_to_lint.append(md_file)
         else:
             print(f"Error: Target '{target}' is not a markdown file or directory.", file=sys.stderr)
             return 2

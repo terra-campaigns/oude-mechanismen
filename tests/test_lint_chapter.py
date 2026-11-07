@@ -345,8 +345,8 @@ Fourth sentence here.
         # In non-strict mode, warnings don't fail overall status
         self.assertEqual(report.status, "PASS")
 
-    def test_json_output_serialization(self):
-        """Verify FileReport correctly serializes to dictionary / JSON."""
+    def test_json_output_serialisation(self):
+        """Verify FileReport correctly serialises to dictionary / JSON."""
         content = """---
 title: JSON Test
 ---
@@ -373,6 +373,43 @@ S4.
         loaded = json.loads(json_str)
         self.assertEqual(loaded["status"], "PASS")
         self.assertEqual(len(loaded["sections"]), 1)
+
+    def test_directory_scan_skips_index_md(self):
+        """Verify recursive directory scan skips index.md navigation hubs."""
+        sub_dir = self.test_dir / "campaign_arc"
+        sub_dir.mkdir()
+        (sub_dir / "index.md").write_text("# Arc Hub\nNot a chapter.", encoding="utf-8")
+        ep_file = sub_dir / "001.md"
+        ep_file.write_text("""---
+title: Ep 1
+---
+
+## H1
+
+S1.
+S2.
+
+S3.
+S4.
+
+## H2
+
+S1.
+S2.
+
+S3.
+S4.
+""", encoding="utf-8")
+
+        # Mock argv and test main()
+        import io
+        from unittest.mock import patch
+
+        with patch("sys.argv", ["lint_chapter.py", str(sub_dir)]), patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            exit_code = lint_chapter.main()
+            self.assertEqual(exit_code, 0)
+            self.assertIn("001.md", mock_out.getvalue())
+            self.assertNotIn("index.md", mock_out.getvalue())
 
 
 if __name__ == "__main__":
