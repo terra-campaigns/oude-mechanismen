@@ -45,7 +45,7 @@ When linked to your campaign vault, AI coding assistants (such as Antigravity, C
 | **`lookup-context`** | `/lookup-context` | Low-token progressive context retrieval across Tiers 1, 2, and 3 | Targeted file snippets & line ranges |
 | **`prep-session`** | `/prep-session` | Guided 8-step GM session prep from current situation to map hooks | Structured session briefing & spark tables |
 | **`scribe-session`** | `/scribe-session [file]` | Air-gapped Metal GPU transcription, two-pass local Ollama extraction, and Gemini synthesis | Tier 2 Google Drive 8-section GM notes + calibrated chapter log + dossier condition updates |
-| **`illustrate-entry`** | `/illustrate-entry <note>` | Public-domain archival art curation and graphic-novel styling | Styled gallery artwork + interactive slider studio |
+| **`illustrate-entry`** | `/illustrate-entry <note>` | Public-domain archival art curation and graphic-novel styling | Styled gallery artwork with archival attribution |
 | **`add-chapter`** | `/add-chapter` | Drafts a session chapter with canonical front matter and links | Setting-calibrated chapter in `campaigns/` |
 | **`add-character`** | `/add-character` | Dossier authoring for player characters or recurring NPCs | Linked dossier note in `directory/` |
 | **`weave-threads`** | `/weave-threads` | Cross-analyses open threads, faction moves, and economic anomalies | Up to 3 actionable plot tie-ins for future sessions |
