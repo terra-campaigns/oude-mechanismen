@@ -176,7 +176,7 @@ def resolve_session_metadata(manifest: Dict[str, Any]) -> Tuple[str, str]:
     without mistaking schema field names (location_key) for places or stamping stale chapter dates.
     """
     slug = str(manifest.get("session_slug", ""))
-    date_match = re.match(r"^(\d{4}-\d{2}-\d{2})\b", slug)
+    date_match = re.match(r"^(\d{4}-\d{2}-\d{2})(?!\d)", slug)
     recorded_date = date_match.group(1) if date_match else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     next_info = manifest.get("next_chapter_info") or {}
