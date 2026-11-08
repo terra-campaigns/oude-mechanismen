@@ -2,7 +2,7 @@
 
 Shared campaign engine, procedural agent skills, and Jekyll static site tooling for tabletop RPG campaign vaults.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml/badge.svg)](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml)
 
