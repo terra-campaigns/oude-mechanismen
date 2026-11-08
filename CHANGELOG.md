@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] - 2026-11-08
+
+### Added
+
+- **Deterministic Chapter Prose Architecture Linter (`scripts/lint_chapter.py`)**:
+  - Implemented static verification of the **2-4 Framework** (2–4 headings, 2–4 paragraphs per heading, 2–4 sentences per paragraph, and one sentence per line cadence).
+  - Built-in noise masking preserving exact line numbering across YAML front matter, Jekyll Liquid includes/comments, Obsidian Dataview blocks, and HTML comments.
+  - Sentence boundary disambiguation supporting abbreviations (`e.g.`, `i.e.`, `Dr.`, `vs.`, military ranks), uppercase initials, decimals, and dialogue attributions (e.g. `"You unfixed me!" he says.`).
+  - Dual parallel section support for bilingual campaigns (`English version below`, Portuguese on top, horizontal rule `---`, British English on bottom).
+  - CLI output formats for human inspection (`--format text`) and agent consumption (`--format json`).
+  - Added runner template `templates/runners/lint_chapter.py.template` and registered in `sync.sh`'s `MANAGED_FILES` array.
+
+- **Mandatory 3-Gate Pre-Publishing Protocol (`skills/add-chapter/SKILL.md`)**:
+  - Formalised three publication quality gates: Gate 1 (Prose Architecture via `scripts/lint_chapter.py`), Gate 2 (Tone & Voice Calibration via `review-style`), and Gate 3 (Wiki & Asset Integrity via `lint-wiki`).
+  - Codified the standardised Pre-Publishing Readiness Scorecard for agent reporting.
+  - Restricted full 3-Gate execution strictly to pre-PR drafting and pre-final-review checkpoints to prevent LLM token burn on routine intermediate commits.
+
+- **Pre-Publishing Policy Invariants (`AGENTS.md` & `templates/AGENTS.md.template`)**:
+  - Enshrined the operational invariant prohibiting agents from declaring publication readiness on the basis of Git, CI, or Jekyll build status alone without executing the 3-Gate Audit.
+
+- **Automated Unit Test Suite (`tests/test_lint_chapter.py`)**:
+  - Authored 10 unit tests covering compliant monolingual, compliant bilingual, heading violations, paragraph count violations, sentence count violations, inline cadence violations, noise masking line preservation, abbreviation disambiguation, and JSON serialisation.
+
 ### Removed
 
 - **Legacy Interactive Filter Studio**:

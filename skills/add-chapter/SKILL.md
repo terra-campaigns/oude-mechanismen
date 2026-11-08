@@ -162,17 +162,80 @@ Third sentence of second paragraph.
      ```
    - Both language versions must adhere to the semi-strict structural format (2–4 subheaders, 2–4 paragraphs per subheader, 2–4 sentences per paragraph, one sentence per line) and share identical entity relative markdown links.
 
-## 5. Verification Checklist
+## 5. Pre-Publishing Audit Protocol (The 3-Gate Verification)
 
-After writing the file:
+Before declaring any chapter, note, or session chronicle ready for publication or PR review, the agent must execute the formal 3-Gate Pre-Publishing Audit and present the standardised readiness scorecard.
 
-1. Confirm structural compliance with the semi-strict format:
-   - 2 to 4 subheaders (`##`).
-   - 2 to 4 paragraphs per subheader (separated by a blank line).
-   - 2 to 4 sentences per paragraph (each sentence on its own line).
-   - Blank lines immediately following every Markdown heading.
-2. Verify that all internal links resolve to existing files on disk.
-3. Confirm the sequential episode numbering and chronological date.
-4. Refresh the Tier 1 catalogue: `ruby --disable-gems _plugins/data_extractor.rb`.
-5. Run `bundle exec jekyll build` to ensure the site compiles cleanly.
-6. Leave the created file unstaged in git for user review.
+> [!IMPORTANT]
+> **Token Preservation & Gate Triggering:**
+> To preserve LLM context and prevent unnecessary token burn, the full 3-Gate Audit is **NOT** executed on routine intermediate commits. It is strictly mandatory:
+> 1. Immediately prior to requesting final operator review or drafting a Pull Request (`gh pr create`).
+> 2. Whenever an operator asks *"What is still left before publishing?"* or *"Is this session ready to publish?"*.
+> 
+> Declaring publication readiness on the basis of Git cleanliness, CI passing, or Jekyll build status alone is strictly prohibited. Deterministic Gate 1 (`lint_chapter.py`) executes 100% locally with zero token consumption and may be run at any time.
+
+### Gate 1: Prose Architecture & Cadence (`scripts/lint_chapter.py`)
+
+Run the deterministic chapter linter across the target file:
+
+```bash
+python3 scripts/lint_chapter.py <path_to_chapter.md>
+```
+
+*(For bilingual files, pass `--bilingual` if not auto-detected; pass `--format json` for agentic consumption).*
+
+- **Verification:**
+  - 2 to 4 subheaders (`## Heading`).
+  - 2 to 4 paragraphs per subheader.
+  - 2 to 4 sentences per paragraph.
+  - Exactly one sentence per line (no inline multiple sentences).
+  - Empty blank lines immediately following all headings.
+- **Pass Criterion:** Exit code `0` with zero diagnostic errors.
+
+### Gate 2: Tone & Voice Calibration (`review-style`)
+
+Audit the prose against `## Campaign Specification` in `.agents/AGENTS.md`:
+
+- **Verification:**
+  - Setting register (e.g. terse industrial cadence, sensory grime, workplace realism).
+  - British English spelling throughout (*favour*, *travelled*, *rumours*, *armour*).
+  - Strict prohibition of boxed narrative (`> Table Read-Aloud`), conversational monologues, or purple parody.
+  - For bilingual campaigns, verify parallel consistency between Portuguese and British English sections.
+- **Pass Criterion:** All tone defects polished or explicitly acknowledged by the operator.
+
+### Gate 3: Wiki & Asset Integrity (`lint-wiki`)
+
+Verify static site cohesion and referenced assets:
+
+- **Verification:**
+  - All internal relative markdown links resolve to existing files on disk.
+  - All referenced image assets exist in `imgs/` or gallery paths.
+  - Sequential episode numbering and chronological date (`nav_order`) align with campaign timeline.
+  - Tier 1 catalogue compiled cleanly (`ruby --disable-gems _plugins/data_extractor.rb`).
+  - Static site builds without Liquid errors (`bundle exec jekyll build`).
+- **Pass Criterion:** Zero broken links or missing asset paths.
+
+### Standardised Pre-Publishing Readiness Scorecard
+
+Whenever evaluated, report the audit results in this exact structure:
+
+```markdown
+### Pre-Publishing Readiness Scorecard — <Chapter Title>
+
+- **Gate 1 (2-4 Framework, lint_chapter.py):** [PASS / FAIL] — <details / violations>
+- **Gate 2 (Tone & Voice, review-style):** [PASS / FAIL] — <details / tone check>
+- **Gate 3 (Wiki & Asset Lint, lint-wiki):** [PASS / FAIL] — <details / link & image resolution>
+- **Overall Verdict:** [READY / NOT READY]
+```
+
+No gate may be reported as `PASS` without its underlying verification check having been executed in the active session. If any gate fails, state the specific remediation steps required.
+
+## 6. Post-Verification Git Hygiene
+
+After achieving an overall verdict of `READY`:
+
+1. Refresh the Tier 1 catalogue: `ruby --disable-gems _plugins/data_extractor.rb`.
+2. Confirm the Jekyll build succeeds: `bundle exec jekyll build`.
+3. In downstream engineering repositories (`AretePX/*`), commit changes to a dedicated feature branch.
+4. In personal life vaults (`~/Repos/arete`), leave modified files unstaged for manual operator review.
+5. Once a Pull Request is merged or closed, immediately delete the feature branch locally and remotely to prevent branch sprawl.
