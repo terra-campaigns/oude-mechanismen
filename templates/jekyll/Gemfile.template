@@ -1,8 +1,11 @@
 source "https://rubygems.org"
 
 # Jekyll and Just the Docs theme
-gem "jekyll", "~> 3.9.5"
-gem "just-the-docs", "~> 0.8.0"
+gem "jekyll", "~> 4.4.1"
+gem "just-the-docs", "0.12.0"
+
+# Oude Mechanismen procedural engine & catalogue generator
+gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanismen.git", tag: "v0.4.0"
 
 # Standard GitHub Pages plugins
 gem "jekyll-relative-links"

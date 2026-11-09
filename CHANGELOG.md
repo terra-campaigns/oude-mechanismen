@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dynamic Decoupled Jekyll Gem Architecture (ADR 001)**:
+  - Packaged `oude-mechanismen` as a native Jekyll plugin RubyGem (`oude-mechanismen.gemspec` and `lib/oude_mechanismen.rb`) serving plugins and in-memory Liquid includes (`_includes/`) via Jekyll's `site.includes_load_paths` hook (`:site, :after_reset`), eliminating the need to copy engine templates into downstream campaign repositories.
+  - Added `lib/oude_mechanismen/version.rb` dynamically bound to root `VERSION` file (`0.4.0`) and `lib/oude-mechanismen.rb` compatibility shim for Bundler/Jekyll plugin discovery.
+  - Updated `jekyll/_plugins/data_extractor.rb` to stamp `"engine_version": "0.4.0"` into `.agents/context/catalog.json` and automatically invalidate the build cache whenever the engine version changes.
+  - Implemented `bin/init_vault.sh` (63 lines), an idempotent, declarative campaign vault bootstrapper replacing continuous file synchronisation (`sync.sh`) with one-time starter scaffolding (`cp -n`).
+  - Updated starter templates (`templates/jekyll/Gemfile.template`, `templates/jekyll/_config.yml.template`) to declare `gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanismen.git", tag: "v0.4.0"` and registered `oude-mechanismen` under `plugins:`.
+  - Authored and committed [ADR 001](docs/adr/001_dynamic_engine_vs_sync_distribution.md) formalising the Hybrid Decoupled Architecture, versioning policy, and Git pre-commit hook elimination.
+  - Added automated unit test suite in `tests/test_init_vault.py` covering directory topology, template scaffolding, no-clobber idempotence, and Ruby gem version binding.
+  - Extended CI workflow (`.github/workflows/ci.yml`) to validate `bin/init_vault.sh` (`bash -n` and `shellcheck`), Ruby module syntax, and automated `gem build`.
+
 - **The Archival Scriptorium (`scripts/harvest_archival.py`)**:
   - Implemented headless cultural asset excavator querying keyless open-access collections (Wikimedia Commons Action API and The Metropolitan Museum of Art Open Access API).
   - Implemented anti-AI lexical filtering across categories and descriptions, and machine-readable rights validation (`CC0`, `Public domain`, `CC BY`).

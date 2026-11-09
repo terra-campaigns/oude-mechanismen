@@ -10,6 +10,7 @@ baseurl: ""
 permalink: pretty
 
 plugins:
+  - oude-mechanismen
   - jekyll-relative-links
   - jekyll-redirect-from
 
