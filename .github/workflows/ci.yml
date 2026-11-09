@@ -43,14 +43,20 @@ jobs:
           for f in jekyll/_plugins/*.rb; do
             ruby -c "$f"
           done
+          for f in lib/*.rb; do
+            ruby -c "$f"
+          done
+          ruby -c lib/oude_mechanismen/version.rb
+          gem build oude-mechanismen.gemspec
 
       - name: Validate Shell scripts syntax
         run: |
           bash -n sync.sh
+          bash -n bin/init_vault.sh
           bash -n templates/bin/setup.template
           bash -n githooks/pre-commit
           if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck -s bash sync.sh templates/bin/setup.template githooks/pre-commit
+            shellcheck -s bash sync.sh bin/init_vault.sh templates/bin/setup.template githooks/pre-commit
           fi
 
       - name: Validate Markdown headings blank line rule

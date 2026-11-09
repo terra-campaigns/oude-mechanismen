@@ -79,7 +79,91 @@
      - *Git Hooks:* Evaluate configuring `git config core.hooksPath` to point directly to `oude-mechanismen/githooks/`.
   3. Analyse CI/CD and air-gap boundaries: Determine how a dynamic model behaves in headless CI (GitHub Actions) where sibling repositories are not cloned by default.
   4. Author an Architectural Decision Record (ADR) detailing options (Pure Dynamic, Hybrid, or Refined Sync) with migration costs and trade-offs for GM review.
+- **Status:** Closed (ADR 001 Accepted; Phase 1 Delivered in `efsalvarenga/dynamic-engine-gemspec`)
+- **Outcome:**
+  - Evaluated sync-based model against dynamic distribution inspired by `artifice`.
+  - Formally accepted [ADR 001](docs/adr/001_dynamic_engine_vs_sync_distribution.md) adopting the Hybrid Decoupled Architecture.
+  - Authored `oude-mechanismen.gemspec`, `lib/oude_mechanismen.rb`, and `lib/oude-mechanismen.rb` with dynamic versioning tied to root `VERSION`.
+  - Stamped `engine_version` into `catalog.json` at build time.
+  - Eliminated `.githooks/` in favour of agent-driven verification and pre-publishing audit gates.
+  - Mounted `~/Repos/oude-mechanismen/skills` globally in `~/.gemini/config/skills.json`.
+  - Created `bin/init_vault.sh` as the one-time campaign scaffolding bootstrapper, deprecating continuous file-copying synchronisation.
+
+### [SEMI] Pilot Modern Decoupled Engine Architecture on `hostile` Campaign Vault (Phase 2)
+
+- **Timestamp:** 2026-11-07
+- **Origin:** `oude-mechanismen` on `efsalvarenga/dynamic-engine-gemspec`
+- **Component:** `Gemfile`, `_config.yml`, `_plugins/`, `_includes/`, `.agents/scripts/`, `.githooks/`
+- **Operational Context:** Validating the newly packaged `oude-mechanismen` Jekyll Git Gem, global skills mounting, and bootstrapper against the live `hostile` campaign vault.
+- **Specific Friction & Defect:** `hostile` currently retains copied engine plumbing files (`_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, `_includes/`, `.agents/scripts/`, `.githooks/pre-commit`). These must be safely removed and replaced with the gem dependency to verify local builds and GitHub Pages CI.
+- **Actionable Remediation:**
+  1. In `hostile/Gemfile`, replace legacy local plugins with `gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanismen.git", tag: "v0.4.0"` (or local Bundler path override for active development).
+  2. Remove copied `_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, engine `_includes/`, `.agents/scripts/`, and `.githooks/`.
+  3. Verify local build via `bundle install && bundle exec jekyll build`, checking that `catalog.json` compiles with `"engine_version": "0.4.0"`.
+  4. Push to feature branch on `hostile` and verify that GitHub Actions CI (`pages.yml`) builds and deploys cleanly.
 - **Status:** Open
+
+### [SEMI] Cross-Vault Python Tooling & CLI Distribution via Astral uv (Workspaces & uv tool)
+
+- **Timestamp:** 2026-11-08
+- **Origin:** Architectural evolution proposal across `oude-mechanismen`, `arete-engine`, and `artifice`
+- **Component:** `pyproject.toml`, `scripts/`, `bin/`, `templates/`, Astral `uv` toolchain
+- **Operational Context:** Eliminating Python environment fragmentation (`.agents/venv`), runner boilerplate scripts (`.agents/scripts/*.py`), and search path heuristics across downstream campaign vaults (`hostile`, `charged`) and sibling toolsets (`arete-engine`, `artifice`).
+- **Specific Friction & Defect:** `oude-mechanismen` currently relies on loose `requirements.txt` files and copies runner wrapper scripts into every downstream vault (`.agents/scripts/generate_digests.py`, `transcribe_session.py`, `art_filter.py`, `audit_coverage.py`). Each runner contains boilerplate checking `find_core_script()` across 4 filesystem candidate paths and searching for `.agents/venv/bin/python3`. Downstream vaults duplicate a 500MB Python virtual environment containing the exact same dependencies (mlx, pypdf, pyyaml, pillow, numpy). Furthermore, system Python upgrades (e.g. Homebrew Python 3.15) break unpinned environments.
+- **Actionable Remediation:**
+  1. **Package Engine with `pyproject.toml`:** Convert `oude-mechanismen` into a modern Python package declaring core dependencies, Python version bounds, and a unified console script entrypoint:
+     ```toml
+     [project.scripts]
+     oude = "oude_mechanismen.cli:main"
+     ```
+  2. **Global CLI Distribution via `uv tool`:** Support installing the engine as an editable, isolated CLI tool:
+     ```bash
+     uv tool install --editable ~/Repos/oude-mechanismen
+     ```
+     Enabling direct command execution from any campaign vault (`oude scribe ...`, `oude transcribe ...`, `oude digest ...`, `oude audit ...`) with sub-10ms Rust dependency resolution and zero local `.agents/venv` duplication.
+  3. **Purge Runner Scripts & Local Venvs:** Update `bin/init_vault.sh` and downstream vaults to completely eliminate `.agents/scripts/*.py` and `.agents/venv/`.
+  4. **PEP 723 Inline Metadata for Standalone Scripts:** For standalone scripts in `artifice` and `oude-mechanismen`, adopt PEP 723 inline metadata blocks (`# /// script`) so individual scripts declare their own dependencies and execute self-contained via `uv run script.py`.
+  5. **Deprecate Search Heuristics in Engine Scripts:** Refactor `scripts/scribe_session.py` and `scripts/transcribe_session.py` to invoke engine CLI entrypoints directly rather than probing filesystem candidate paths.
+- **Status:** Open
+
+### [AUTO] Author Downstream Campaign Vault Migration Guide & Dynamic Gem Documentation
+
+- **Timestamp:** 2026-11-09
+- **Origin:** PR #8 Review (`codestral-latest` & `code-reviewer`) on `efsalvarenga/dynamic-engine-gemspec`
+- **Component:** `README.md`, `AGENTS.md`, `docs/migration_v0.4.0.md`
+- **Operational Context:** Guiding human developers and downstream vault agents through migrating existing campaign vaults (`hostile`, `charged`) from the file-synchronisation model (`sync.sh`) to the dynamic Jekyll gem and global skills discovery.
+- **Specific Friction & Defect:** While ADR 001 provides the architectural rationale, campaign maintainers need a concise, copy-pasteable migration runbook detailing the exact file removals (`_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, `_includes/`, `.githooks/`), `Gemfile` modifications, and verification steps.
+- **Actionable Remediation:**
+  1. Author `docs/migration_v0.4.0.md` outlining the 4-step migration checklist for existing vaults.
+  2. Update `AGENTS.md` and `README.md` to reference `bin/init_vault.sh` for new vaults and the migration guide for existing vaults.
+  3. Ensure all instructions use British English and adhere to Markdown heading blank line rules.
+- **Status:** Open
+
+### [AUTO] End-to-End Headless Jekyll Build Integration Test for Dynamic Gem
+
+- **Timestamp:** 2026-11-09
+- **Origin:** PR #8 Review (`codestral-latest` & `code-reviewer`) on `efsalvarenga/dynamic-engine-gemspec`
+- **Component:** `tests/test_integration_campaign_build.py`, `tests/`
+- **Operational Context:** Verifying that a freshly scaffolded campaign vault builds end-to-end with Jekyll and the `oude-mechanismen` gem.
+- **Specific Friction & Defect:** Current unit tests in `tests/test_init_vault.py` verify file scaffolding and Ruby syntax, but do not execute a full `jekyll build` command to test in-memory plugin execution (`data_extractor.rb`, `llm_content.rb`) and in-memory include template rendering under Ruby.
+- **Actionable Remediation:**
+  1. Create `tests/test_integration_campaign_build.py` (guarded by `which jekyll` / `bundle`).
+  2. In a temporary directory, run `bin/init_vault.sh`, configure a Bundler Gemfile pointing locally to the engine repository (`gem "oude-mechanismen", path: str(ENGINE_ROOT)`), and execute `bundle exec jekyll build`.
+  3. Verify that `_site/` generates, `.agents/context/catalog.json` contains valid extracted entries with `"engine_version": "0.4.0"`, and shared includes (`header_chapter.md`, `connected_to.html`) render without Liquid syntax errors.
+- **Status:** Open
+
+### [AUTO] Deprecate Legacy sync.sh Continuous Synchronisation in Favour of init_vault.sh (Phase 3)
+
+- **Timestamp:** 2026-11-09
+- **Origin:** ADR 001 Roadmap & PR #8 Delivery
+- **Component:** `sync.sh`, `bin/init_vault.sh`
+- **Operational Context:** Retiring the legacy file-copying synchroniser once downstream vaults (`hostile`, `charged`) have migrated to the dynamic gem.
+- **Specific Friction & Defect:** `sync.sh` currently contains 200+ lines of continuous file-diffing, managed file arrays, and overwrite heuristics (`--check`, `--diff`, `--force`) that are completely obsolete under the dynamic gem architecture. Maintaining two onboarding scripts risks developer confusion.
+- **Actionable Remediation:**
+  1. Verify Phase 2 pilot on `hostile` and `charged` is complete.
+  2. Replace `sync.sh` with a lightweight deprecation shim that prints an advisory warning and delegates `--init` invocations to `bin/init_vault.sh`.
+  3. Remove unused helper functions and `MANAGED_FILES` arrays from `sync.sh`.
+- **Status:** Open (Blocked on Phase 2 `hostile` and `charged` adoption)
 
 ### [AUTO] Codify Mandatory Pre-Publishing Audit Gate (2-4 Framework, Tone Polish, and Wiki Linting)
 

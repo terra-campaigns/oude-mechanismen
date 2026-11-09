@@ -11,6 +11,9 @@ require 'fileutils'
 Encoding.default_external = Encoding::UTF_8 if defined?(Encoding)
 Encoding.default_internal = Encoding::UTF_8 if defined?(Encoding)
 
+version_file = File.expand_path("../../lib/oude_mechanismen/version.rb", __dir__)
+require version_file if File.exist?(version_file)
+
 module OudeMechanismen
   class DataExtractor
     def self.extract(base_dir = Dir.pwd, write_catalog: true)
@@ -259,10 +262,11 @@ module OudeMechanismen
         # Check existing catalog to avoid touching file when content has not changed
         should_write = true
         generated_time = Time.now.iso8601
+        current_engine_version = (defined?(OudeMechanismen::VERSION) ? OudeMechanismen::VERSION : "unknown")
         if File.exist?(catalog_file)
           begin
             existing = JSON.parse(File.read(catalog_file, encoding: 'utf-8'))
-            if existing["entries"] == sorted_entries
+            if existing["entries"] == sorted_entries && existing["engine_version"] == current_engine_version
               should_write = false
               generated_time = existing["generated"] || generated_time
             end
@@ -273,6 +277,7 @@ module OudeMechanismen
 
         catalog_data = {
           "generated" => generated_time,
+          "engine_version" => current_engine_version,
           "tier" => 1,
           "total_entries" => sorted_entries.length,
           "entries" => sorted_entries
