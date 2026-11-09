@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 .agents/venv/
+.agents/tmp/
 _site/
 .jekyll-cache/
 .sass-cache/

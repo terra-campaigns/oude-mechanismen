@@ -78,6 +78,7 @@ MANAGED_FILES=(
   "templates/runners/transcribe_session.py.template:.agents/scripts/transcribe_session.py:true"
   "templates/runners/art_filter.py.template:.agents/scripts/art_filter.py:true"
   "templates/runners/lint_chapter.py.template:.agents/scripts/lint_chapter.py:true"
+  "templates/runners/harvest_archival.py.template:.agents/scripts/harvest_archival.py:true"
   "templates/bin/setup.template:bin/setup:true"
 )
 

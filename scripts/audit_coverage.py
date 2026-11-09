@@ -527,6 +527,83 @@ def audit_untapped_factions(
     return audit
 
 
+def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
+    """Scan campaign markdown notes for missing illustrations or fallback badges."""
+    unillustrated: List[Dict[str, Any]] = []
+
+    # Check tier1_sources.yml include_paths if present, otherwise default folders
+    tier1_cfg = repo_root / ".agents" / "context" / "tier1_sources.yml"
+    include_paths = ["directory", "campaigns", "systems"]
+    if tier1_cfg.exists():
+        try:
+            content = tier1_cfg.read_text(encoding="utf-8")
+            m = re.search(r"include_paths:\s*\n((?:[ \t]*-[ \t]*.*\n?)*)", content)
+            if m:
+                paths = [re.sub(r"^[ \t]*-[ \t]*", "", line).strip() for line in m.group(1).splitlines() if line.strip()]
+                if paths:
+                    include_paths = paths
+        except Exception:
+            pass
+
+    for folder in include_paths:
+        target_dir = repo_root / folder
+        if not target_dir.exists():
+            continue
+
+        for md_file in sorted(target_dir.rglob("*.md")):
+            if md_file.name.startswith((".", "_")):
+                continue
+
+            try:
+                text = md_file.read_text(encoding="utf-8", errors="replace")
+                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", text, re.DOTALL)
+                if not fm_match:
+                    continue
+                fm_text = fm_match.group(1)
+
+                title_m = re.search(r"^title:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
+                title = title_m.group(1).strip() if title_m else md_file.stem
+                type_m = re.search(r"^type:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
+                ent_type = type_m.group(1).strip() if type_m else "Note"
+
+                # Check images front-matter field
+                img_match = re.search(r"^images:[ \t]*\r?\n((?:[ \t]*-[ \t]*.*\r?\n?)*)", fm_text, re.MULTILINE)
+                is_unillustrated = False
+                badge_name = None
+
+                if not img_match:
+                    is_unillustrated = True
+                else:
+                    lines = [line.strip() for line in img_match.group(1).splitlines() if line.strip()]
+                    if not lines:
+                        is_unillustrated = True
+                    else:
+                        badge_pattern = r"^-[ \t]*[/a-zA-Z0-9_\-\.]*imgs/badges/([a-zA-Z0-9_\-\.]+)\.png"
+                        non_badge_images = []
+                        for line in lines:
+                            b_m = re.match(badge_pattern, line)
+                            if b_m:
+                                badge_name = b_m.group(1)
+                            else:
+                                non_badge_images.append(line)
+                        if not non_badge_images:
+                            is_unillustrated = True
+
+                if is_unillustrated:
+                    rel_path = str(md_file.relative_to(repo_root))
+                    unillustrated.append({
+                        "path": rel_path,
+                        "title": title,
+                        "type": ent_type,
+                        "badge": badge_name or "none",
+                        "status": "fallback_badge" if badge_name else "missing_images",
+                    })
+            except Exception:
+                continue
+
+    return unillustrated
+
+
 def run_gap_analysis(
     repo_root: Path,
     drive_dir: Optional[Path],
@@ -544,6 +621,7 @@ def run_gap_analysis(
         "drive_audit": drive_audit,
         "location": location_info,
         "route_graph_available": route_graph is not None,
+        "unillustrated_entries": audit_unillustrated_entries(repo_root),
     }
 
     if route_graph and location_info.get("matched_station"):
@@ -682,6 +760,18 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
         lines.append("No route graph (`.agents/context/route_graph.json`) defined for this campaign. Proximity gap analysis was skipped.")
         lines.append("")
 
+    unillustrated = report.get("unillustrated_entries", [])
+    if unillustrated:
+        lines.append("## Unillustrated Entries & Fallback Badges")
+        lines.append("")
+        lines.append(f"Found {len(unillustrated)} entries currently displaying fallback badges or missing custom illustrations:")
+        lines.append("")
+        lines.append("| Note Path | Entity Title | Type | Fallback Badge | Status |")
+        lines.append("|---|---|---|---|---|")
+        for u in unillustrated:
+            lines.append(f"| `{u['path']}` | **{u['title']}** | {u['type']} | `{u['badge']}` | {u['status']} |")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -691,12 +781,29 @@ def main() -> None:
     parser.add_argument("--drive-dir", help="Path to campaign Google Drive folder.")
     parser.add_argument("--campaign-dir", help="Subfolder under campaigns/ (e.g. campaigns/UVG24XX).")
     parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in hops (default: 2).")
+    parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries displaying fallback badges.")
     parser.add_argument("--json", action="store_true", help="Output results as JSON.")
     parser.add_argument("--report-path", help="Save markdown report to specific file path.")
 
     args = parser.parse_args()
 
     repo_root = find_repo_root(args.repo_dir)
+
+    if args.unillustrated:
+        unillustrated = audit_unillustrated_entries(repo_root)
+        if args.json:
+            print(json.dumps(unillustrated, indent=2))
+        else:
+            if not unillustrated:
+                print("All notes across included paths have custom illustrations!")
+            else:
+                print(f"Discovered {len(unillustrated)} unillustrated entries:\n")
+                print(f"{'Path':<45} {'Title':<30} {'Badge':<15}")
+                print("-" * 92)
+                for u in unillustrated:
+                    print(f"{u['path']:<45} {u['title']:<30} {u['badge']:<15}")
+        return
+
     drive_dir = resolve_drive_dir(repo_root, args.drive_dir)
 
     report = run_gap_analysis(

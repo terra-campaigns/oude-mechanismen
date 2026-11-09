@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-11-09
+
+### Added
+
+- **The Archival Scriptorium (`scripts/harvest_archival.py`)**:
+  - Implemented headless cultural asset excavator querying keyless open-access collections (Wikimedia Commons Action API and The Metropolitan Museum of Art Open Access API).
+  - Implemented anti-AI lexical filtering across categories and descriptions, and machine-readable rights validation (`CC0`, `Public domain`, `CC BY`).
+  - Added semantic query expansion via local Ollama (`qwen2.5:14b`), translating campaign entities into pre-20th-century historical museum terms with deterministic fallback.
+  - Added note-relative image path calculation (`../../imgs/gallery/<slug>.jpg`) ensuring full compatibility with Jekyll's `_plugins/data_extractor.rb` and bidirectional gallery indexing.
+  - Added theme-compliant HTML attribution generation (`<a href="..." target="_blank" rel="noopener noreferrer">...</a>`) for `footer_content:`.
+  - Added multi-preset graphic-novel variant styling via `scripts/art_filter.py` and automated disk cleanup of unselected candidate assets.
+  - Added downstream runner `templates/runners/harvest_archival.py.template` and registered in `sync.sh`'s `MANAGED_FILES`.
+  - Added comprehensive automated unit test suite in `tests/test_harvest_archival.py` with 28 tests passing in 0.003s.
+
+- **Vault Gap Coverage Extension (`scripts/audit_coverage.py --unillustrated`)**:
+  - Added `--unillustrated` flag to `scripts/audit_coverage.py`, scanning campaign markdown notes across included paths to identify entries lacking `images:` or displaying fallback geometric badges (`/imgs/badges/`).
+  - Added JSON export and markdown table reporting for discovery sweeps.
+
+---
+
 ## [0.3.0] - 2026-11-08
 
 ### Added
