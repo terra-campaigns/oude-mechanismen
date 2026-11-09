@@ -34,18 +34,26 @@ Determine the target entity note and input source:
 
 ### Step 1: Open-Source Archival Discovery (Mode B Only)
 
-Search public domain cultural archives matching the entity's specific nature:
+Search public domain cultural archives matching the entity's specific nature using the automated harvester or manual query:
 
-1. **Formulate search queries**:
-   - Do not restrict queries to one genre; tailor to the entity's nature (e.g. 18th-century automata for polibodies, 16th-century grotesque armour for combatants, antique botanical plates for toxic steppe flora, medieval bestiaries for mutants, Renaissance architectural ruins for forgotten serais, astronomical maps for star-clerics).
-   - Search Wikimedia Commons, Rijksmuseum, Metropolitan Museum of Art Open Access, or Wellcome Collection.
-2. **Verify licensing and resolution**:
-   - Ensure the licence is Public Domain, CC0, CC BY, or CC BY-SA.
-   - Prioritise high-resolution assets (minimum 1200px width).
-3. **Gather metadata**:
-   - Record author/artist, title, date, institution/source, licence type, and canonical URL for mandatory attribution.
-4. **Offer selection**:
-   - If multiple compelling candidates exist, present 2 to 4 options to the user with archive links and visual reasoning before filtering.
+1. **Automated Archival Harvesting (Recommended)**:
+   Run the Archival Scriptorium harvester:
+   ```bash
+   python3 .agents/scripts/harvest_archival.py --entity "path/to/note.md" --max-candidates 3
+   ```
+   The engine autonomously:
+   - Derives 3 pre-20th-century historical search terms via local Ollama (`qwen2.5:14b`).
+   - Queries keyless open collections (Wikimedia Commons Action API and The Met Museum Open Access API).
+   - Verifies machine-readable CC0 / Public Domain licensing and rejects generative AI markers.
+   - Downloads top candidates and renders multi-preset styled variants to `.agents/tmp/`.
+   - Skip to **Step 3** to showcase the resulting candidates to the user.
+
+2. **Manual Discovery Fallback**:
+   If running offline without access to museum APIs:
+   - Formulate search queries tailored to the entity's nature (e.g. 18th-century automata, botanical plates, Renaissance ruins).
+   - Search public domain archives manually (Wikimedia Commons, Met Museum, Wellcome Collection).
+   - Verify licensing (CC0, Public Domain, CC BY) and resolution (minimum 800px width).
+   - Proceed to **Step 2** with the acquired image.
 
 ---
 

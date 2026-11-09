@@ -17,16 +17,20 @@
 
 ### [SEMI] Automated Archival Image Sourcing, Modification & Review Panel for Unillustrated Wiki Entries
 
-- **Timestamp:** 2026-11-01 (Evaluated & Closed: 2026-11-05)
+- **Timestamp:** 2026-11-01 (Evaluated: 2026-11-05, Delivered: 2026-11-07)
 - **Origin:** `hostile` on `oudemechanismen`
-- **Component:** `skills/illustrate-entry`, `skills/lint-wiki`, `scripts/art_filter.py`, `scripts/audit_coverage.py`
+- **Component:** `skills/illustrate-entry`, `scripts/harvest_archival.py`, `scripts/art_filter.py`, `scripts/audit_coverage.py`
 - **Operational Context:** Populating missing visual assets across campaign wiki notes (places, NPCs, factions, items, and creatures) without AI hallucination, preserving prose and aesthetic tone.
-- **Specific Friction & Defect:** Illustrating entries across a campaign vault currently requires an ad-hoc, manual, one-by-one workflow. A proposal was made to build an automated batch crawler and interactive HTML review panel / studio with real-time sliders and manifest syncing.
-- **Resolution & Architectural Ruling (Occam's Razor):**
-  1. *Standalone Studio Discarded & Pruned:* An interactive review studio / web app was mocked up and evaluated. It was discarded as over-engineered, cluttered, and unnecessary. All legacy studio plumbing (`resources/filter_studio.html`, generator block in `art_filter.py`, Step 3 in `SKILL.md`, and docs in `AGENTS.md` / `README.md`) was pruned in branch `efsalvarenga/prune-filter-studio`. The conversational, chat-native pair-programming workflow (presenting 3–5 candidate options directly in chat, picking an option, and letting the agent wire up the asset) is faster, cleaner, and superior.
-  2. *Fallback Badges Are Canonical:* Entries without custom illustrations rely on geometric fallback badges (`imgs/badges/people.png`, etc.). These are first-class citizens of the engine architecture. Having no custom image is completely valid and must **never** be flagged as a lint failure or build warning.
-  3. *Workflow Invariant:* `skills/illustrate-entry` remains 100% chat-native.
-- **Status:** Closed (Evaluated & Discarded)
+- **Specific Friction & Defect:** Illustrating entries across a campaign vault previously required an ad-hoc, manual, one-by-one workflow. The initial proposal of a standalone HTML review studio was evaluated and discarded under Occam's razor as over-engineered and cluttered.
+- **Delivered Architecture (The Archival Scriptorium v0.4.0):**
+  1. *Occam's Razor & Chat-Native Pairing:* The workflow is 100% chat-native. The agent discovers or receives an entity, executes `scripts/harvest_archival.py`, and presents 2–3 verified, styled candidates directly in the conversational turn.
+  2. *Keyless Archival Harvesting:* Connects directly to Wikimedia Commons Action API and The Met Museum Open Access API, enforcing strict CC0 / Public Domain machine-readable licensing and rejecting generative AI markers across categories and descriptions.
+  3. *Zero Cloud Quota Expansion:* Offloads fantasy-to-historical museum search term translation to local Ollama (`qwen2.5:14b`) with deterministic regex fallback.
+  4. *Multi-Preset Graphic Novel Renders:* Headless integration with `art_filter.py` generating candidate variants in `.agents/tmp/` with automatic disk cleanup of unselected files upon choice.
+  5. *Jekyll Path & Attribute Integrity:* Calculates directory-depth relative paths (`../../imgs/gallery/<slug>.jpg`) for `_plugins/data_extractor.rb` compatibility and formats valid HTML `<a>` links for `footer_content:`.
+  6. *Gap Discovery:* Added `--unillustrated` to `scripts/audit_coverage.py` to identify entries displaying fallback badges.
+  7. *Canonical Badges Preserved:* Entries without custom illustrations continue to use canonical fallback geometric badges (`/imgs/badges/`) without triggering lint warnings or build errors.
+- **Status:** Completed (v0.4.0)
 
 ### [AUTO] Delegate Wiki Linting (`lint-wiki`) to Local On-Device Models
 
@@ -210,4 +214,18 @@
   2. Decide between: (a) retire the file and the template and move distance and bearing into front matter fields on directory pages that the catalogue extracts, (b) keep it but generate it from directory page front matter so there is a single source, or (c) keep it as a hand-maintained map with a documented schema covering days, unnumbered places and unknown terrain.
   3. If kept, give `prep-session` Step 5 (routes) and `lookup-context` a reason to read it.
   4. If retired, remove it from `sync.sh` scaffolding and update `AGENTS.md`.
+- **Status:** Open
+
+### [SEMI] Support API-Key Cultural Heritage Archives (Rijksmuseum, Harvard, Europeana) as Progressive Enhancement
+
+- **Timestamp:** 2026-11-07
+- **Origin:** `oude-mechanismen` on `next_steps_roadmap`
+- **Component:** `scripts/harvest_archival.py`, `skills/illustrate-entry/SKILL.md`
+- **Operational Context:** Expanding archival image discovery beyond keyless endpoints to premium institutional collections.
+- **Specific Friction & Defect:** Phase 1 of the Archival Scriptorium (`harvest_archival.py`) standardises strictly on keyless endpoints (Wikimedia Commons Action API, Met Museum Open Access, NASA) to maintain zero-configuration onboarding (`./sync.sh --init`). However, collections like the Rijksmuseum, Harvard Art Museums, and Europeana hold world-class historical plates, engravings, and artefacts highly relevant to fantasy and sci-fi campaign aesthetics. Enforcing key requirements up-front introduces onboarding friction and secret leakage risks, but permanently omitting them limits image variety for power users who already possess developer keys.
+- **Actionable Remediation:**
+  1. Design a pluggable, adapter-based archive client architecture in `scripts/harvest_archival.py`.
+  2. Implement optional adapters for Rijksmuseum, Harvard Art Museums, and Europeana that activate only when corresponding environment variables are present (e.g. `RIJKSMUSEUM_API_KEY`, `HARVARD_ART_API_KEY`, `EUROPEANA_API_KEY`).
+  3. Ensure failure to find an environment variable degrades gracefully with zero console errors or warnings, falling back entirely to the keyless default pool.
+  4. Document key acquisition steps and configuration in `skills/illustrate-entry/SKILL.md` as an optional progressive enhancement.
 - **Status:** Open
