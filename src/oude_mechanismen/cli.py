@@ -173,14 +173,30 @@ def _init_repository(target_path: Path) -> int:
     return 0
 
 
-def _load_gemini_skills_config() -> dict:
-    """Load or initialise the global Gemini skills.json configuration."""
+def _load_gemini_skills_config() -> Optional[dict]:
+    """Load or initialise the global Gemini skills.json configuration.
+
+    Returns:
+        The parsed configuration dictionary, an empty template dictionary if
+        the file does not exist, or None if the configuration file is corrupted.
+    """
     if not GEMINI_SKILLS_FILE.is_file():
         return {"entries": []}
     try:
         return json.loads(GEMINI_SKILLS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"entries": []}
+    except Exception as e:
+        backup_path = GEMINI_SKILLS_FILE.with_suffix(".json.corrupt.bak")
+        try:
+            shutil.copy2(GEMINI_SKILLS_FILE, backup_path)
+            backup_msg = f" Created backup at {backup_path}."
+        except Exception:
+            backup_msg = ""
+        print(
+            f"Error: Corrupted skills configuration at {GEMINI_SKILLS_FILE}: {e}.{backup_msg} "
+            "Refusing to overwrite.",
+            file=sys.stderr,
+        )
+        return None
 
 
 def _save_gemini_skills_config(config: dict) -> None:
@@ -211,12 +227,26 @@ def _register_skills_path() -> int:
     """Register XDG skills directory into ~/.gemini/config/skills.json idempotently."""
     target_str = str(SKILLS_TARGET_DIR.resolve())
     config = _load_gemini_skills_config()
+    if config is None:
+        return 1
+
     entries = config.get("entries", [])
+    if not isinstance(entries, list):
+        print(
+            f"Error: Expected 'entries' array in {GEMINI_SKILLS_FILE}, found {type(entries).__name__}.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Check if already present
     for entry in entries:
         if isinstance(entry, dict) and entry.get("path") == target_str:
             return 0
+
+    entries.append({"path": target_str})
+    config["entries"] = entries
+    _save_gemini_skills_config(config)
+    return 0
 
     entries.append({"path": target_str})
     config["entries"] = entries
@@ -294,15 +324,21 @@ def _doctor(target_path: Optional[Path] = None) -> int:
     target_str = str(SKILLS_TARGET_DIR.resolve())
     if GEMINI_SKILLS_FILE.is_file():
         config = _load_gemini_skills_config()
-        for entry in config.get("entries", []):
-            if isinstance(entry, dict) and entry.get("path") == target_str:
-                skills_registered = True
-                break
+        if config is None:
+            print(f"  ✗ Corrupted skills configuration at {GEMINI_SKILLS_FILE}")
+            all_passed = False
+        else:
+            for entry in config.get("entries", []):
+                if isinstance(entry, dict) and entry.get("path") == target_str:
+                    skills_registered = True
+                    break
 
     if skills_registered:
         print(f"  ✓ Global skills path registered: {target_str}")
-    else:
+    elif GEMINI_SKILLS_FILE.is_file() and config is not None:
         print(f"  ⚠ Skills path not registered in {GEMINI_SKILLS_FILE}. Run `oude install-skills` to register.")
+    elif not GEMINI_SKILLS_FILE.is_file():
+        print(f"  ⚠ Skills configuration not yet created at {GEMINI_SKILLS_FILE}. Run `oude install-skills` to initialise.")
 
     print("")
     return 0 if all_passed else 1
@@ -376,15 +412,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.command == "init":
         return _init_repository(Path(args.path))
-    elif args.command == "install-skills":
+    if args.command == "install-skills":
         return _install_skills()
-    elif args.command == "doctor":
+    if args.command == "doctor":
         target = Path(args.vault) if getattr(args, "vault", None) else None
         return _doctor(target)
-    elif args.command in PASS_THROUGH_SCRIPTS:
+    if args.command in PASS_THROUGH_SCRIPTS:
         return _run_script(PASS_THROUGH_SCRIPTS[args.command], extra_args)
 
-    parser.print_help()
     return 1
 
 

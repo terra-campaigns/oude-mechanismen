@@ -175,6 +175,29 @@ class TestOudeCLI(unittest.TestCase):
             updated_cfg2 = json.loads(fake_skills_file.read_text(encoding="utf-8"))
             self.assertEqual(len(updated_cfg2.get("entries", [])), 2, "Duplicate entries created")
 
+    def test_corrupt_skills_json_refuses_overwrite_and_creates_backup(self):
+        """Verify that a corrupt skills.json is backed up and not overwritten."""
+        fake_xdg = Path(self.temp_dir) / "xdg_data"
+        fake_gemini_cfg = Path(self.temp_dir) / "gemini_config"
+        fake_skills_file = fake_gemini_cfg / "skills.json"
+        fake_gemini_cfg.mkdir(parents=True, exist_ok=True)
+        fake_skills_file.write_text("{\"entries\": [INVALID JSON TRAILING COMMA,", encoding="utf-8")
+
+        with patch.object(cli, "SKILLS_TARGET_DIR", fake_xdg / "oude-mechanismen" / "skills"), \
+             patch.object(cli, "GEMINI_CONFIG_DIR", fake_gemini_cfg), \
+             patch.object(cli, "GEMINI_SKILLS_FILE", fake_skills_file), \
+             patch("sys.stderr", new=io.StringIO()):
+            rc = cli._install_skills()
+            self.assertEqual(rc, 1, "Should fail when skills.json is corrupt")
+
+            # Verify backup was created
+            backup_file = fake_skills_file.with_suffix(".json.corrupt.bak")
+            self.assertTrue(backup_file.is_file(), "Corrupt backup file was not created")
+            self.assertIn("INVALID JSON", backup_file.read_text(encoding="utf-8"))
+
+            # Verify corrupt file was not overwritten with blank structure
+            self.assertIn("INVALID JSON", fake_skills_file.read_text(encoding="utf-8"))
+
     def test_doctor_diagnostics(self):
         """Verify doctor detects missing and valid configurations."""
         # Incomplete vault

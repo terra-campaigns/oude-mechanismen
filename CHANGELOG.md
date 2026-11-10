@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consolidated `skills/illustrate-entry/scripts/art_filter.py` into `scripts/art_filter.py` and simplified the import in `scripts/harvest_archival.py`.
   - Added PEP 723 `# /// script` metadata blocks to standalone scripts with third-party dependencies (`art_filter.py`, `generate_digests.py`, `harvest_archival.py`, `transcribe_session.py`).
   - Updated procedural skills (`skills/add-chapter/SKILL.md`, `skills/illustrate-entry/SKILL.md`, `skills/scribe-session/SKILL.md`) and `templates/AGENTS.md.template` to invoke `oude <subcommand>` rather than local script paths.
-  - Added comprehensive automated unit test suite in `tests/test_cli.py` (8 test cases, 100% passing).
+  - Added corrupt configuration backup protection in `_load_gemini_skills_config()` preventing data loss upon invalid `skills.json`.
+  - Added comprehensive automated unit test suite in `tests/test_cli.py` (9 test cases, 67 tests passing across entire suite).
   - Extended CI workflow (`.github/workflows/ci.yml`) with Astral `uv` setup, wheel packaging validation, and CLI execution tests.
 
 ---
