@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy>=1.24.0",
+#     "Pillow>=10.0.0",
+#     "pyyaml>=6.0.0",
+# ]
+# ///
 """
 Archival Scriptorium — Non-AI Asset Harvester.
 
@@ -440,17 +448,13 @@ def style_candidate_variants(
     if not candidate.raw_file_path or not candidate.raw_file_path.exists():
         return {}
 
-    # Locate art_filter.py
-    engine_root = Path(__file__).resolve().parent.parent
-    art_filter_path = engine_root / "skills" / "illustrate-entry" / "scripts" / "art_filter.py"
-
-    if not art_filter_path.exists():
-        return {}
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
+    # Locate art_filter
     try:
-        # Dynamically import art_filter
+        import art_filter
+    except ImportError:
+        art_filter_path = Path(__file__).resolve().parent / "art_filter.py"
+        if not art_filter_path.exists():
+            return {}
         import importlib.util
         spec = importlib.util.spec_from_file_location("art_filter", str(art_filter_path))
         if not spec or not spec.loader:
@@ -458,6 +462,9 @@ def style_candidate_variants(
         art_filter = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(art_filter)
 
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
         from PIL import Image
         cfg = art_filter.load_config(str(aesthetics_cfg_path) if aesthetics_cfg_path else None)
         presets = cfg.get("presets", art_filter.DEFAULT_FALLBACK_PRESETS)

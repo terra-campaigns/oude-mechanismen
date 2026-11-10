@@ -10,5 +10,8 @@ _site/
 .jekyll-cache/
 .sass-cache/
 .env
+dist/
+build/
+*.egg-info/
 benchmark_results.md
 *_benchmark*.md

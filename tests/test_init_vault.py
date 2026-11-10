@@ -95,7 +95,7 @@ class TestInitVault(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, f"Ruby version require failed: {result.stderr}")
-        self.assertEqual(result.stdout.strip(), "0.4.1")
+        self.assertEqual(result.stdout.strip(), "0.5.0")
 
     def test_init_vault_enables_delete_branch_on_merge_when_remote_present(self):
         with tempfile.TemporaryDirectory() as tmpdir:

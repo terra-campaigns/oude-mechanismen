@@ -174,15 +174,15 @@ Before declaring any chapter, note, or session chronicle ready for publication o
 > 
 > Declaring publication readiness on the basis of Git cleanliness, CI passing, or Jekyll build status alone is strictly prohibited. Deterministic Gate 1 (`lint_chapter.py`) executes 100% locally with zero token consumption and may be run at any time.
 
-### Gate 1: Prose Architecture & Cadence (`scripts/lint_chapter.py`)
+### Gate 1: Prose Architecture & Cadence (`oude lint`)
 
 Run the deterministic chapter linter across the target file:
 
 ```bash
-python3 scripts/lint_chapter.py <path_to_chapter.md>
+oude lint <path_to_chapter.md>
 ```
 
-*(For bilingual files, pass `--bilingual` if not auto-detected; pass `--format json` for agentic consumption).*
+*(For bilingual files, pass `--bilingual` if not auto-detected; pass `--format json` for agentic consumption; direct script fallback: `python3 scripts/lint_chapter.py <path_to_chapter.md>`).*
 
 - **Verification:**
   - 2 to 4 subheaders (`## Heading`).

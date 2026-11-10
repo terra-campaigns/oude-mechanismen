@@ -27,11 +27,21 @@ jobs:
 
       - name: Compile and validate Python scripts
         run: |
-          python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('skills/illustrate-entry/scripts/*.py') + glob.glob('tests/*.py')]"
+          python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('src/oude_mechanismen/*.py') + glob.glob('tests/*.py')]"
 
       - name: Run automated unit tests
         run: |
           python3 -m unittest discover -s tests -v
+
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Validate Python package wheel build and CLI
+        run: |
+          uv build
+          uv tool install --force .
+          oude --version
+          oude lint --help
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
