@@ -165,3 +165,11 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
    ```
 3. **Stage Feature Branch:**
    Checkout dedicated feature branch `efsalvarenga/session-<num>-<slug>`, stage modified chapter and character files, and present the completion dossier to the GM.
+4. **Post-Merge & PR Closure Cleanup:**
+   Once the pull request is merged (or closed) on GitHub:
+   ```bash
+   git checkout main && git pull
+   git branch -d <feature-branch>
+   git fetch --prune
+   ```
+   Never retain stale merged feature branches locally or on remote.

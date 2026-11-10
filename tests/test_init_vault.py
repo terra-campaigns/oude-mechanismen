@@ -2,6 +2,8 @@
 Unit tests for bin/init_vault.sh campaign vault bootstrapper and gem packaging.
 """
 
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -84,6 +86,8 @@ class TestInitVault(unittest.TestCase):
             self.assertEqual(agents_md.read_text(encoding="utf-8"), custom_text)
 
     def test_gem_version_consistency(self):
+        if not shutil.which("ruby"):
+            self.skipTest("ruby executable not found on host system")
         result = subprocess.run(
             ["ruby", "-Ilib", "-roude_mechanismen/version", "-e", "puts OudeMechanismen::VERSION"],
             cwd=str(self.engine_root),
@@ -91,7 +95,83 @@ class TestInitVault(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, f"Ruby version require failed: {result.stderr}")
-        self.assertEqual(result.stdout.strip(), "0.4.0")
+        self.assertEqual(result.stdout.strip(), "0.4.1")
+
+    def test_init_vault_enables_delete_branch_on_merge_when_remote_present(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            target = tmp_path / "test_campaign"
+            target.mkdir()
+
+            # Initialise git repository with remote origin
+            subprocess.run(["git", "init", "-b", "main", str(target)], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-C", str(target), "remote", "add", "origin", "https://github.com/terra-campaigns/test.git"],
+                check=True,
+                capture_output=True,
+            )
+
+            # Create mock gh binary that records invocations
+            mock_bin_dir = tmp_path / "bin"
+            mock_bin_dir.mkdir()
+            gh_log = tmp_path / "gh_calls.log"
+            mock_gh = mock_bin_dir / "gh"
+            mock_gh.write_text(
+                f'#!/usr/bin/env bash\necho "$@" >> "{gh_log}"\nexit 0\n',
+                encoding="utf-8",
+            )
+            mock_gh.chmod(0o755)
+
+            env = os.environ.copy()
+            env["PATH"] = f"{mock_bin_dir}:{env['PATH']}"
+
+            result = subprocess.run(
+                ["bash", str(self.init_script), str(target)],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, f"Script failed: {result.stderr}")
+            self.assertIn("Configuring GitHub repository settings", result.stdout)
+            self.assertIn("Enabled --delete-branch-on-merge", result.stdout)
+
+            # Verify gh was called with the expected arguments
+            self.assertTrue(gh_log.is_file(), "Mock gh should have been called")
+            calls = gh_log.read_text(encoding="utf-8").strip().splitlines()
+            self.assertEqual(calls, ["repo edit --delete-branch-on-merge"])
+
+    def test_init_vault_skips_governance_when_no_remote(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            target = tmp_path / "test_campaign"
+            target.mkdir()
+
+            # Initialise git repository WITHOUT remote
+            subprocess.run(["git", "init", "-b", "main", str(target)], check=True, capture_output=True)
+
+            # Create mock gh binary
+            mock_bin_dir = tmp_path / "bin"
+            mock_bin_dir.mkdir()
+            gh_log = tmp_path / "gh_calls.log"
+            mock_gh = mock_bin_dir / "gh"
+            mock_gh.write_text(
+                f'#!/usr/bin/env bash\necho "$@" >> "{gh_log}"\nexit 0\n',
+                encoding="utf-8",
+            )
+            mock_gh.chmod(0o755)
+
+            env = os.environ.copy()
+            env["PATH"] = f"{mock_bin_dir}:{env['PATH']}"
+
+            result = subprocess.run(
+                ["bash", str(self.init_script), str(target)],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, f"Script failed: {result.stderr}")
+            self.assertNotIn("Configuring GitHub repository settings", result.stdout)
+            self.assertFalse(gh_log.is_file(), "Mock gh should NOT have been called when no remote is set")
 
 
 if __name__ == "__main__":

@@ -147,3 +147,11 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 3. **Follow Markdown Spacing Rule**: Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
 4. **Delegate Setting Flavour**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.
 5. **Mandatory Pre-Publishing Audit Gate**: Any procedural skill creating or finalising session chronicles (`add-chapter`, `scribe-session`) must integrate the 3-Gate Pre-Publishing Protocol (Gate 1: `scripts/lint_chapter.py`; Gate 2: `review-style`; Gate 3: `lint-wiki`). To prevent unnecessary LLM token consumption, full 3-Gate execution is strictly reserved for pre-PR drafting and pre-final-review checkpoints, rather than routine intermediate commits. Deterministic Gate 1 (`scripts/lint_chapter.py`) executes locally with zero token burn.
+
+---
+
+## 7. Git Hygiene & Branch Lifecycle
+
+1. **Branch Deletion Invariant**: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches.
+2. **Automated Remote Deletion**: Campaign vaults with GitHub remotes must enable automatic branch deletion on merge (`gh repo edit --delete-branch-on-merge`).
+3. **Post-Merge Local Cleanup**: Once a Pull Request is merged, check out `main`, pull latest remote changes (`git checkout main && git pull`), delete the local branch (`git branch -d <branch>`), and prune remote tracking references (`git fetch --prune`).

@@ -238,4 +238,9 @@ After achieving an overall verdict of `READY`:
 2. Confirm the Jekyll build succeeds: `bundle exec jekyll build`.
 3. In downstream engineering repositories (`AretePX/*`), commit changes to a dedicated feature branch.
 4. In personal life vaults (`~/Repos/arete`), leave modified files unstaged for manual operator review.
-5. Once a Pull Request is merged or closed, immediately delete the feature branch locally and remotely to prevent branch sprawl.
+5. Once a Pull Request is merged or closed, immediately delete the feature branch locally and remotely to prevent branch sprawl:
+   ```bash
+   git checkout main && git pull
+   git branch -d <feature-branch>
+   git fetch --prune
+   ```

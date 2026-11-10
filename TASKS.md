@@ -201,7 +201,7 @@
      - *"Branch Lifecycle: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches."*
   2. In `sync.sh --init`, configure the target GitHub repository to enable automatic head branch deletion on merge (`gh repo edit "$REPO" --delete-branch-on-merge`).
   3. Ensure post-merge cleanup instructions in all procedural skills (`add-chapter`, `scribe-session`) explicitly instruct local branch deletion (`git branch -d <branch>`).
-- **Status:** Open
+- **Status:** Closed (Enforced gh repo edit --delete-branch-on-merge in bin/init_vault.sh, updated templates/AGENTS.md.template and AGENTS.md, and added post-merge branch cleanup instructions to procedural skills)
 
 ### [AUTO] Add Scribe Session Runner Template to sync.sh Manifest
 
