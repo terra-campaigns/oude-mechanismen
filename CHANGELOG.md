@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.2] - 2026-11-11
+
+### Fixed
+
+- **Doctor Diagnostic Precision & Occam's Razor Simplification**:
+  - Anchored `_config.yml` plugin detection and insertion regexes (`r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b"`, `r"(?m)^(plugins:[ \t]*\n)"`) to prevent false positives from commented-out lines.
+  - Eliminated duplicate file and plugin checks in `oude doctor`, consolidating terminal output into a single coherent diagnostic flow.
+  - Enforced read-only invariant in `oude doctor` by gating empty `_plugins/` directory cleanup strictly behind `--fix`.
+  - Removed dead unreachable code in `_register_skills_path()` and cleaned up trailing whitespace.
+  - Ensured `templates/bin/setup.template` executes within the vault root directory via `cd "$REPO_ROOT"`.
+
+---
+
 ## [0.5.1] - 2026-11-11
 
 ### Added
