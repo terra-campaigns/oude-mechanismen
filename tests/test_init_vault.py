@@ -88,6 +88,7 @@ class TestInitVault(unittest.TestCase):
     def test_gem_version_consistency(self):
         if not shutil.which("ruby"):
             self.skipTest("ruby executable not found on host system")
+        expected_version = (self.engine_root / "VERSION").read_text(encoding="utf-8").strip()
         result = subprocess.run(
             ["ruby", "-Ilib", "-roude_mechanismen/version", "-e", "puts OudeMechanismen::VERSION"],
             cwd=str(self.engine_root),
@@ -95,7 +96,7 @@ class TestInitVault(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, f"Ruby version require failed: {result.stderr}")
-        self.assertEqual(result.stdout.strip(), "0.5.0")
+        self.assertEqual(result.stdout.strip(), expected_version)
 
     def test_init_vault_enables_delete_branch_on_merge_when_remote_present(self):
         with tempfile.TemporaryDirectory() as tmpdir:

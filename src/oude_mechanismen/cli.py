@@ -9,6 +9,7 @@ All messages and documentation strictly adhere to British English.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -265,7 +266,7 @@ def _install_skills() -> int:
     return 0
 
 
-def _doctor(target_path: Optional[Path] = None) -> int:
+def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     """Audit campaign vault health, tool dependencies, and skills registration."""
     vault = (target_path or Path.cwd()).resolve()
     print(f"Oude Mechanismen v{__version__} — Campaign Diagnostics")
@@ -288,8 +289,80 @@ def _doctor(target_path: Optional[Path] = None) -> int:
             print(f"  ✗ Missing: {desc}")
             all_passed = False
 
-    # 2. Check catalog.json and engine version
+    # 2. Check Jekyll configuration (_config.yml) for oude-mechanismen plugin
+    config_yml_path = vault / "_config.yml"
+    if config_yml_path.is_file():
+        try:
+            config_content = config_yml_path.read_text(encoding="utf-8")
+            if "oude-mechanismen" in config_content:
+                print("  ✓ Jekyll configuration (_config.yml: plugin enabled)")
+            else:
+                print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
+                if fix:
+                    print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
+                    if "plugins:" in config_content:
+                        new_content = re.sub(
+                            r"(plugins:\s*\n)",
+                            r"\1  - oude-mechanismen\n",
+                            config_content,
+                            count=1,
+                        )
+                    else:
+                        new_content = config_content.rstrip() + "\n\nplugins:\n  - oude-mechanismen\n"
+                    config_yml_path.write_text(new_content, encoding="utf-8")
+                else:
+                    all_passed = False
+        except Exception as e:
+            print(f"  ✗ Failed to read _config.yml: {e}")
+            all_passed = False
+
+    # 3. Check Gemfile for oude-mechanismen gem dependency
+    gemfile_path = vault / "Gemfile"
+    if gemfile_path.is_file():
+        try:
+            gemfile_content = gemfile_path.read_text(encoding="utf-8")
+            if "oude-mechanismen" in gemfile_content:
+                print("  ✓ Bundler configuration (Gemfile: 'oude-mechanismen' declared)")
+            else:
+                print("  ⚠ Bundler Gemfile missing 'oude-mechanismen' gem dependency")
+                all_passed = False
+        except Exception as e:
+            print(f"  ✗ Failed to read Gemfile: {e}")
+            all_passed = False
+
+    # 4. Check for legacy files (collisions/shadowing)
+    legacy_files = [
+        vault / "_plugins" / "data_extractor.rb",
+        vault / "_plugins" / "llm_content.rb",
+        vault / ".agents" / "venv",
+    ]
+    for legacy_file in legacy_files:
+        if legacy_file.exists():
+            rel_str = str(legacy_file.relative_to(vault))
+            if fix:
+                if legacy_file.is_file():
+                    legacy_file.unlink()
+                    print(f"  ✓ Removed legacy file: {rel_str}")
+                elif legacy_file.is_dir():
+                    shutil.rmtree(legacy_file)
+                    print(f"  ✓ Removed legacy directory: {rel_str}")
+            else:
+                print(f"  ⚠ Legacy file detected: {rel_str}")
+                all_passed = False
+
+    # Clean up empty _plugins directory if left empty
+    plugins_dir = vault / "_plugins"
+    if plugins_dir.is_dir():
+        try:
+            if not any(plugins_dir.iterdir()):
+                plugins_dir.rmdir()
+                print("  ✓ Removed empty _plugins directory")
+        except OSError:
+            pass
+
+    # 5. Check catalog.json and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
+    needs_rebuild = False
     if catalog_path.is_file():
         try:
             data = json.loads(catalog_path.read_text(encoding="utf-8"))
@@ -298,13 +371,31 @@ def _doctor(target_path: Optional[Path] = None) -> int:
                 print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
             else:
                 print("  ⚠ Tier 1 catalogue compiled but lacks engine_version metadata")
+                needs_rebuild = True
         except Exception as e:
             print(f"  ✗ Corrupted catalog.json: {e}")
-            all_passed = False
+            needs_rebuild = True
     else:
         print("  ⚠ Tier 1 catalogue (.agents/context/catalog.json) not yet generated")
+        needs_rebuild = True
 
-    # 3. Check CLI tool dependencies
+    if needs_rebuild:
+        if fix:
+            if shutil.which("bundle"):
+                print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
+                res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
+                if res.returncode == 0:
+                    print("  ✓ Recompiled Jekyll site and refreshed catalogue")
+                else:
+                    print(f"  ✗ Rebuild failed: {res.stderr.strip() or res.stdout.strip()}")
+                    all_passed = False
+            else:
+                print("  ⚠ 'bundle' executable not found in PATH; skipping automated catalogue rebuild")
+                all_passed = False
+        else:
+            all_passed = False
+
+    # 6. Check CLI tool dependencies
     print("\nChecking external tool dependencies:")
     tools = [
         ("whisper-cli", "Whisper speech-to-text (whisper.cpp)"),
@@ -318,7 +409,7 @@ def _doctor(target_path: Optional[Path] = None) -> int:
         else:
             print(f"  ⚠ Not found in PATH: {tool_cmd} ({tool_desc})")
 
-    # 4. Check global skills registration
+    # 7. Check global skills registration
     print("\nChecking agent skills registration:")
     skills_registered = False
     target_str = str(SKILLS_TARGET_DIR.resolve())
@@ -399,6 +490,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--vault",
         help="Path to target campaign vault directory (default: current directory)",
     )
+    p_doc.add_argument(
+        "--fix",
+        action="store_true",
+        help="Automatically remediate legacy plugins, missing config, and rebuild catalogue",
+    )
 
     # 4. Pass-through scripts
     for cmd_name, script_file in PASS_THROUGH_SCRIPTS.items():
@@ -416,7 +512,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _install_skills()
     if args.command == "doctor":
         target = Path(args.vault) if getattr(args, "vault", None) else None
-        return _doctor(target)
+        return _doctor(target, args.fix)
     if args.command in PASS_THROUGH_SCRIPTS:
         return _run_script(PASS_THROUGH_SCRIPTS[args.command], extra_args)
 
@@ -425,3 +521,4 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

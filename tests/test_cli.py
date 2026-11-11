@@ -220,6 +220,99 @@ class TestOudeCLI(unittest.TestCase):
             rc_pass = cli._doctor(self.target_dir)
             self.assertEqual(rc_pass, 0, "Doctor should pass on initialised directory with catalog")
 
+    def test_doctor_detects_missing_oude_mechanismen_in_config_yml(self):
+        """Verify doctor detects missing oude-mechanismen in _config.yml."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        config_yml_path = self.target_dir / "_config.yml"
+        config_content = config_yml_path.read_text(encoding="utf-8")
+        config_content = config_content.replace("oude-mechanismen", "")
+        config_yml_path.write_text(config_content, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when oude-mechanismen is missing in _config.yml")
+            self.assertIn("Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins", fake_out.getvalue())
+
+    def test_doctor_detects_legacy_plugins(self):
+        """Verify doctor detects legacy _plugins/data_extractor.rb."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        legacy_plugin_path = self.target_dir / "_plugins" / "data_extractor.rb"
+        legacy_plugin_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_plugin_path.write_text("# Legacy plugin", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when legacy plugins are detected")
+            self.assertIn("Legacy file detected: _plugins/data_extractor.rb", fake_out.getvalue())
+
+    def test_doctor_fix_removes_legacy_plugins_and_patches_config_yml(self):
+        """Verify doctor --fix removes legacy plugins and patches _config.yml."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        # Add valid catalog so catalog rebuild is not triggered
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        # Add legacy plugin
+        legacy_plugin_path = self.target_dir / "_plugins" / "data_extractor.rb"
+        legacy_plugin_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_plugin_path.write_text("# Legacy plugin", encoding="utf-8")
+
+        # Remove oude-mechanismen from _config.yml
+        config_yml_path = self.target_dir / "_config.yml"
+        config_content = config_yml_path.read_text(encoding="utf-8")
+        config_content = config_content.replace("oude-mechanismen", "")
+        config_yml_path.write_text(config_content, encoding="utf-8")
+
+        # Run doctor with --fix
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed legacy file: _plugins/data_extractor.rb", fake_out.getvalue())
+            self.assertIn("Adding oude-mechanismen to plugins in _config.yml...", fake_out.getvalue())
+
+        # Verify legacy plugin is removed
+        self.assertFalse(legacy_plugin_path.exists(), "Legacy plugin was not removed")
+
+        # Verify oude-mechanismen is added to _config.yml
+        updated_config_content = config_yml_path.read_text(encoding="utf-8")
+        self.assertIn("oude-mechanismen", updated_config_content, "oude-mechanismen was not added to _config.yml")
+
+    def test_doctor_fix_rebuilds_catalogue_when_stale(self):
+        """Verify doctor --fix triggers bundle exec jekyll build when catalogue is stale."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        # Write catalog without engine_version
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(json.dumps({"total_entries": 5}), encoding="utf-8")
+
+        with patch("shutil.which", return_value="/usr/bin/bundle"), \
+             patch("subprocess.run") as mock_sub:
+            mock_sub.return_value = MagicMock(returncode=0)
+            with patch("sys.stdout", new=io.StringIO()) as fake_out:
+                rc = cli._doctor(self.target_dir, fix=True)
+                self.assertEqual(rc, 0)
+                self.assertIn("Regenerating catalogue with engine_version via 'bundle exec jekyll build'...", fake_out.getvalue())
+                mock_sub.assert_called_with(
+                    ["bundle", "exec", "jekyll", "build"],
+                    cwd=str(self.target_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
     def test_run_script_passthrough(self):
         """Verify pass-through execution runs bundled script and returns exit code."""
         with patch("subprocess.run") as mock_sub:
