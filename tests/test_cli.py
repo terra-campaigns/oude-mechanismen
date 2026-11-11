@@ -228,7 +228,7 @@ class TestOudeCLI(unittest.TestCase):
 
         config_yml_path = self.target_dir / "_config.yml"
         config_content = config_yml_path.read_text(encoding="utf-8")
-        config_content = config_content.replace("oude-mechanismen", "")
+        config_content = "# plugins:\n# - oude-mechanismen\n" + config_content.replace("  - oude-mechanismen\n", "")
         config_yml_path.write_text(config_content, encoding="utf-8")
 
         with patch("sys.stdout", new=io.StringIO()) as fake_out:
@@ -269,10 +269,9 @@ class TestOudeCLI(unittest.TestCase):
         legacy_plugin_path.parent.mkdir(parents=True, exist_ok=True)
         legacy_plugin_path.write_text("# Legacy plugin", encoding="utf-8")
 
-        # Remove oude-mechanismen from _config.yml
+        # Remove oude-mechanismen from _config.yml and prepend commented # plugins:
         config_yml_path = self.target_dir / "_config.yml"
-        config_content = config_yml_path.read_text(encoding="utf-8")
-        config_content = config_content.replace("oude-mechanismen", "")
+        config_content = "# plugins:\n" + config_yml_path.read_text(encoding="utf-8").replace("  - oude-mechanismen\n", "")
         config_yml_path.write_text(config_content, encoding="utf-8")
 
         # Run doctor with --fix
@@ -282,12 +281,13 @@ class TestOudeCLI(unittest.TestCase):
             self.assertIn("Removed legacy file: _plugins/data_extractor.rb", fake_out.getvalue())
             self.assertIn("Adding oude-mechanismen to plugins in _config.yml...", fake_out.getvalue())
 
-        # Verify legacy plugin is removed
+        # Verify legacy plugin and empty _plugins dir are removed
         self.assertFalse(legacy_plugin_path.exists(), "Legacy plugin was not removed")
+        self.assertFalse((self.target_dir / "_plugins").exists(), "Empty _plugins directory was not removed")
 
-        # Verify oude-mechanismen is added to _config.yml
+        # Verify oude-mechanismen is added under active plugins: and not under # plugins:
         updated_config_content = config_yml_path.read_text(encoding="utf-8")
-        self.assertIn("oude-mechanismen", updated_config_content, "oude-mechanismen was not added to _config.yml")
+        self.assertIn("\nplugins:\n  - oude-mechanismen\n", updated_config_content)
 
     def test_doctor_fix_rebuilds_catalogue_when_stale(self):
         """Verify doctor --fix triggers bundle exec jekyll build when catalogue is stale."""

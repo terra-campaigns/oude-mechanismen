@@ -4,8 +4,8 @@
 #
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 
 # Expand standard paths and UTF-8 locale for Homebrew, asdf, rbenv, mise, etc.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.rbenv/shims:$HOME/.asdf/shims:$HOME/.local/share/mise/shims:$PATH"
@@ -15,11 +15,9 @@ export LANG="${LANG:-en_GB.UTF-8}"
 echo "==> Setting up campaign environment in $REPO_ROOT..."
 
 # 1. Configure Git hooks
-if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git -C "$REPO_ROOT" config core.hooksPath .githooks 2>/dev/null || true
-  if [ -f "$REPO_ROOT/.githooks/pre-commit" ]; then
-    chmod +x "$REPO_ROOT/.githooks/pre-commit"
-  fi
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git config core.hooksPath .githooks 2>/dev/null || true
+  [ -f .githooks/pre-commit ] && chmod +x .githooks/pre-commit
   echo "  ✓ Configured Git hooks (.githooks/pre-commit)"
 fi
 

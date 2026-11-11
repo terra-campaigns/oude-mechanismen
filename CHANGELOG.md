@@ -11,20 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.2] - 2026-11-11
+
+### Fixed
+
+- **Doctor Diagnostic Precision & Occam's Razor Simplification**:
+  - Anchored `_config.yml` plugin detection and insertion regexes (`r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b"`, `r"(?m)^(plugins:[ \t]*\n)"`) to prevent false positives from commented-out lines.
+  - Eliminated duplicate file and plugin checks in `oude doctor`, consolidating terminal output into a single coherent diagnostic flow.
+  - Enforced read-only invariant in `oude doctor` by gating empty `_plugins/` directory cleanup strictly behind `--fix`.
+  - Removed dead unreachable code in `_register_skills_path()` and cleaned up trailing whitespace.
+  - Ensured `templates/bin/setup.template` executes within the vault root directory via `cd "$REPO_ROOT"`.
+
+---
+
 ## [0.5.1] - 2026-11-11
 
 ### Added
 
 - **Self-Healing Diagnostics & Automated Vault Remediation (`oude doctor --fix`)**:
-  - Enhanced `oude doctor` to inspect `_config.yml` for required `oude-mechanismen` plugin activation and report actionable warnings when missing.
-  - Added detection of legacy engine files (`_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, `.agents/venv`) left behind by pre-ADR 001/002 synchronization.
-  - Added `--fix` flag to `oude doctor` providing automated remediation:
-    - Automatically injects `- oude-mechanismen` under `plugins:` in `_config.yml`.
-    - Prunes obsolete shadowing `_plugins/` files and empty `_plugins/` directory.
-    - Prunes obsolete `.agents/venv` virtual environments.
-    - Automatically triggers `bundle exec jekyll build` when `catalog.json` lacks engine version metadata.
-  - Modernised `templates/bin/setup.template` to eliminate obsolete local engine repository searches and per-vault venv creation, streamlining to Bundler installation, Jekyll site compilation, and `oude doctor` diagnostics.
-  - Added comprehensive automated unit test coverage in `tests/test_cli.py` for config detection, legacy plugin pruning, and automated catalogue regeneration.
+  - Enhanced `oude doctor` to validate `oude-mechanismen` plugin activation in `_config.yml` and detect legacy files (`_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, `.agents/venv`) from pre-ADR 001/002 synchronisation.
+  - Added `--fix` flag to `oude doctor` to automatically inject `- oude-mechanismen` under `plugins:`, prune legacy shadowing files and `.agents/venv`, and rebuild stale `catalog.json` via `bundle exec jekyll build`.
+  - Simplified `templates/bin/setup.template` by removing obsolete local clone searches and per-vault virtual environment creation.
+  - Added unit test coverage in `tests/test_cli.py` and dynamic version assertions in `tests/test_init_vault.py`.
+
+---
+
+## [0.5.0] - 2026-11-10
 
 ### Added
 
