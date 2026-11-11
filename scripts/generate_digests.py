@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pypdf>=6.0.0",
+#     "pyyaml>=6.0.0",
+# ]
+# ///
 """
 Compile Tier 3 reference routing index (.agents/context/references.json) from
 Markdown digests in the campaign's Google Drive _digests/ directory.

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "pyyaml>=6.0.0",
+# ]
+# ///
 """
 Setting-agnostic audio transcription and campaign context extractor for table RPG sessions.
 

@@ -37,10 +37,11 @@ Determine the target entity note and input source:
 Search public domain cultural archives matching the entity's specific nature using the automated harvester or manual query:
 
 1. **Automated Archival Harvesting (Recommended)**:
-   Run the Archival Scriptorium harvester:
+   Run the Archival Scriptorium harvester via the `oude` CLI:
    ```bash
-   python3 .agents/scripts/harvest_archival.py --entity "path/to/note.md" --max-candidates 3
+   oude harvest --entity "path/to/note.md" --max-candidates 3
    ```
+   *(Or direct script fallback: `python3 scripts/harvest_archival.py --entity "path/to/note.md" --max-candidates 3`).*
    The engine autonomously:
    - Derives 3 pre-20th-century historical search terms via local Ollama (`qwen2.5:14b`).
    - Queries keyless open collections (Wikimedia Commons Action API and The Met Museum Open Access API).
@@ -59,16 +60,18 @@ Search public domain cultural archives matching the entity's specific nature usi
 
 ### Step 2: Apply Graphic-Novel Art Filter
 
-Run the generic filter engine in `scripts/art_filter.py`:
+Run the graphic-novel filter engine via `oude filter`:
 
 ```bash
-python3 .agents/scripts/art_filter.py \
+oude filter \
   --input "<path_or_url>" \
   --config ".agents/context/aesthetics.yml" \
   --output-dir "imgs/gallery" \
   --name-prefix "<entity_clean_name>" \
   --preset "all"
 ```
+
+*(Or direct script fallback: `python3 scripts/art_filter.py ...`).*
 
 The engine applies:
 - **Difference of Gaussians (DoG) comic inking & luminous edge glow**: Normalised edge-detection extracting organic black pen contours along rivets, joints, folds, and anatomical features, or additive neon emission tracing over dark bulkheads.

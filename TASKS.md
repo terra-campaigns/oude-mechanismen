@@ -124,7 +124,16 @@
   3. **Purge Runner Scripts & Local Venvs:** Update `bin/init_vault.sh` and downstream vaults to completely eliminate `.agents/scripts/*.py` and `.agents/venv/`.
   4. **PEP 723 Inline Metadata for Standalone Scripts:** For standalone scripts in `artifice` and `oude-mechanismen`, adopt PEP 723 inline metadata blocks (`# /// script`) so individual scripts declare their own dependencies and execute self-contained via `uv run script.py`.
   5. **Deprecate Search Heuristics in Engine Scripts:** Refactor `scripts/scribe_session.py` and `scripts/transcribe_session.py` to invoke engine CLI entrypoints directly rather than probing filesystem candidate paths.
-- **Status:** Open
+- **Status:** Closed (ADR 002 Proposed; Phase 1 Delivered in `efsalvarenga/python-cli-uv-distribution`)
+- **Outcome:**
+  - Formally authored [ADR 002](docs/adr/002_python_cli_distribution_uv.md) establishing zero-clone engine distribution.
+  - Packaged engine via `pyproject.toml` with `hatchling` backend, single-source versioning from `VERSION`, and `force-include` asset bundling.
+  - Implemented unified `oude` CLI (`src/oude_mechanismen/cli.py`) with `init`, `install-skills`, `doctor`, and pass-through script execution.
+  - Added dual-mode asset resolution supporting both editable development and isolated wheel distributions via `uv tool`.
+  - Added XDG skills distribution (`oude install-skills`) and idempotent `~/.gemini/config/skills.json` registration.
+  - Relocated `art_filter.py` to `scripts/` and simplified `harvest_archival.py` imports.
+  - Added PEP 723 `# /// script` metadata headers across standalone scripts with external dependencies.
+  - Added unit test suite in `tests/test_cli.py` (66 tests passing across test suite).
 
 ### [AUTO] Author Downstream Campaign Vault Migration Guide & Dynamic Gem Documentation
 
@@ -214,7 +223,7 @@
   1. Author `templates/runners/scribe_session.py.template` in `oude-mechanismen` matching the standard runner wrapper pattern.
   2. Add `'templates/runners/scribe_session.py.template:.agents/scripts/scribe_session.py:true'` to `MANAGED_FILES` in `sync.sh`.
   3. Ensure `sync.sh` test suites and documentation reflect 15 managed files.
-- **Status:** Open
+- **Status:** Obsolete (Runner wrappers eliminated by ADR 002 & unified `oude` CLI)
 
 ### [AUTO] Remove all-content.md and llm_content.rb from Engine and sync.sh Manifest
 

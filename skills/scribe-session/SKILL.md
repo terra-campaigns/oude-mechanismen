@@ -27,13 +27,15 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 
 ### Step 1: Local Air-Gapped Transcription & Two-Pass Extraction
 
-Execute the engine's local extraction script from the target campaign workspace (preferring the vault's `.agents/venv` interpreter when present):
+Execute the engine's local extraction command from the target campaign workspace:
 
 ```bash
-"${PYTHON_BIN:-python3}" "${OUDE_MECHANISMEN_DIR:-$HOME/Repos/oude-mechanismen}/scripts/scribe_session.py" "<input_file>"
+oude scribe "<input_file>"
 ```
 
-*(Note: If `<input_file>` is omitted, `scribe_session.py` automatically discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`.)*
+*(Or direct script fallback: `python3 "${OUDE_MECHANISMEN_DIR:-$HOME/Repos/oude-mechanismen}/scripts/scribe_session.py" "<input_file>"`).*
+
+*(Note: If `<input_file>` is omitted, `oude scribe` automatically discovers the latest recording or transcript in `~/Private/rpg-sessions/<campaign>/`.)*
 
 This local execution:
 1. Normalises audio to 16 kHz mono WAV and transcribes via Apple Metal GPU Whisper (`whisper-cli`) using the dynamic proper-noun glossary prompt.

@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy>=1.24.0",
+#     "Pillow>=10.0.0",
+#     "pyyaml>=6.0.0",
+# ]
+# ///
 """
 art_filter.py - Generic Graphic-Novel Art Filter Engine
 Part of the illustrate-entry skill in oude-mechanismen.

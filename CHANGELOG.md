@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - 2026-11-10
+
+### Added
+
+- **Cross-Vault Python Tooling & Zero-Clone CLI Distribution via Astral `uv` (ADR 002)**:
+  - Authored and formally proposed [ADR 002](docs/adr/002_python_cli_distribution_uv.md) establishing zero-clone engine distribution and decoupling procedural tooling from local repository clones.
+  - Packaged `oude-mechanismen` with modern Python standards via `pyproject.toml` (`hatchling` backend, Python bounds `>=3.11`, single source of truth versioning bound to `VERSION`).
+  - Implemented unified console entrypoint `oude` (`src/oude_mechanismen/cli.py` and `src/oude_mechanismen/__init__.py`) supporting `init`, `install-skills`, `doctor`, and pass-through execution of bundled scripts (`lint`, `audit`, `digest`, `harvest`, `filter`, `transcribe`, `scribe`, `benchmark`).
+  - Added dual-mode asset resolution (`_resolve_asset_dir`) supporting both editable git checkouts and isolated wheel distributions installed via `uv tool`.
+  - Added global skills synchronisation (`oude install-skills`) into XDG data directory `~/.local/share/oude-mechanismen/skills` with idempotent registration in `~/.gemini/config/skills.json`.
+  - Consolidated `skills/illustrate-entry/scripts/art_filter.py` into `scripts/art_filter.py` and simplified the import in `scripts/harvest_archival.py`.
+  - Added PEP 723 `# /// script` metadata blocks to standalone scripts with third-party dependencies (`art_filter.py`, `generate_digests.py`, `harvest_archival.py`, `transcribe_session.py`).
+  - Updated procedural skills (`skills/add-chapter/SKILL.md`, `skills/illustrate-entry/SKILL.md`, `skills/scribe-session/SKILL.md`) and `templates/AGENTS.md.template` to invoke `oude <subcommand>` rather than local script paths.
+  - Added corrupt configuration backup protection in `_load_gemini_skills_config()` preventing data loss upon invalid `skills.json`.
+  - Added comprehensive automated unit test suite in `tests/test_cli.py` (9 test cases, 67 tests passing across entire suite).
+  - Extended CI workflow (`.github/workflows/ci.yml`) with Astral `uv` setup, wheel packaging validation, and CLI execution tests.
+
+---
+
 ## [0.4.1] - 2026-11-10
 
 ### Added
