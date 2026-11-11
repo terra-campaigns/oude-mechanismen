@@ -249,11 +249,6 @@ def _register_skills_path() -> int:
     _save_gemini_skills_config(config)
     return 0
 
-    entries.append({"path": target_str})
-    config["entries"] = entries
-    _save_gemini_skills_config(config)
-    return 0
-
 
 def _install_skills() -> int:
     """Synchronise bundled skills to XDG data directory and register in Gemini config."""
@@ -276,126 +271,82 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
 
     # 1. Check essential vault configuration files
     print("Checking campaign configuration:")
-    checks = [
-        (vault / "_config.yml", "Jekyll configuration (_config.yml)"),
+    config_yml_path = vault / "_config.yml"
+    if config_yml_path.is_file():
+        config_content = config_yml_path.read_text(encoding="utf-8")
+        if re.search(r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b", config_content):
+            print("  ✓ Jekyll configuration (_config.yml)")
+        elif fix:
+            print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
+            if re.search(r"(?m)^plugins:[ \t]*\n", config_content):
+                new_content = re.sub(
+                    r"(?m)^(plugins:[ \t]*\n)",
+                    r"\1  - oude-mechanismen\n",
+                    config_content,
+                    count=1,
+                )
+            else:
+                new_content = config_content.rstrip() + "\n\nplugins:\n  - oude-mechanismen\n"
+            config_yml_path.write_text(new_content, encoding="utf-8")
+        else:
+            print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
+            all_passed = False
+    else:
+        print("  ✗ Missing: Jekyll configuration (_config.yml)")
+        all_passed = False
+
+    for path, desc in [
         (vault / "Gemfile", "Bundler configuration (Gemfile)"),
         (vault / ".agents" / "AGENTS.md", "Agent instructions (.agents/AGENTS.md)"),
         (vault / ".agents" / "context" / "tier1_sources.yml", "Tier 1 sources (tier1_sources.yml)"),
-    ]
-    for path, desc in checks:
+    ]:
         if path.is_file():
             print(f"  ✓ {desc}")
         else:
             print(f"  ✗ Missing: {desc}")
             all_passed = False
 
-    # 2. Check Jekyll configuration (_config.yml) for oude-mechanismen plugin
-    config_yml_path = vault / "_config.yml"
-    if config_yml_path.is_file():
-        try:
-            config_content = config_yml_path.read_text(encoding="utf-8")
-            if "oude-mechanismen" in config_content:
-                print("  ✓ Jekyll configuration (_config.yml: plugin enabled)")
-            else:
-                print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
-                if fix:
-                    print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
-                    if "plugins:" in config_content:
-                        new_content = re.sub(
-                            r"(plugins:\s*\n)",
-                            r"\1  - oude-mechanismen\n",
-                            config_content,
-                            count=1,
-                        )
-                    else:
-                        new_content = config_content.rstrip() + "\n\nplugins:\n  - oude-mechanismen\n"
-                    config_yml_path.write_text(new_content, encoding="utf-8")
-                else:
-                    all_passed = False
-        except Exception as e:
-            print(f"  ✗ Failed to read _config.yml: {e}")
-            all_passed = False
-
-    # 3. Check Gemfile for oude-mechanismen gem dependency
-    gemfile_path = vault / "Gemfile"
-    if gemfile_path.is_file():
-        try:
-            gemfile_content = gemfile_path.read_text(encoding="utf-8")
-            if "oude-mechanismen" in gemfile_content:
-                print("  ✓ Bundler configuration (Gemfile: 'oude-mechanismen' declared)")
-            else:
-                print("  ⚠ Bundler Gemfile missing 'oude-mechanismen' gem dependency")
-                all_passed = False
-        except Exception as e:
-            print(f"  ✗ Failed to read Gemfile: {e}")
-            all_passed = False
-
-    # 4. Check for legacy files (collisions/shadowing)
-    legacy_files = [
-        vault / "_plugins" / "data_extractor.rb",
-        vault / "_plugins" / "llm_content.rb",
-        vault / ".agents" / "venv",
-    ]
-    for legacy_file in legacy_files:
-        if legacy_file.exists():
-            rel_str = str(legacy_file.relative_to(vault))
+    # 2. Check for legacy files (collisions/shadowing)
+    for rel_str in ("_plugins/data_extractor.rb", "_plugins/llm_content.rb", ".agents/venv"):
+        legacy_path = vault / rel_str
+        if legacy_path.exists():
             if fix:
-                if legacy_file.is_file():
-                    legacy_file.unlink()
-                    print(f"  ✓ Removed legacy file: {rel_str}")
-                elif legacy_file.is_dir():
-                    shutil.rmtree(legacy_file)
-                    print(f"  ✓ Removed legacy directory: {rel_str}")
+                shutil.rmtree(legacy_path) if legacy_path.is_dir() else legacy_path.unlink()
+                print(f"  ✓ Removed legacy file: {rel_str}")
             else:
                 print(f"  ⚠ Legacy file detected: {rel_str}")
                 all_passed = False
 
-    # Clean up empty _plugins directory if left empty
     plugins_dir = vault / "_plugins"
-    if plugins_dir.is_dir():
-        try:
-            if not any(plugins_dir.iterdir()):
-                plugins_dir.rmdir()
-                print("  ✓ Removed empty _plugins directory")
-        except OSError:
-            pass
+    if fix and plugins_dir.is_dir() and not any(plugins_dir.iterdir()):
+        plugins_dir.rmdir()
 
-    # 5. Check catalog.json and engine version
+    # 3. Check catalog.json and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
-    needs_rebuild = False
+    engine_ver = None
     if catalog_path.is_file():
         try:
             data = json.loads(catalog_path.read_text(encoding="utf-8"))
             engine_ver = data.get("engine_version") or data.get("metadata", {}).get("engine_version")
-            if engine_ver:
-                print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
-            else:
-                print("  ⚠ Tier 1 catalogue compiled but lacks engine_version metadata")
-                needs_rebuild = True
         except Exception as e:
             print(f"  ✗ Corrupted catalog.json: {e}")
-            needs_rebuild = True
-    else:
-        print("  ⚠ Tier 1 catalogue (.agents/context/catalog.json) not yet generated")
-        needs_rebuild = True
 
-    if needs_rebuild:
-        if fix:
-            if shutil.which("bundle"):
-                print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
-                res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
-                if res.returncode == 0:
-                    print("  ✓ Recompiled Jekyll site and refreshed catalogue")
-                else:
-                    print(f"  ✗ Rebuild failed: {res.stderr.strip() or res.stdout.strip()}")
-                    all_passed = False
-            else:
-                print("  ⚠ 'bundle' executable not found in PATH; skipping automated catalogue rebuild")
-                all_passed = False
+    if engine_ver:
+        print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
+    elif fix and shutil.which("bundle"):
+        print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
+        res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
+        if res.returncode == 0:
+            print("  ✓ Recompiled Jekyll site and refreshed catalogue")
         else:
+            print(f"  ✗ Rebuild failed: {res.stderr.strip() or res.stdout.strip()}")
             all_passed = False
+    else:
+        status = "compiled but lacks engine_version metadata" if catalog_path.is_file() else "not yet generated"
+        print(f"  ⚠ Tier 1 catalogue {status}")
+        all_passed = False
 
-    # 6. Check CLI tool dependencies
+    # 4. Check CLI tool dependencies
     print("\nChecking external tool dependencies:")
     tools = [
         ("whisper-cli", "Whisper speech-to-text (whisper.cpp)"),
@@ -409,7 +360,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         else:
             print(f"  ⚠ Not found in PATH: {tool_cmd} ({tool_desc})")
 
-    # 7. Check global skills registration
+    # 5. Check global skills registration
     print("\nChecking agent skills registration:")
     skills_registered = False
     target_str = str(SKILLS_TARGET_DIR.resolve())
@@ -521,4 +472,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
