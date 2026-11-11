@@ -11,7 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.5.0] - 2026-11-10
+## [0.5.1] - 2026-11-11
+
+### Added
+
+- **Self-Healing Diagnostics & Automated Vault Remediation (`oude doctor --fix`)**:
+  - Enhanced `oude doctor` to inspect `_config.yml` for required `oude-mechanismen` plugin activation and report actionable warnings when missing.
+  - Added detection of legacy engine files (`_plugins/data_extractor.rb`, `_plugins/llm_content.rb`, `.agents/venv`) left behind by pre-ADR 001/002 synchronization.
+  - Added `--fix` flag to `oude doctor` providing automated remediation:
+    - Automatically injects `- oude-mechanismen` under `plugins:` in `_config.yml`.
+    - Prunes obsolete shadowing `_plugins/` files and empty `_plugins/` directory.
+    - Prunes obsolete `.agents/venv` virtual environments.
+    - Automatically triggers `bundle exec jekyll build` when `catalog.json` lacks engine version metadata.
+  - Modernised `templates/bin/setup.template` to eliminate obsolete local engine repository searches and per-vault venv creation, streamlining to Bundler installation, Jekyll site compilation, and `oude doctor` diagnostics.
+  - Added comprehensive automated unit test coverage in `tests/test_cli.py` for config detection, legacy plugin pruning, and automated catalogue regeneration.
 
 ### Added
 

@@ -5,6 +5,6 @@ module OudeMechanismen
   VERSION = if File.exist?(VERSION_FILE)
               File.read(VERSION_FILE).strip
             else
-              "0.5.0"
+              "0.5.1"
             end
 end
