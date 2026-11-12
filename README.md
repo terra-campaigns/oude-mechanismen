@@ -5,7 +5,6 @@ Shared campaign engine, procedural agent skills, and Jekyll static site tooling 
 [![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml/badge.svg)](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml)
-[![Review](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/review-request.yml/badge.svg)](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/review-request.yml)
 
 Powering [Charged](https://github.com/terra-campaigns/charged) and [Hostile](https://github.com/terra-campaigns/hostile).
 
@@ -34,34 +33,6 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
    Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in Google Drive (`<drive_dir>/_sessions/`).
 3. **Tier 3 (External Reference Material & Sourcebooks)**:
    Offline PDF rulebooks and setting digests in `_digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
-
----
-
-## Development & Review Pairing with Antigravity
-
-`oude-mechanismen` is designed for **bidirectional pairing** with **Gemini Antigravity** for code reviews and architectural validation. This ensures all engine changes are adversarially probed before merging.
-
-🔗 **[Full Pairing Guide](PAIRING_GUIDE.md)** | 📖 **[Detailed Specification](docs/REVIEW_PAIRING.md)**
-
-### Quick Start
-
-**Request a Review:**
-```bash
-git commit -m "feat: new feature [REVIEW-REQUESTED]"
-git push
-```
-
-**Perform a Review:**
-```bash
-# Review documents are auto-created at docs/reviews/pr_<number>_review.md
-# Use Antigravity to execute adversarial probes
-```
-
-**Monitor Reviews:**
-```bash
-# Check GitHub Actions for review workflow status
-gh run list --repo terra-campaigns/oude-mechanismen
-```
 
 ---
 
