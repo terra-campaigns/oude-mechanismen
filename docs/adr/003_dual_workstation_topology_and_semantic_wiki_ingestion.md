@@ -336,6 +336,10 @@ _gm-materials/digests/<source_name>/
 - `_index.md` is the entry-point hub: book premise, themes, survival/campaign clocks, a chapter/page map, and annotated links to the entity folders and top-level entities.
 - The categorised subdirectories (`factions/`, `locations/`, `people/`, `creatures/`, `artefacts/`, `mechanics/`, `tables/`, `other/`) are adaptable to both module/dungeon books (*Gradient Descent*) and core rulebooks/gazetteers (*Hostile*); a sourcebook may omit categories it does not need, routing any unclassified material into `other/`.
 - **Target sizing rule**: each note should be roughly 30–120 lines (~300–1,200 tokens), so one targeted `read_file` yields full operational detail on the entity without pulling in unrelated chapters.
+- **Subfolder subdivision rule (`n = 20`)**: if a category folder would contain more than `20` substantial notes (commonly `locations/` in a megadungeon or sector gazetteer), subdivide it into semantic subfolders (e.g. `locations/sub_level_01/airlock_03.md`), subject to three guardrails:
+  1. *Maximum depth of 1 below the category* (`<category>/<subgroup>/<note>.md`): never nest deeper, avoiding extra `list_dir` hops and brittle relative paths.
+  2. *Respect the ~30–120-line sizing floor first*: group small adjacent keyed rooms into one cohesive zone/deck note rather than creating dozens of 10-line stubs.
+  3. *Minimum subgroup size & hub links*: only create a `<subgroup>/` folder when it holds at least `4` notes, and list all subgroups in the root `_index.md`.
 
 #### 3.5.2 Hyperlink Strategy: Relative Markdown Links vs Wikilinks
 
