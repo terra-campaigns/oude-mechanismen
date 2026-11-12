@@ -211,7 +211,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -259,7 +259,7 @@ class TestOudeCLI(unittest.TestCase):
         # Add valid catalog so catalog rebuild is not triggered
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -320,7 +320,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -340,7 +340,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -362,7 +362,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -382,7 +382,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -403,7 +403,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -429,7 +429,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -463,7 +463,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -484,7 +484,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -511,7 +511,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -537,7 +537,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -557,7 +557,7 @@ class TestOudeCLI(unittest.TestCase):
 
         catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
         catalog_path.write_text(
-            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
             encoding="utf-8",
         )
 
@@ -587,6 +587,100 @@ class TestOudeCLI(unittest.TestCase):
             rc = cli._doctor(self.target_dir)
             self.assertEqual(rc, 0, "Doctor should pass with warning on version mismatch")
             self.assertIn("Engine version mismatch: catalog.json (0.1.0) vs installed package", fake_out.getvalue())
+
+    def test_doctor_fix_handles_inline_plugins_in_config_yml(self):
+        """Verify doctor --fix appends oude-mechanismen to inline plugins lists without duplicating keys."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        config_path = self.target_dir / "_config.yml"
+        for initial, expected in [
+            ("title: Test\nplugins: [jekyll-feed]\n", "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\n"),
+            ("title: Test\nplugins: []\n", "title: Test\nplugins: [oude-mechanismen]\n"),
+        ]:
+            config_path.write_text(initial, encoding="utf-8")
+            with patch("sys.stdout", new=io.StringIO()):
+                rc_fix = cli._doctor(self.target_dir, fix=True)
+                self.assertEqual(rc_fix, 0)
+            updated = config_path.read_text(encoding="utf-8")
+            self.assertEqual(updated, expected)
+            self.assertEqual(updated.count("plugins:"), 1)
+
+            with patch("sys.stdout", new=io.StringIO()):
+                rc_check = cli._doctor(self.target_dir)
+                self.assertEqual(rc_check, 0, "Doctor should recognise inline oude-mechanismen plugin")
+
+    def test_doctor_preserves_empty_all_content_md_when_bundled_asset_missing(self):
+        """Verify doctor does not delete an empty all-content.md if the bundled template cannot be resolved."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        all_content_path = self.target_dir / "all-content.md"
+        all_content_path.write_text("", encoding="utf-8")
+
+        real_resolve = cli.resolve_asset_dir
+
+        def fake_resolve(name):
+            if "all-content.md" in name or name == "jekyll":
+                return Path(self.temp_dir) / "missing_asset"
+            return real_resolve(name)
+
+        with patch.object(cli, "resolve_asset_dir", side_effect=fake_resolve), \
+             patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0)
+            self.assertIn("bundled template unavailable", fake_out.getvalue())
+
+        self.assertTrue(all_content_path.exists(), "Empty all-content.md should not be deleted when bundled asset is missing")
+
+    def test_doctor_detects_redundant_all_content_md_with_crlf(self):
+        """Verify doctor detects and removes unmodified all-content.md despite CRLF line endings."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
+        crlf_content = bundled_content.replace("\r\n", "\n").replace("\n", "\r\n")
+        all_content_path = self.target_dir / "all-content.md"
+        all_content_path.write_bytes(crlf_content.encode("utf-8"))
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn("Redundant root all-content.md detected", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()):
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+
+        self.assertFalse(all_content_path.exists())
+
+    def test_resolve_asset_dir_includes_and_all_content(self):
+        """Verify bundled Jekyll includes directory and all-content.md resolve cleanly."""
+        includes_dir = oude_mechanismen.resolve_asset_dir("jekyll/_includes")
+        all_content_path = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md")
+        self.assertTrue(includes_dir.is_dir())
+        self.assertTrue(all_content_path.is_file())
 
 
 if __name__ == "__main__":

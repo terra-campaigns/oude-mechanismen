@@ -285,11 +285,25 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     config_yml_path = vault / "_config.yml"
     if config_yml_path.is_file():
         config_content = config_yml_path.read_text(encoding="utf-8")
-        if re.search(r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b", config_content):
+        if (
+            re.search(r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b", config_content)
+            or re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\boude-mechanismen\b[^\]]*\]", config_content)
+        ):
             print("  ✓ Jekyll configuration (_config.yml)")
         elif fix:
             print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
-            if re.search(r"(?m)^plugins:[ \t]*\n", config_content):
+            if re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\]", config_content):
+                new_content = re.sub(
+                    r"(?m)^(plugins:[ \t]*\[)([^\]]*)(\])",
+                    lambda m: (
+                        f"{m.group(1)}{m.group(2).rstrip()}, oude-mechanismen{m.group(3)}"
+                        if m.group(2).strip()
+                        else f"{m.group(1)}oude-mechanismen{m.group(3)}"
+                    ),
+                    config_content,
+                    count=1,
+                )
+            elif re.search(r"(?m)^plugins:[ \t]*\n", config_content):
                 new_content = re.sub(
                     r"(?m)^(plugins:[ \t]*\n)",
                     r"\1  - oude-mechanismen\n",
@@ -322,7 +336,10 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         legacy_path = vault / rel_str
         if legacy_path.exists():
             if fix:
-                shutil.rmtree(legacy_path) if legacy_path.is_dir() else legacy_path.unlink()
+                if legacy_path.is_dir():
+                    shutil.rmtree(legacy_path)
+                else:
+                    legacy_path.unlink()
                 print(f"  ✓ Removed legacy file: {rel_str}")
             else:
                 print(f"  ⚠ Legacy file detected: {rel_str}")
@@ -381,16 +398,20 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         bundled_asset = resolve_asset_dir("jekyll/all-content.md")
         if not bundled_asset.is_file():
             bundled_asset = resolve_asset_dir("jekyll") / "all-content.md"
-        bundled_content = bundled_asset.read_text(encoding="utf-8") if bundled_asset.is_file() else ""
-        if all_content_path.read_text(encoding="utf-8") == bundled_content:
-            if fix:
-                all_content_path.unlink()
-                print("  ✓ Removed redundant root all-content.md")
-            else:
-                print("  ⚠ Redundant root all-content.md detected (synthesised dynamically via Jekyll::Generator)")
-                all_passed = False
+        if not bundled_asset.is_file():
+            print("  ⚠ Cannot verify root all-content.md (bundled template unavailable)")
         else:
-            print("  ✓ Custom root all-content.md override detected")
+            bundled_content = bundled_asset.read_text(encoding="utf-8").replace("\r\n", "\n")
+            vault_content = all_content_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+            if vault_content == bundled_content:
+                if fix:
+                    all_content_path.unlink()
+                    print("  ✓ Removed redundant root all-content.md")
+                else:
+                    print("  ⚠ Redundant root all-content.md detected (synthesised dynamically via Jekyll::Generator)")
+                    all_passed = False
+            else:
+                print("  ✓ Custom root all-content.md override detected")
 
     # 3. Check catalog.json and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
@@ -405,6 +426,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     if engine_ver:
         print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
         if engine_ver != __version__:
+            # Advisory only: stale catalogue metadata should not fail vault health checks.
             print(
                 f"  ⚠ Engine version mismatch: catalog.json ({engine_ver}) vs installed package ({__version__}). "
                 "Run `bundle exec jekyll build` to refresh."
