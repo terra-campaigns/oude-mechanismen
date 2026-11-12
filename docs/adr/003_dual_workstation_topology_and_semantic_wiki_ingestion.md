@@ -325,13 +325,16 @@ _gm-materials/digests/<source_name>/
 ├── _index.md                  # Entry-point hub
 ├── factions/                  # One note per faction or organisation
 ├── locations/                 # One note per deck, sub-level, room, or station
-├── entities/                  # One note per NPC, creature, or notable item
+├── people/                    # One note per named NPC or persona
+├── creatures/                 # One note per monster, android, or fauna type
+├── artefacts/                 # One note per notable item, relic, or vessel
 ├── mechanics/                 # One note per cohesive rules subsystem
-└── tables/                    # One note per rollable table or generator
+├── tables/                    # One note per rollable table or generator
+└── other/                     # Catch-all for unclassified material
 ```
 
 - `_index.md` is the entry-point hub: book premise, themes, survival/campaign clocks, a chapter/page map, and annotated links to the entity folders and top-level entities.
-- The categorised subdirectories (`factions/`, `locations/`, `entities/`, `mechanics/`, `tables/`) are adaptable to both module/dungeon books (*Gradient Descent*) and core rulebooks/gazetteers (*Hostile*); a sourcebook may omit categories it does not need.
+- The categorised subdirectories (`factions/`, `locations/`, `people/`, `creatures/`, `artefacts/`, `mechanics/`, `tables/`, `other/`) are adaptable to both module/dungeon books (*Gradient Descent*) and core rulebooks/gazetteers (*Hostile*); a sourcebook may omit categories it does not need, routing any unclassified material into `other/`.
 - **Target sizing rule**: each note should be roughly 30–120 lines (~300–1,200 tokens), so one targeted `read_file` yields full operational detail on the entity without pulling in unrelated chapters.
 
 #### 3.5.2 Hyperlink Strategy: Relative Markdown Links vs Wikilinks
@@ -388,7 +391,7 @@ Markdown body template:
 - [Related entity](../category/entity.md) — one-line reason to follow the link.
 ```
 
-Invariants: a blank line follows every heading (`#`–`####`); page citations use `[p. 14]` / `[pp. 14–18]`; statblocks and rollable tables are native Markdown tables.
+Invariants: a blank line follows every heading (`#`–`####`); `entity_type` is one of `index | faction | location | person | creature | artefact | mechanic | table | other`; page citations use `[p. 14]` / `[pp. 14–18]`; statblocks and rollable tables are native Markdown tables.
 
 #### 3.5.4 Index & Retrieval Performance (`.agents/context/references.json` & `lookup-context`)
 
