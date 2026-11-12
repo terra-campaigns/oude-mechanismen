@@ -29,7 +29,6 @@ MAPPINGS=(
   "templates/jekyll/directory_index.md.template:directory/index.md"
   "templates/jekyll/campaigns_index.md.template:campaigns/index.md"
   "templates/jekyll/systems_index.md.template:systems/index.md"
-  "jekyll/all-content.md:all-content.md"
 )
 
 for item in "${MAPPINGS[@]}"; do

@@ -54,7 +54,6 @@ class TestInitVault(unittest.TestCase):
                 "directory/index.md",
                 "campaigns/index.md",
                 "systems/index.md",
-                "all-content.md",
                 ".gitignore",
             ]
             for rel_file in expected_files:

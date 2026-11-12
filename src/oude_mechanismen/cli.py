@@ -54,7 +54,6 @@ TEMPLATE_MAPPINGS = [
     ("templates/jekyll/directory_index.md.template", "directory/index.md"),
     ("templates/jekyll/campaigns_index.md.template", "campaigns/index.md"),
     ("templates/jekyll/systems_index.md.template", "systems/index.md"),
-    ("jekyll/all-content.md", "all-content.md"),
 ]
 
 # Pass-through script mappings (command name : filename in scripts/)
@@ -67,6 +66,18 @@ PASS_THROUGH_SCRIPTS = {
     "transcribe": "transcribe_session.py",
     "scribe": "scribe_session.py",
     "benchmark": "benchmark_models.py",
+}
+
+# Obsolete runner scripts in downstream .agents/scripts/ (ADR 002 migration)
+LEGACY_RUNNER_SCRIPTS = {
+    "lint_chapter.py",
+    "harvest_archival.py",
+    "scribe_session.py",
+    "transcribe_session.py",
+    "generate_digests.py",
+    "audit_coverage.py",
+    "art_filter.py",
+    "benchmark_models.py",
 }
 
 # Standard .gitignore content
@@ -261,6 +272,54 @@ def _install_skills() -> int:
     return 0
 
 
+def _has_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> bool:
+    """Return True if *plugin* is configured under Jekyll plugins in _config.yml."""
+    escaped = re.escape(plugin)
+    block_pattern = rf"(?m)^[ \t]*-[ \t]*[\"']?{escaped}[\"']?(?:[ \t]*(?:#.*)?)$"
+    inline_pattern = rf"(?m)^plugins:[ \t]*\[[^\]]*(?<=[\s,'\"\[]){escaped}(?=[\s,'\"\],])[^\]]*\]"
+    return bool(re.search(block_pattern, config_content) or re.search(inline_pattern, config_content))
+
+
+def _format_inline_plugin_list(prefix: str, inner: str, suffix: str, plugin: str) -> str:
+    """Append *plugin* to a YAML inline plugin sequence while preserving quote style."""
+    if not inner.strip():
+        return f"{prefix}{plugin}{suffix}"
+    if '"' in inner:
+        entry = f'"{plugin}"'
+    elif "'" in inner:
+        entry = f"'{plugin}'"
+    else:
+        entry = plugin
+    body = inner.rstrip()
+    separator = " " if body.endswith(",") else ", "
+    return f"{prefix}{body}{separator}{entry}{suffix}"
+
+
+def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> str:
+    """Append *plugin* to _config.yml in inline, block, or new plugins section format."""
+    if re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\]", config_content):
+        return re.sub(
+            r"(?m)^(plugins:[ \t]*\[)([^\]]*)(\])",
+            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), plugin),
+            config_content,
+            count=1,
+        )
+    block_header = re.search(r"(?m)^plugins:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
+    if block_header:
+        tail = config_content[block_header.end() :]
+        first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
+        indent = first_item.group(1) if first_item and first_item.group(1) else "  "
+        quote = first_item.group(2) if first_item and first_item.group(2) else ""
+        entry = f"{quote}{plugin}{quote}"
+        prefix = config_content[: block_header.end()]
+        if not prefix.endswith("\n"):
+            prefix += "\n"
+        return f"{prefix}{indent}- {entry}\n{tail}"
+    if not config_content.strip():
+        return f"plugins:\n  - {plugin}\n"
+    return config_content.rstrip() + f"\n\nplugins:\n  - {plugin}\n"
+
+
 def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     """Audit campaign vault health, tool dependencies, and skills registration."""
     vault = (target_path or Path.cwd()).resolve()
@@ -274,20 +333,11 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     config_yml_path = vault / "_config.yml"
     if config_yml_path.is_file():
         config_content = config_yml_path.read_text(encoding="utf-8")
-        if re.search(r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b", config_content):
+        if _has_jekyll_plugin(config_content):
             print("  ✓ Jekyll configuration (_config.yml)")
         elif fix:
             print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
-            if re.search(r"(?m)^plugins:[ \t]*\n", config_content):
-                new_content = re.sub(
-                    r"(?m)^(plugins:[ \t]*\n)",
-                    r"\1  - oude-mechanismen\n",
-                    config_content,
-                    count=1,
-                )
-            else:
-                new_content = config_content.rstrip() + "\n\nplugins:\n  - oude-mechanismen\n"
-            config_yml_path.write_text(new_content, encoding="utf-8")
+            config_yml_path.write_text(_append_jekyll_plugin(config_content), encoding="utf-8")
         else:
             print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
             all_passed = False
@@ -311,7 +361,10 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         legacy_path = vault / rel_str
         if legacy_path.exists():
             if fix:
-                shutil.rmtree(legacy_path) if legacy_path.is_dir() else legacy_path.unlink()
+                if legacy_path.is_dir():
+                    shutil.rmtree(legacy_path)
+                else:
+                    legacy_path.unlink()
                 print(f"  ✓ Removed legacy file: {rel_str}")
             else:
                 print(f"  ⚠ Legacy file detected: {rel_str}")
@@ -320,6 +373,70 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     plugins_dir = vault / "_plugins"
     if fix and plugins_dir.is_dir() and not any(plugins_dir.iterdir()):
         plugins_dir.rmdir()
+
+    # 2a. Check for deprecated version stamp file
+    engine_version_file = vault / ".agents" / ".engine-version"
+    if engine_version_file.is_file():
+        if fix:
+            engine_version_file.unlink()
+            print("  ✓ Removed deprecated version stamp: .agents/.engine-version")
+        else:
+            print("  ⚠ Deprecated version stamp detected: .agents/.engine-version (catalog.json is authoritative)")
+            all_passed = False
+
+    # 2b. Check for obsolete runner scripts in .agents/scripts/
+    scripts_dir = vault / ".agents" / "scripts"
+    if scripts_dir.is_dir():
+        for script_file in list(scripts_dir.iterdir()):
+            if script_file.is_file() and script_file.name in LEGACY_RUNNER_SCRIPTS:
+                if fix:
+                    script_file.unlink()
+                    print(f"  ✓ Removed legacy runner script: .agents/scripts/{script_file.name}")
+                else:
+                    print(f"  ⚠ Legacy runner script detected: .agents/scripts/{script_file.name}")
+                    all_passed = False
+        if fix and scripts_dir.is_dir() and not any(scripts_dir.iterdir()):
+            scripts_dir.rmdir()
+
+    # 2c. Check for shadowing duplicate includes in _includes/
+    includes_dir = resolve_asset_dir("jekyll/_includes")
+    if not includes_dir.is_dir():
+        includes_dir = resolve_asset_dir("jekyll") / "_includes"
+    engine_include_names = {p.name for p in includes_dir.iterdir() if p.is_file()} if includes_dir.is_dir() else set()
+
+    vault_includes = vault / "_includes"
+    if vault_includes.is_dir():
+        for include_file in list(vault_includes.iterdir()):
+            if include_file.is_file() and include_file.name in engine_include_names:
+                if fix:
+                    include_file.unlink()
+                    print(f"  ✓ Removed shadowing duplicate include: _includes/{include_file.name}")
+                else:
+                    print(f"  ⚠ Shadowing include detected: _includes/{include_file.name}")
+                    all_passed = False
+        if fix and vault_includes.is_dir() and not any(vault_includes.iterdir()):
+            vault_includes.rmdir()
+
+    # 2d. Check for redundant root all-content.md
+    all_content_path = vault / "all-content.md"
+    if all_content_path.is_file():
+        bundled_asset = resolve_asset_dir("jekyll/all-content.md")
+        if not bundled_asset.is_file():
+            bundled_asset = resolve_asset_dir("jekyll") / "all-content.md"
+        if not bundled_asset.is_file():
+            print("  ⚠ Cannot verify root all-content.md (bundled template unavailable)")
+        else:
+            bundled_content = bundled_asset.read_text(encoding="utf-8").replace("\r\n", "\n")
+            vault_content = all_content_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+            if vault_content == bundled_content:
+                if fix:
+                    all_content_path.unlink()
+                    print("  ✓ Removed redundant root all-content.md")
+                else:
+                    print("  ⚠ Redundant root all-content.md detected (synthesised dynamically via Jekyll::Generator)")
+                    all_passed = False
+            else:
+                print("  ✓ Custom root all-content.md override detected")
 
     # 3. Check catalog.json and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
@@ -333,6 +450,12 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
 
     if engine_ver:
         print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
+        if engine_ver != __version__:
+            # Advisory only: stale catalogue metadata should not fail vault health checks.
+            print(
+                f"  ⚠ Engine version mismatch: catalog.json ({engine_ver}) vs installed package ({__version__}). "
+                "Run `bundle exec jekyll build` to refresh."
+            )
     elif fix and shutil.which("bundle"):
         print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
         res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)

@@ -298,12 +298,6 @@ EOF
   TOTAL_OUTDATED=$((TOTAL_OUTDATED + OUTDATED_COUNT + NEW_COUNT + DIRTY_COUNT))
 
   if [ "$CHECK_MODE" = false ]; then
-    # Stamp engine version
-    ENGINE_VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "0.1.0")"
-    ENGINE_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-    mkdir -p "$ABS_REPO/.agents"
-    echo "${ENGINE_VERSION} (${ENGINE_COMMIT})" > "$ABS_REPO/.agents/.engine-version"
-
     # Configure git hooks in target repository
     if git -C "$ABS_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       git -C "$ABS_REPO" config core.hooksPath .githooks 2>/dev/null || true

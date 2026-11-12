@@ -78,7 +78,7 @@ From the `oude-mechanismen` directory, run the initialisation command:
 ./sync.sh --init "/path/to/target/campaign-vault"
 ```
 
-This creates standard directories (`campaigns/`, `directory/`, `systems/`, `imgs/gallery/`, `imgs/badges/`, `.agents/context/`), copies missing starter templates from `templates/`, copies neutral fallback badges, stamps `.agents/.engine-version`, and executes `./bin/setup`.
+This creates standard directories (`campaigns/`, `directory/`, `systems/`, `imgs/gallery/`, `imgs/badges/`, `.agents/context/`), copies missing starter templates from `templates/`, copies neutral fallback badges, and executes `./bin/setup`.
 
 ### Step 2: Interview the GM for Campaign Parameters
 
@@ -134,7 +134,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 - **Managed Files**: Engine updates to plugins, includes, git hooks, runners, and setup scripts are tracked in `sync.sh`'s `MANAGED_FILES` array.
 - **Drift Safety**: `sync.sh` never overwrites locally modified (dirty) files in a campaign vault unless `--force` is explicitly passed.
-- **Version Stamping**: Every sync stamps the engine version and git commit into `.agents/.engine-version` in the target vault.
+- **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
 ---
 
