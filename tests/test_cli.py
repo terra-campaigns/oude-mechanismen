@@ -682,6 +682,80 @@ class TestOudeCLI(unittest.TestCase):
         self.assertTrue(includes_dir.is_dir())
         self.assertTrue(all_content_path.is_file())
 
+    def test_doctor_fix_preserves_plugin_quotes_comments_and_boundaries(self):
+        """Verify doctor handles quoted plugins, trailing comments, empty configs, and substring collisions."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        config_path = self.target_dir / "_config.yml"
+        cases = [
+            (
+                'title: Test\nplugins: ["jekyll-feed"]\n',
+                'title: Test\nplugins: ["jekyll-feed", "oude-mechanismen"]\n',
+            ),
+            (
+                "title: Test\nplugins: ['jekyll-feed']\n",
+                "title: Test\nplugins: ['jekyll-feed', 'oude-mechanismen']\n",
+            ),
+            (
+                "title: Test\nplugins: [jekyll-feed, ]\n",
+                "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\n",
+            ),
+            (
+                "title: Test\nplugins: [jekyll-feed] # core plugins\n",
+                "title: Test\nplugins: [jekyll-feed, oude-mechanismen] # core plugins\n",
+            ),
+            (
+                "title: Test\nplugins: [my-oude-mechanismen]\n",
+                "title: Test\nplugins: [my-oude-mechanismen, oude-mechanismen]\n",
+            ),
+            (
+                'title: Test\nplugins: # gems\n  - "jekyll-feed"\n',
+                'title: Test\nplugins: # gems\n  - "oude-mechanismen"\n  - "jekyll-feed"\n',
+            ),
+            (
+                "",
+                "plugins:\n  - oude-mechanismen\n",
+            ),
+        ]
+        for initial, expected in cases:
+            config_path.write_text(initial, encoding="utf-8")
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 1)
+                self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            self.assertEqual(config_path.read_text(encoding="utf-8"), expected)
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_recognises_quoted_block_plugin_and_ignores_nonfile_engine_version(self):
+        """Verify doctor accepts quoted block plugins and does not crash if .engine-version is a directory."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        config_path = self.target_dir / "_config.yml"
+        config_path.write_text('title: Test\nplugins:\n  - "oude-mechanismen"\n', encoding="utf-8")
+
+        engine_version_dir = self.target_dir / ".agents" / ".engine-version"
+        engine_version_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        self.assertTrue(engine_version_dir.is_dir())
+
 
 if __name__ == "__main__":
     unittest.main()

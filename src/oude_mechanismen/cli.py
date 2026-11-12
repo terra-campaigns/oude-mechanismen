@@ -272,6 +272,54 @@ def _install_skills() -> int:
     return 0
 
 
+def _has_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> bool:
+    """Return True if *plugin* is configured under Jekyll plugins in _config.yml."""
+    escaped = re.escape(plugin)
+    block_pattern = rf"(?m)^[ \t]*-[ \t]*[\"']?{escaped}[\"']?(?:[ \t]*(?:#.*)?)$"
+    inline_pattern = rf"(?m)^plugins:[ \t]*\[[^\]]*(?<=[\s,'\"\[]){escaped}(?=[\s,'\"\],])[^\]]*\]"
+    return bool(re.search(block_pattern, config_content) or re.search(inline_pattern, config_content))
+
+
+def _format_inline_plugin_list(prefix: str, inner: str, suffix: str, plugin: str) -> str:
+    """Append *plugin* to a YAML inline plugin sequence while preserving quote style."""
+    if not inner.strip():
+        return f"{prefix}{plugin}{suffix}"
+    if '"' in inner:
+        entry = f'"{plugin}"'
+    elif "'" in inner:
+        entry = f"'{plugin}'"
+    else:
+        entry = plugin
+    body = inner.rstrip()
+    separator = " " if body.endswith(",") else ", "
+    return f"{prefix}{body}{separator}{entry}{suffix}"
+
+
+def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> str:
+    """Append *plugin* to _config.yml in inline, block, or new plugins section format."""
+    if re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\]", config_content):
+        return re.sub(
+            r"(?m)^(plugins:[ \t]*\[)([^\]]*)(\])",
+            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), plugin),
+            config_content,
+            count=1,
+        )
+    block_header = re.search(r"(?m)^plugins:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
+    if block_header:
+        tail = config_content[block_header.end() :]
+        first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
+        indent = first_item.group(1) if first_item and first_item.group(1) else "  "
+        quote = first_item.group(2) if first_item and first_item.group(2) else ""
+        entry = f"{quote}{plugin}{quote}"
+        prefix = config_content[: block_header.end()]
+        if not prefix.endswith("\n"):
+            prefix += "\n"
+        return f"{prefix}{indent}- {entry}\n{tail}"
+    if not config_content.strip():
+        return f"plugins:\n  - {plugin}\n"
+    return config_content.rstrip() + f"\n\nplugins:\n  - {plugin}\n"
+
+
 def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     """Audit campaign vault health, tool dependencies, and skills registration."""
     vault = (target_path or Path.cwd()).resolve()
@@ -285,34 +333,11 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     config_yml_path = vault / "_config.yml"
     if config_yml_path.is_file():
         config_content = config_yml_path.read_text(encoding="utf-8")
-        if (
-            re.search(r"(?m)^[ \t]*-[ \t]*oude-mechanismen\b", config_content)
-            or re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\boude-mechanismen\b[^\]]*\]", config_content)
-        ):
+        if _has_jekyll_plugin(config_content):
             print("  ✓ Jekyll configuration (_config.yml)")
         elif fix:
             print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
-            if re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\]", config_content):
-                new_content = re.sub(
-                    r"(?m)^(plugins:[ \t]*\[)([^\]]*)(\])",
-                    lambda m: (
-                        f"{m.group(1)}{m.group(2).rstrip()}, oude-mechanismen{m.group(3)}"
-                        if m.group(2).strip()
-                        else f"{m.group(1)}oude-mechanismen{m.group(3)}"
-                    ),
-                    config_content,
-                    count=1,
-                )
-            elif re.search(r"(?m)^plugins:[ \t]*\n", config_content):
-                new_content = re.sub(
-                    r"(?m)^(plugins:[ \t]*\n)",
-                    r"\1  - oude-mechanismen\n",
-                    config_content,
-                    count=1,
-                )
-            else:
-                new_content = config_content.rstrip() + "\n\nplugins:\n  - oude-mechanismen\n"
-            config_yml_path.write_text(new_content, encoding="utf-8")
+            config_yml_path.write_text(_append_jekyll_plugin(config_content), encoding="utf-8")
         else:
             print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
             all_passed = False
@@ -351,7 +376,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
 
     # 2a. Check for deprecated version stamp file
     engine_version_file = vault / ".agents" / ".engine-version"
-    if engine_version_file.exists():
+    if engine_version_file.is_file():
         if fix:
             engine_version_file.unlink()
             print("  ✓ Removed deprecated version stamp: .agents/.engine-version")
