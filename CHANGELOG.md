@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.3] - 2026-11-12
+
+### Added
+
+- **Dynamic LLM Context Generation (`jekyll/_plugins/llm_content.rb`)**:
+  - Added `Jekyll::LlmContentPage` and `Jekyll::LlmContentGenerator` to dynamically synthesise `/all-content.html` without requiring a root `all-content.md` in campaign vaults, yielding automatically if a vault supplies its own override.
+  - Force-included `jekyll/_includes` and `jekyll/all-content.md` in `pyproject.toml` wheel builds.
+
+- **Self-Healing Doctor Remediation (`oude doctor --fix` in `src/oude_mechanismen/cli.py`)**:
+  - Detects and prunes shadowing duplicate includes in `_includes/`, obsolete runner scripts in `.agents/scripts/`, deprecated `.agents/.engine-version` stamp files (`is_file()` guarded), and unmodified root `all-content.md` files (with CRLF/LF normalisation and missing-asset guards). Issues #13, #14, #15, #16.
+  - Extracted `_has_jekyll_plugin`, `_format_inline_plugin_list`, and `_append_jekyll_plugin` helpers so `_config.yml` `plugins:` detection and `--fix` injection support inline YAML sequences, quoted entries, trailing commas/comments, empty files, and token-boundary checks without duplicating keys.
+  - Updated engine-version mismatch checks against `catalog.json` to emit advisory warnings.
+
+- **Process, Documentation & Verification**:
+  - Retired `TASKS.md` (migrated backlog to GitHub Issues #13–#30, #34–#35) and updated `.github/workflows/ci.yml` heading lint scope.
+  - Authored `docs/designs/002_doctor_remediation_and_dynamic_llm_content.md` (status: `Implemented`) and updated `README.md`, `AGENTS.md`, `bin/init_vault.sh`, `sync.sh`, and `templates/runners/README.md`.
+  - Expanded `tests/test_cli.py` to cover all remediation rules, inline/quoted YAML plugin handling, CRLF normalisation, missing bundled templates, and asset resolution (89 tests passing, 1 skipped on hosts without Ruby).
+
+---
+
 ## [0.5.2] - 2026-11-11
 
 ### Fixed
