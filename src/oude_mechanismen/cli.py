@@ -54,7 +54,6 @@ TEMPLATE_MAPPINGS = [
     ("templates/jekyll/directory_index.md.template", "directory/index.md"),
     ("templates/jekyll/campaigns_index.md.template", "campaigns/index.md"),
     ("templates/jekyll/systems_index.md.template", "systems/index.md"),
-    ("jekyll/all-content.md", "all-content.md"),
 ]
 
 # Pass-through script mappings (command name : filename in scripts/)
@@ -67,6 +66,18 @@ PASS_THROUGH_SCRIPTS = {
     "transcribe": "transcribe_session.py",
     "scribe": "scribe_session.py",
     "benchmark": "benchmark_models.py",
+}
+
+# Obsolete runner scripts in downstream .agents/scripts/ (ADR 002 migration)
+LEGACY_RUNNER_SCRIPTS = {
+    "lint_chapter.py",
+    "harvest_archival.py",
+    "scribe_session.py",
+    "transcribe_session.py",
+    "generate_digests.py",
+    "audit_coverage.py",
+    "art_filter.py",
+    "benchmark_models.py",
 }
 
 # Standard .gitignore content
@@ -321,6 +332,66 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     if fix and plugins_dir.is_dir() and not any(plugins_dir.iterdir()):
         plugins_dir.rmdir()
 
+    # 2a. Check for deprecated version stamp file
+    engine_version_file = vault / ".agents" / ".engine-version"
+    if engine_version_file.exists():
+        if fix:
+            engine_version_file.unlink()
+            print("  ✓ Removed deprecated version stamp: .agents/.engine-version")
+        else:
+            print("  ⚠ Deprecated version stamp detected: .agents/.engine-version (catalog.json is authoritative)")
+            all_passed = False
+
+    # 2b. Check for obsolete runner scripts in .agents/scripts/
+    scripts_dir = vault / ".agents" / "scripts"
+    if scripts_dir.is_dir():
+        for script_file in list(scripts_dir.iterdir()):
+            if script_file.is_file() and script_file.name in LEGACY_RUNNER_SCRIPTS:
+                if fix:
+                    script_file.unlink()
+                    print(f"  ✓ Removed legacy runner script: .agents/scripts/{script_file.name}")
+                else:
+                    print(f"  ⚠ Legacy runner script detected: .agents/scripts/{script_file.name}")
+                    all_passed = False
+        if fix and scripts_dir.is_dir() and not any(scripts_dir.iterdir()):
+            scripts_dir.rmdir()
+
+    # 2c. Check for shadowing duplicate includes in _includes/
+    includes_dir = resolve_asset_dir("jekyll/_includes")
+    if not includes_dir.is_dir():
+        includes_dir = resolve_asset_dir("jekyll") / "_includes"
+    engine_include_names = {p.name for p in includes_dir.iterdir() if p.is_file()} if includes_dir.is_dir() else set()
+
+    vault_includes = vault / "_includes"
+    if vault_includes.is_dir():
+        for include_file in list(vault_includes.iterdir()):
+            if include_file.is_file() and include_file.name in engine_include_names:
+                if fix:
+                    include_file.unlink()
+                    print(f"  ✓ Removed shadowing duplicate include: _includes/{include_file.name}")
+                else:
+                    print(f"  ⚠ Shadowing include detected: _includes/{include_file.name}")
+                    all_passed = False
+        if fix and vault_includes.is_dir() and not any(vault_includes.iterdir()):
+            vault_includes.rmdir()
+
+    # 2d. Check for redundant root all-content.md
+    all_content_path = vault / "all-content.md"
+    if all_content_path.is_file():
+        bundled_asset = resolve_asset_dir("jekyll/all-content.md")
+        if not bundled_asset.is_file():
+            bundled_asset = resolve_asset_dir("jekyll") / "all-content.md"
+        bundled_content = bundled_asset.read_text(encoding="utf-8") if bundled_asset.is_file() else ""
+        if all_content_path.read_text(encoding="utf-8") == bundled_content:
+            if fix:
+                all_content_path.unlink()
+                print("  ✓ Removed redundant root all-content.md")
+            else:
+                print("  ⚠ Redundant root all-content.md detected (synthesised dynamically via Jekyll::Generator)")
+                all_passed = False
+        else:
+            print("  ✓ Custom root all-content.md override detected")
+
     # 3. Check catalog.json and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
     engine_ver = None
@@ -333,6 +404,11 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
 
     if engine_ver:
         print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
+        if engine_ver != __version__:
+            print(
+                f"  ⚠ Engine version mismatch: catalog.json ({engine_ver}) vs installed package ({__version__}). "
+                "Run `bundle exec jekyll build` to refresh."
+            )
     elif fix and shutil.which("bundle"):
         print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
         res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)

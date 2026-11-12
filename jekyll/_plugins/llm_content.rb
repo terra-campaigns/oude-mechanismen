@@ -29,3 +29,40 @@ module Jekyll
 end
 
 Liquid::Template.register_filter(Jekyll::LlmContentFilter)
+
+if defined?(Jekyll) && defined?(Jekyll::PageWithoutAFile) && defined?(Jekyll::Generator)
+  module Jekyll
+    class LlmContentPage < PageWithoutAFile
+      def initialize(site, base, dir, name, template_content)
+        super(site, base, dir, name)
+        self.data = {
+          "layout" => nil,
+          "permalink" => "/all-content.html",
+          "sitemap" => false
+        }
+        self.content = template_content
+      end
+    end
+
+    class LlmContentGenerator < Generator
+      safe true
+      priority :low
+
+      def generate(site)
+        return if site.pages.any? { |p| p.url == "/all-content.html" || p.name == "all-content.md" }
+
+        template_path = File.expand_path("../all-content.md", __dir__)
+        return unless File.exist?(template_path)
+
+        template_content = File.read(template_path, encoding: "utf-8")
+
+        # Strip YAML front matter if present
+        if template_content =~ /\A---\s*\n.*?\n---\s*\n/m
+          template_content = template_content.sub(/\A---\s*\n.*?\n---\s*\n/m, "")
+        end
+
+        site.pages << LlmContentPage.new(site, site.source, "", "all-content.md", template_content)
+      end
+    end
+  end
+end

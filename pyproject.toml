@@ -47,6 +47,7 @@ pattern = "(?P<version>\\d+\\.\\d+\\.\\d+)"
 packages = ["src/oude_mechanismen"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"jekyll/_includes" = "oude_mechanismen/jekyll/_includes"
 "VERSION" = "oude_mechanismen/VERSION"
 "scripts" = "oude_mechanismen/scripts"
 "skills" = "oude_mechanismen/skills"

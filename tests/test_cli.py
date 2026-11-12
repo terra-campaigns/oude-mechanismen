@@ -109,7 +109,6 @@ class TestOudeCLI(unittest.TestCase):
             "directory/index.md",
             "campaigns/index.md",
             "systems/index.md",
-            "all-content.md",
             ".gitignore",
         ]:
             self.assertTrue(
@@ -313,6 +312,138 @@ class TestOudeCLI(unittest.TestCase):
                     text=True,
                 )
 
+    def test_doctor_detects_redundant_all_content_md(self):
+        """Verify doctor detects redundant root all-content.md."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
+        (self.target_dir / "all-content.md").write_text(bundled_content, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when redundant all-content.md is detected")
+            self.assertIn("Redundant root all-content.md detected", fake_out.getvalue())
+
+    def test_doctor_fix_removes_redundant_all_content_md(self):
+        """Verify doctor --fix removes redundant root all-content.md."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
+        (self.target_dir / "all-content.md").write_text(bundled_content, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed redundant root all-content.md", fake_out.getvalue())
+
+        self.assertFalse((self.target_dir / "all-content.md").exists(), "Redundant all-content.md was not removed")
+
+    def test_doctor_preserves_custom_all_content_md(self):
+        """Verify doctor preserves custom root all-content.md."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        custom_content = "# Custom LLM Context\n\nThis is a custom version of all-content.md."
+        (self.target_dir / "all-content.md").write_text(custom_content, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0, "Doctor should pass when custom all-content.md is detected")
+            self.assertIn("Custom root all-content.md override detected", fake_out.getvalue())
+
+    def test_doctor_detects_shadowing_includes(self):
+        """Verify doctor detects shadowing includes in _includes/."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        includes_dir = self.target_dir / "_includes"
+        includes_dir.mkdir(parents=True, exist_ok=True)
+        (includes_dir / "connected_to.html").write_text("<!-- shadow -->", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when shadowing include is detected")
+            self.assertIn("Shadowing include detected: _includes/connected_to.html", fake_out.getvalue())
+
+    def test_doctor_fix_removes_shadowing_includes_and_preserves_custom(self):
+        """Verify doctor --fix removes shadowing includes and preserves custom includes."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        includes_dir = self.target_dir / "_includes"
+        includes_dir.mkdir(parents=True, exist_ok=True)
+        (includes_dir / "connected_to.html").write_text("<!-- shadow -->", encoding="utf-8")
+        (includes_dir / "footer_custom.html").write_text("<!-- custom footer -->", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed shadowing duplicate include: _includes/connected_to.html", fake_out.getvalue())
+
+        self.assertFalse((includes_dir / "connected_to.html").exists(), "Shadowing include was not removed")
+        self.assertTrue((includes_dir / "footer_custom.html").exists(), "Custom include was removed")
+        self.assertTrue(includes_dir.exists(), "_includes directory should not be pruned when not empty")
+
+    def test_doctor_fix_prunes_empty_includes_dir(self):
+        """Verify doctor --fix prunes _includes directory if empty after removing shadows."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        includes_dir = self.target_dir / "_includes"
+        includes_dir.mkdir(parents=True, exist_ok=True)
+        (includes_dir / "connected_to.html").write_text("<!-- shadow -->", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+
+        self.assertFalse((includes_dir / "connected_to.html").exists(), "Shadowing include was not removed")
+        self.assertFalse(includes_dir.exists(), "Empty _includes directory was not pruned")
+
     def test_run_script_passthrough(self):
         """Verify pass-through execution runs bundled script and returns exit code."""
         with patch("subprocess.run") as mock_sub:
@@ -323,6 +454,139 @@ class TestOudeCLI(unittest.TestCase):
             called_cmd = mock_sub.call_args[0][0]
             self.assertIn("lint_chapter.py", called_cmd[1])
             self.assertIn("--help", called_cmd[2:])
+
+    def test_doctor_detects_legacy_runner_scripts(self):
+        """Verify doctor detects legacy runner scripts in .agents/scripts/."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        scripts_dir = self.target_dir / ".agents" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "lint_chapter.py").write_text("# Legacy runner", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when legacy runner scripts are detected")
+            self.assertIn("Legacy runner script detected: .agents/scripts/lint_chapter.py", fake_out.getvalue())
+
+    def test_doctor_fix_removes_legacy_runner_scripts_and_prunes_empty_dir(self):
+        """Verify doctor --fix removes legacy runner scripts and prunes empty .agents/scripts/."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        scripts_dir = self.target_dir / ".agents" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "lint_chapter.py").write_text("# Legacy runner", encoding="utf-8")
+        (scripts_dir / "harvest_archival.py").write_text("# Legacy runner", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed legacy runner script: .agents/scripts/lint_chapter.py", fake_out.getvalue())
+            self.assertIn("Removed legacy runner script: .agents/scripts/harvest_archival.py", fake_out.getvalue())
+
+        self.assertFalse((scripts_dir / "lint_chapter.py").exists(), "Legacy runner script was not removed")
+        self.assertFalse((scripts_dir / "harvest_archival.py").exists(), "Legacy runner script was not removed")
+        self.assertFalse(scripts_dir.exists(), "Empty .agents/scripts/ directory was not pruned")
+
+    def test_doctor_preserves_custom_agent_scripts(self):
+        """Verify doctor preserves custom agent scripts in .agents/scripts/."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        scripts_dir = self.target_dir / ".agents" / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        (scripts_dir / "lint_chapter.py").write_text("# Legacy runner", encoding="utf-8")
+        (scripts_dir / "custom_tool.py").write_text("# Custom agent script", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed legacy runner script: .agents/scripts/lint_chapter.py", fake_out.getvalue())
+
+        self.assertFalse((scripts_dir / "lint_chapter.py").exists(), "Legacy runner script was not removed")
+        self.assertTrue((scripts_dir / "custom_tool.py").exists(), "Custom agent script was removed")
+        self.assertTrue(scripts_dir.exists(), ".agents/scripts/ directory should not be pruned when not empty")
+
+    def test_doctor_detects_deprecated_engine_version_stamp(self):
+        """Verify doctor detects deprecated .agents/.engine-version stamp file."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        stamp_file = self.target_dir / ".agents" / ".engine-version"
+        stamp_file.write_text("0.2.0 (abc1234)", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1, "Doctor should report failure when .engine-version exists")
+            self.assertIn("Deprecated version stamp detected: .agents/.engine-version", fake_out.getvalue())
+
+    def test_doctor_fix_removes_deprecated_engine_version_stamp(self):
+        """Verify doctor --fix removes deprecated .agents/.engine-version stamp file."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        stamp_file = self.target_dir / ".agents" / ".engine-version"
+        stamp_file.write_text("0.2.0 (abc1234)", encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0, "Doctor --fix should succeed")
+            self.assertIn("Removed deprecated version stamp: .agents/.engine-version", fake_out.getvalue())
+
+        self.assertFalse(stamp_file.exists(), "Deprecated version stamp was not removed")
+
+    def test_doctor_warns_on_engine_version_mismatch(self):
+        """Verify doctor warns when catalog.json engine_version differs from installed package version."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.1.0", "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0, "Doctor should pass with warning on version mismatch")
+            self.assertIn("Engine version mismatch: catalog.json (0.1.0) vs installed package", fake_out.getvalue())
 
 
 if __name__ == "__main__":

@@ -156,7 +156,7 @@ To update downstream campaign vaults when a new release of `oude-mechanismen` is
 - `MINOR`: New skills, new art filter capabilities, or backwards-compatible flags.
 - `PATCH`: Bug fixes, script performance improvements, or prompt refinements.
 
-All changes are documented in [`CHANGELOG.md`](CHANGELOG.md). Downstream vaults track the active engine version in `.agents/.engine-version`.
+All changes are documented in [`CHANGELOG.md`](CHANGELOG.md). Downstream vaults track the active engine version in `.agents/context/catalog.json`.
 
 ---
 

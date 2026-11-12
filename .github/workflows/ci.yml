@@ -75,7 +75,7 @@ jobs:
           import glob, re, sys
           paths = sorted(set(
               glob.glob("skills/*/SKILL.md")
-              + ["README.md", "CHANGELOG.md", "AGENTS.md", "TASKS.md"]
+              + ["README.md", "CHANGELOG.md", "AGENTS.md"]
               + glob.glob("templates/*.md.template")
               + glob.glob("templates/jekyll/*.md.template")
           ))
