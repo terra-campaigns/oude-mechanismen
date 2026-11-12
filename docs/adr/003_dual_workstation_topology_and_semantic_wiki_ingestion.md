@@ -136,7 +136,7 @@ flowchart TD
 - **Location**: The single unified root folder `_gm-materials/` directly inside the campaign workspace, containing `session-summaries/`, `session-preps/`, and `digests/`.
 - **Contents**: De-personalised tactical facts, sensory textures, synthesised 8-section archival GM notes (`_gm-materials/session-summaries/`), confidential GM prep agendas, encounter seeds (`_gm-materials/session-preps/`), and distilled Markdown reference networks (`_gm-materials/digests/`).
 - **Boundary**: Excluded from version control via `.gitignore`, and synchronised peer-to-peer / encrypted across `ryu` and `artemis` via the background **Obsidian Sync daemon** (`obsidian-sync.service`).
-- **Jekyll Exclusion Invariant**: Although `_gm-materials/` starts with an underscore (`_`) so Jekyll skips rendering it as pages, defence-in-depth exclusion must still be enforced across **all four layers**: (1) `.gitignore` via `DEFAULT_GITIGNORE` in `src/oude_mechanismen/cli.py` (verified by `oude doctor`); (2) `_config.yml` `exclude:` (`"_gm-materials"` in `templates/jekyll/_config.yml.template`, verified by `oude doctor`); (3) `jekyll/_plugins/data_extractor.rb` (`f.start_with?("_gm-materials/")` so `catalog.json` / `all-content.md` never ingest private GM materials); (4) script/skill path updates in `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `scripts/generate_digests.py`, `skills/lookup-context/`, `skills/prep-session/`, and `skills/scribe-session/`.
+- **Jekyll Exclusion Invariant**: Although `_gm-materials/` starts with an underscore (`_`) so Jekyll skips rendering it as pages, defence-in-depth exclusion must still be enforced across **all four layers**: (1) `.gitignore` via `DEFAULT_GITIGNORE` in `src/oude_mechanismen/cli.py` (verified by `oude doctor`); (2) `_config.yml` `exclude:` (`"_gm-materials"` in `templates/jekyll/_config.yml.template`, verified by `oude doctor`); (3) `jekyll/_plugins/data_extractor.rb` (`f.start_with?("_gm-materials/")` so `catalog.json` / `all-content.md` never ingest private GM materials); (4) script, skill, and template path updates in `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `scripts/generate_digests.py`, `scripts/audit_coverage.py`, `skills/lookup-context/`, `skills/prep-session/`, `skills/scribe-session/`, `skills/add-chapter/SKILL.md`, `templates/AGENTS.md.template`, and `AGENTS.md`.
 - **Operational Dependency Note**: Obsidian Sync (`obsidian-sync.service`) is an operational, host-level contract. The `oude` CLI and `oude doctor` cannot programmatically verify or enforce its presence or health; operators must confirm the daemon is running on both workstations out of band.
 - **Path Portability**: Normalises `drive_dir` to `.` (the repository root). The same configuration works out of the box on macOS and Linux with zero environment variable juggling.
 
@@ -257,14 +257,14 @@ vendor/
 *_raw.*
 ```
 
-Additionally, extend `oude doctor` with remediation checks that verify existing campaign vaults carry these entries in their `.gitignore` and report (or repair) any missing pillar exclusions.
+Additionally, extend `oude doctor` with remediation checks that verify existing campaign vaults carry these entries in their `.gitignore` and report (or repair) any missing pillar exclusions. `oude init` scaffolds only the top-level `_gm-materials/` directory alongside `.gitignore`; it does **not** pre-create `session-summaries/`, `session-preps/`, or `digests/` subdirectories (individual tools create those on demand).
 
 Although `_gm-materials/` starts with an underscore so Jekyll skips rendering it as pages, defence-in-depth exclusion must still be enforced across **all four layers**:
 
 1. **`.gitignore`**: `_gm-materials/` in `DEFAULT_GITIGNORE` in `src/oude_mechanismen/cli.py`, verified by `oude doctor`.
 2. **`_config.yml` `exclude:`**: `"_gm-materials"` in `templates/jekyll/_config.yml.template`, verified by `oude doctor`.
 3. **`jekyll/_plugins/data_extractor.rb`**: reject `f.start_with?("_gm-materials/")` alongside the existing `_site/`, `vendor/`, `.git/`, `_plugins/`, and `.agents/` rejections, so `catalog.json` / `all-content.md` never ingest private GM materials.
-4. **Script/skill path updates**: `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `scripts/generate_digests.py`, `skills/lookup-context/`, `skills/prep-session/`, and `skills/scribe-session/` must resolve session summaries, session preps, and digests under `_gm-materials/`.
+4. **Script, skill & template path updates**: `scripts/transcribe_session.py`, `scripts/scribe_session.py`, `scripts/generate_digests.py`, `scripts/audit_coverage.py`, `skills/lookup-context/`, `skills/prep-session/`, `skills/scribe-session/`, `skills/add-chapter/SKILL.md`, `templates/AGENTS.md.template`, and `AGENTS.md` must resolve session summaries, session preps, and digests under `_gm-materials/`.
 
 ### 3.3 Dynamic Script Path Resolution
 
@@ -314,7 +314,7 @@ baseurl: ""
 
 ### 3.5 Target Digest Wiki Format (`_gm-materials/digests/<source_name>/`)
 
-`oude digest-deep` (delivered in Phase 3) transforms a Tier 3 sourcebook PDF into a navigable knowledge wiki under `_gm-materials/digests/<source_name>/`. The format below is the target design: multi-file entity granularity, standard relative Markdown links, a canonical note schema, and a lean recursive index.
+`oude digest-deep <path/to/sourcebook.pdf>` (delivered in Phase 3) accepts an **explicit user-supplied PDF file path** and ingests **one book at a time** — there is no bulk archive scanning or multi-book batch ingestion, and `generate_digests.py` drops legacy `drive_dir.parents[1]` (`rpg_root`) PDF auto-discovery. It transforms that Tier 3 sourcebook PDF into a navigable knowledge wiki under `_gm-materials/digests/<source_name>/` (`source_pdf` in frontmatter records a portable relative reference or filename rather than an OS-specific absolute path). The format below is the target design: multi-file entity granularity, standard relative Markdown links, a canonical note schema, and a lean recursive index.
 
 #### 3.5.1 Multi-File Entity Granularity (No Monolithic Files)
 
@@ -406,6 +406,30 @@ Invariants: a blank line follows every heading (`#`–`####`); `entity_type` is 
 - `source`, `entity_type`, `pages`, `title`, and `sections` (headings plus line numbers).
 - Optional lightweight `summary` / `tags` — never duplicating full note bodies into `references.json`.
 
+Example entry in `.agents/context/references.json`:
+
+```json
+{
+  "slug": "gradient_descent/factions/troubleshooters",
+  "source": "gradient_descent",
+  "entity_type": "faction",
+  "title": "Troubleshooters",
+  "pages": "14-18",
+  "tier": 3,
+  "source_pdf": "modules/gradient_descent.pdf",
+  "digest_path": "_gm-materials/digests/gradient_descent/factions/troubleshooters.md",
+  "digest_exists": true,
+  "tags": ["salvage", "deck-patrol", "antagonist"],
+  "sections": [
+    {"level": 2, "heading": "Overview", "line": 17},
+    {"level": 2, "heading": "Key Details / Rules / Hazards", "line": 23},
+    {"level": 2, "heading": "Connections / See Also", "line": 35}
+  ]
+}
+```
+
+**Backwards compatibility**: during migration, flat legacy `<slug>.md` digests sitting directly in the digests directory remain valid and are indexed alongside nested `_gm-materials/digests/<source_name>/**/*.md` wikis.
+
 **Progressive 3-hop agent retrieval workflow**:
 
 1. Consult `.agents/context/references.json` to locate the `<source_name>/<rel_path>` slug and its sections.
@@ -440,9 +464,9 @@ Invariants: a blank line follows every heading (`#`–`####`); `entity_type` is 
 ## 5. Implementation Roadmap
 
 - [x] **ADR 003 Formulation**: Codify dual-workstation topology, four-pillar storage, and semantic wiki digestion.
-- [ ] **Phase 1: Path & Gitignore Normalisation**: Update `scripts/generate_digests.py`, `scripts/transcribe_session.py`, `src/oude_mechanismen/cli.py` (`DEFAULT_GITIGNORE`, `_ensure_gitignore()`, `oude doctor` checks), and templates to support relative `drive_dir: .`. Also update `AGENTS.md` (§1 & §4) to replace references to Google Drive `_sessions/` with the Four-Pillar `.gitignore` + Obsidian Sync boundary anchored at `_gm-materials/`, and update `compile_references()` in `scripts/generate_digests.py` to recursive `rglob("*.md")` indexing with relative `slug` and `digest_path` values.
-  - *Acceptance criteria*: Unit tests covering relative `drive_dir: .` resolution against `repo_root` and `FileNotFoundError` raised on missing explicit or configured paths; `DEFAULT_GITIGNORE` test assertions in `tests/test_cli.py` verifying `_gm-materials/` and all preserved entries; `oude doctor` checks verifying `"_gm-materials"` in `_config.yml` `exclude:` and the `f.start_with?("_gm-materials/")` rejection in `jekyll/_plugins/data_extractor.rb`; recursive `_gm-materials/digests/**/*.md` indexing tests confirming nested semantic wiki notes appear in `.agents/context/references.json` with collision-free relative `slug`s and portable relative `digest_path`s.
+- [ ] **Phase 1: Path & Gitignore Normalisation**: Update `scripts/generate_digests.py`, `scripts/transcribe_session.py`, `scripts/audit_coverage.py`, `src/oude_mechanismen/cli.py` (`DEFAULT_GITIGNORE`, `_ensure_gitignore()`, `oude init` scaffolding only top-level `_gm-materials/`, `oude doctor` checks), `templates/AGENTS.md.template`, `AGENTS.md` (§1 & §4), and affected skills (`lookup-context`, `prep-session`, `scribe-session`, `add-chapter`) to anchor Pillar 2 at `_gm-materials/` and support relative `drive_dir: .`. Update `compile_references()` in `scripts/generate_digests.py` to recursive `rglob("*.md")` indexing with relative `slug` and `digest_path` values (preserving flat legacy `<slug>.md` compatibility).
+  - *Acceptance criteria*: Unit tests covering relative `drive_dir: .` resolution against `repo_root` and `FileNotFoundError` raised on missing explicit or configured paths; `oude init` tests confirming `_gm-materials/` (without pre-created subdirectories) and `DEFAULT_GITIGNORE` in `tests/test_cli.py`; `oude doctor` checks verifying `"_gm-materials"` in `_config.yml` `exclude:` and the `f.start_with?("_gm-materials/")` rejection in `jekyll/_plugins/data_extractor.rb`; recursive `_gm-materials/digests/**/*.md` indexing tests confirming nested semantic wiki notes appear in `.agents/context/references.json` with collision-free relative `slug`s and portable relative `digest_path`s.
 - [ ] **Phase 2: Localhost Development Tooling**: Add `_config_dev.yml.template` and an `oude serve` subcommand in `src/oude_mechanismen/cli.py` wrapping `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --config _config.yml,_config_dev.yml` with LAN binding (`0.0.0.0:4000`).
   - *Acceptance criteria*: `oude serve` launches Jekyll bound to `0.0.0.0:4000` with livereload and the dev overlay config; the site is reachable at `http://artemis.local:4000` from another LAN device via Avahi mDNS.
-- [ ] **Phase 3: Book-to-Wiki Knowledge Synthesiser (`oude digest-deep`)**: Develop the `oude digest-deep` CLI command, prompt templates, and procedural skill (`skills/digest-book/`) to extract rich relational knowledge wikis from sourcebook PDFs into nested `_gm-materials/digests/<source>/**/*.md` following the Section 3.5 target format (multi-file entity granularity, annotated relative Markdown links, canonical note schema), indexed recursively into `references.json` via the `rglob("*.md")` change from Phase 1.
+- [ ] **Phase 3: Book-to-Wiki Knowledge Synthesiser (`oude digest-deep`)**: Develop the `oude digest-deep <pdf_path>` CLI command (single-book explicit file path, no bulk archive scanning), prompt templates, and procedural skill (`skills/digest-book/`) to extract rich relational knowledge wikis from sourcebook PDFs into nested `_gm-materials/digests/<source>/**/*.md` following the Section 3.5 target format (multi-file entity granularity, `n = 20` subfolder subdivision, annotated relative Markdown links, canonical note schema), indexed recursively into `references.json` via the `rglob("*.md")` change from Phase 1.
   - *Acceptance criteria*: Empirical format and navigation experiments run against *Gradient Descent* (scenario module) and *Hostile* (core/setting sourcebook); a sample sourcebook produces a hyperlinked multi-file Markdown knowledge wiki under `_gm-materials/digests/<source>/` with an `_index.md` hub and ~30–120-line entity notes; `compile_references()` with `rglob("*.md")` indexes every nested note into `.agents/context/references.json` with collision-free relative `slug`s; `lookup-context` retrieves entities from the nested notes via the 3-hop workflow.
