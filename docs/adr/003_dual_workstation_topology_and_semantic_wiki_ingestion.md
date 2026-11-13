@@ -162,7 +162,7 @@ We critically evaluated how to transform raw Tier 3 sourcebook PDFs into rich, a
 
 ```mermaid
 flowchart TD
-    PDF["Sourcebook PDF (e.g. Gradient Descent - 100k Tokens)"]
+    PDF["Sourcebook PDF (e.g. Eclipse Phase / BF1 Morgansfort)"]
     
     subgraph Synthesis ["Gemini 1M+ Long-Context Ingestion (Artemis)"]
         Ingest["Multimodal Native PDF Read"]
@@ -335,7 +335,7 @@ _gm-materials/digests/<source_name>/
 ```
 
 - `_index.md` is the entry-point hub: book premise, themes, survival/campaign clocks, a chapter/page map, and annotated links to the entity folders and top-level entities.
-- The categorised subdirectories (`factions/`, `locations/`, `people/`, `creatures/`, `artefacts/`, `mechanics/`, `tables/`, `other/`) are adaptable to both module/dungeon books (*Gradient Descent*) and core rulebooks/gazetteers (*Hostile*); a sourcebook may omit categories it does not need, routing any unclassified material into `other/`.
+- The categorised subdirectories (`factions/`, `locations/`, `people/`, `creatures/`, `artefacts/`, `mechanics/`, `tables/`, `other/`) are adaptable to both module/dungeon books (*BF1 Morgansfort*) and core rulebooks/gazetteers (*Eclipse Phase*); a sourcebook may omit categories it does not need, routing any unclassified material into `other/`.
 - **Target sizing rule**: each note should be roughly 30–120 lines (~300–1,200 tokens), so one targeted `read_file` yields full operational detail on the entity without pulling in unrelated chapters.
 - **Subfolder subdivision rule (`n = 20`)**: if a category folder would contain more than `20` substantial notes (commonly `locations/` in a megadungeon or sector gazetteer), subdivide it into semantic subfolders (e.g. `locations/sub_level_01/airlock_03.md`), subject to three guardrails:
   1. *Maximum depth of 1 below the category* (`<category>/<subgroup>/<note>.md`): never nest deeper, avoiding extra `list_dir` hops and brittle relative paths.
@@ -356,7 +356,7 @@ _gm-materials/digests/<source_name>/
 **Annotated links are mandatory**: every link must carry a short annotation so an agent knows *why* to follow it before spending tokens opening the file:
 
 ```markdown
-- [Troubleshooters](../factions/troubleshooters.md) — patrol this deck and demand salvage tax.
+- [Harbour Guild](../factions/harbour_guild.md) — controls docking permits and levies cargo tariffs.
 ```
 
 #### 3.5.3 Canonical Note Schema (YAML Frontmatter + Body Structure)
@@ -365,14 +365,14 @@ Every entity note follows one canonical schema. YAML frontmatter:
 
 ```yaml
 ---
-source: gradient_descent
-source_pdf: modules/gradient_descent.pdf
+source: sector_module
+source_pdf: modules/sector_module.pdf
 pages: "14-18"
 tier: 3
 entity_type: faction
-title: Troubleshooters
-tags: [salvage, deck-patrol, antagonist]
-related: ["../locations/sub_level_01.md", "../tables/salvage_d100.md"]
+title: Harbour Guild
+tags: [faction, trade, docking]
+related: ["../locations/docking_bay_01.md", "../tables/cargo_encounters.md"]
 ---
 ```
 
@@ -402,7 +402,7 @@ Invariants: a blank line follows every heading (`#`–`####`); `entity_type` is 
 
 `compile_references()` in `scripts/generate_digests.py` recursively indexes `_gm-materials/digests/<source_name>/**/*.md` into `.agents/context/references.json` without bloating the index. Each entry carries:
 
-- `slug`: collision-free relative identifier `<source_name>/<rel_path_without_ext>` (e.g. `gradient_descent/factions/troubleshooters`).
+- `slug`: collision-free relative identifier `<source_name>/<rel_path_without_ext>` (e.g. `sector_module/factions/harbour_guild`).
 - `digest_path`: portable POSIX path relative to `_gm-materials/digests/` (or `drive_dir`), never a machine-specific absolute path.
 - `source`, `entity_type`, `pages`, `title`, and `sections` (headings plus line numbers).
 - Optional lightweight `summary` / `tags` — never duplicating full note bodies into `references.json`.
@@ -411,16 +411,16 @@ Example entry in `.agents/context/references.json`:
 
 ```json
 {
-  "slug": "gradient_descent/factions/troubleshooters",
-  "source": "gradient_descent",
+  "slug": "sector_module/factions/harbour_guild",
+  "source": "sector_module",
   "entity_type": "faction",
-  "title": "Troubleshooters",
+  "title": "Harbour Guild",
   "pages": "14-18",
   "tier": 3,
-  "source_pdf": "modules/gradient_descent.pdf",
-  "digest_path": "_gm-materials/digests/gradient_descent/factions/troubleshooters.md",
+  "source_pdf": "modules/sector_module.pdf",
+  "digest_path": "_gm-materials/digests/sector_module/factions/harbour_guild.md",
   "digest_exists": true,
-  "tags": ["salvage", "deck-patrol", "antagonist"],
+  "tags": ["faction", "trade", "docking"],
   "sections": [
     {"level": 2, "heading": "Overview", "line": 17},
     {"level": 2, "heading": "Key Details / Rules / Hazards", "line": 23},
