@@ -298,29 +298,41 @@ def _format_inline_plugin_list(prefix: str, inner: str, suffix: str, plugin: str
     return f"{prefix}{body}{separator}{entry}{suffix}"
 
 
-def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> str:
-    """Append *plugin* to _config.yml in inline, block, or new plugins section format."""
-    if re.search(r"(?m)^plugins:[ \t]*\[[^\]]*\]", config_content):
+def _append_jekyll_list_item(
+    config_content: str,
+    key: str,
+    item: str,
+    default_quote: str = "",
+) -> str:
+    """Append *item* to a YAML list under *key* in inline, block, or new section format."""
+    escaped_key = re.escape(key)
+    if re.search(rf"(?m)^{escaped_key}:[ \t]*\[[^\]]*\]", config_content):
         return re.sub(
-            r"(?m)^(plugins:[ \t]*\[)([^\]]*)(\])",
-            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), plugin),
+            rf"(?m)^({escaped_key}:[ \t]*\[)([^\]]*)(\])",
+            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), item),
             config_content,
             count=1,
         )
-    block_header = re.search(r"(?m)^plugins:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
+    block_header = re.search(rf"(?m)^{escaped_key}:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
     if block_header:
         tail = config_content[block_header.end() :]
         first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
         indent = first_item.group(1) if first_item and first_item.group(1) else "  "
-        quote = first_item.group(2) if first_item and first_item.group(2) else ""
-        entry = f"{quote}{plugin}{quote}"
+        quote = first_item.group(2) if first_item and first_item.group(2) else default_quote
+        entry = f"{quote}{item}{quote}"
         prefix = config_content[: block_header.end()]
         if not prefix.endswith("\n"):
             prefix += "\n"
         return f"{prefix}{indent}- {entry}\n{tail}"
+    formatted_default = f"{default_quote}{item}{default_quote}"
     if not config_content.strip():
-        return f"plugins:\n  - {plugin}\n"
-    return config_content.rstrip() + f"\n\nplugins:\n  - {plugin}\n"
+        return f"{key}:\n  - {formatted_default}\n"
+    return config_content.rstrip() + f"\n\n{key}:\n  - {formatted_default}\n"
+
+
+def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> str:
+    """Append *plugin* to _config.yml in inline, block, or new plugins section format."""
+    return _append_jekyll_list_item(config_content, "plugins", plugin, default_quote="")
 
 
 def _has_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> bool:
@@ -341,27 +353,7 @@ def _has_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> bo
 
 def _append_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> str:
     """Append *entry* to _config.yml under exclude in inline, block, or new section format."""
-    if re.search(r"(?m)^exclude:[ \t]*\[[^\]]*\]", config_content):
-        return re.sub(
-            r"(?m)^(exclude:[ \t]*\[)([^\]]*)(\])",
-            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), entry),
-            config_content,
-            count=1,
-        )
-    block_header = re.search(r"(?m)^exclude:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
-    if block_header:
-        tail = config_content[block_header.end() :]
-        first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
-        indent = first_item.group(1) if first_item and first_item.group(1) else "  "
-        quote = first_item.group(2) if first_item and first_item.group(2) else '"'
-        formatted = f"{quote}{entry}{quote}"
-        prefix = config_content[: block_header.end()]
-        if not prefix.endswith("\n"):
-            prefix += "\n"
-        return f"{prefix}{indent}- {formatted}\n{tail}"
-    if not config_content.strip():
-        return f'exclude:\n  - "{entry}"\n'
-    return config_content.rstrip() + f'\n\nexclude:\n  - "{entry}"\n'
+    return _append_jekyll_list_item(config_content, "exclude", entry, default_quote='"')
 
 
 def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -> bool:
