@@ -98,7 +98,7 @@ class TestAuditCoverage(unittest.TestCase):
         (self.context_dir / "references.json").write_text(json.dumps(references_data))
 
         findings = audit_coverage.audit_drive_sync(self.repo_root, self.repo_root)
-        unindexed_names = [item["name"] for item in findings["unindexed_drive_files"]]
+        unindexed_names = [item["name"] for item in findings["unindexed_files"]]
         self.assertIn("Unindexed_Source.pdf", unindexed_names)
         self.assertNotIn("ignored_doc.pdf", unindexed_names)
         self.assertEqual(findings["missing_digests"], [])

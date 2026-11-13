@@ -38,6 +38,7 @@ REPO_DIRECTORIES = [
     "imgs/badges",
     "_sass/custom",
     ".agents/context",
+    "_gm-materials",
 ]
 
 # Standard template mappings (source relative to engine : target relative to vault)
@@ -94,6 +95,8 @@ vendor/
 *_studio.html
 *_preview_*.png
 *_raw.*
+# Private GM materials (session summaries, session preps, digests)
+_gm-materials/
 """
 
 
@@ -320,6 +323,53 @@ def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen")
     return config_content.rstrip() + f"\n\nplugins:\n  - {plugin}\n"
 
 
+def _has_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> bool:
+    """Return True if *entry* (with or without trailing slash) is in _config.yml exclude."""
+    base = re.escape(entry.rstrip("/"))
+    inline_match = re.search(r"(?m)^exclude:[ \t]*\[([^\]]*)\]", config_content)
+    if inline_match:
+        inner = inline_match.group(1)
+        if re.search(rf"(?:^|[\s,'\"\[]){base}/?(?=$|[\s,'\"\],])", inner):
+            return True
+    block_header = re.search(r"(?m)^exclude:[ \t]*(?:#[^\n]*)?\n((?:[ \t]+-[^\n]*(?:\n|$))*)", config_content)
+    if block_header:
+        block_body = block_header.group(1)
+        if re.search(rf"(?m)^[ \t]*-[ \t]*[\"']?{base}/?[\"']?(?:[ \t]*(?:#.*)?)$", block_body):
+            return True
+    return False
+
+
+def _append_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> str:
+    """Append *entry* to _config.yml under exclude in inline, block, or new section format."""
+    if re.search(r"(?m)^exclude:[ \t]*\[[^\]]*\]", config_content):
+        return re.sub(
+            r"(?m)^(exclude:[ \t]*\[)([^\]]*)(\])",
+            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), entry),
+            config_content,
+            count=1,
+        )
+    block_header = re.search(r"(?m)^exclude:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
+    if block_header:
+        tail = config_content[block_header.end() :]
+        first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
+        indent = first_item.group(1) if first_item and first_item.group(1) else "  "
+        quote = first_item.group(2) if first_item and first_item.group(2) else '"'
+        formatted = f"{quote}{entry}{quote}"
+        prefix = config_content[: block_header.end()]
+        if not prefix.endswith("\n"):
+            prefix += "\n"
+        return f"{prefix}{indent}- {formatted}\n{tail}"
+    if not config_content.strip():
+        return f'exclude:\n  - "{entry}"\n'
+    return config_content.rstrip() + f'\n\nexclude:\n  - "{entry}"\n'
+
+
+def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -> bool:
+    """Return True if *entry* is present in .gitignore."""
+    base = re.escape(entry.rstrip("/"))
+    return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#.*)?$", gitignore_content))
+
+
 def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     """Audit campaign vault health, tool dependencies, and skills registration."""
     vault = (target_path or Path.cwd()).resolve()
@@ -332,17 +382,59 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     print("Checking campaign configuration:")
     config_yml_path = vault / "_config.yml"
     if config_yml_path.is_file():
-        config_content = config_yml_path.read_text(encoding="utf-8")
-        if _has_jekyll_plugin(config_content):
-            print("  ✓ Jekyll configuration (_config.yml)")
-        elif fix:
-            print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
-            config_yml_path.write_text(_append_jekyll_plugin(config_content), encoding="utf-8")
-        else:
-            print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
+        try:
+            config_content = config_yml_path.read_text(encoding="utf-8")
+            updated_config = config_content
+            has_plugin = _has_jekyll_plugin(updated_config)
+            if has_plugin:
+                print("  ✓ Jekyll configuration (_config.yml)")
+            elif fix:
+                print("  ✓ Adding oude-mechanismen to plugins in _config.yml...")
+                updated_config = _append_jekyll_plugin(updated_config)
+            else:
+                print("  ⚠ Jekyll configuration (_config.yml) is missing oude-mechanismen under plugins")
+                all_passed = False
+
+            has_exclude = _has_jekyll_exclude(updated_config)
+            if has_exclude:
+                print("  ✓ Jekyll exclude includes _gm-materials (_config.yml)")
+            elif fix:
+                print("  ✓ Adding _gm-materials to exclude in _config.yml...")
+                updated_config = _append_jekyll_exclude(updated_config)
+            else:
+                print("  ⚠ Jekyll configuration (_config.yml) is missing _gm-materials under exclude")
+                all_passed = False
+
+            if fix and updated_config != config_content:
+                config_yml_path.write_text(updated_config, encoding="utf-8")
+        except OSError as exc:
+            print(f"  ✗ Failed to inspect or update _config.yml: {exc}")
             all_passed = False
     else:
         print("  ✗ Missing: Jekyll configuration (_config.yml)")
+        all_passed = False
+
+    gitignore_path = vault / ".gitignore"
+    try:
+        if gitignore_path.is_file():
+            gitignore_content = gitignore_path.read_text(encoding="utf-8")
+            if _has_gitignore_entry(gitignore_content):
+                print("  ✓ Git ignore includes _gm-materials/ (.gitignore)")
+            elif fix:
+                prefix = gitignore_content if gitignore_content.endswith("\n") or not gitignore_content else gitignore_content + "\n"
+                gitignore_path.write_text(f"{prefix}_gm-materials/\n", encoding="utf-8")
+                print("  ✓ Added _gm-materials/ to .gitignore")
+            else:
+                print("  ⚠ .gitignore is missing _gm-materials/")
+                all_passed = False
+        elif fix:
+            gitignore_path.write_text(DEFAULT_GITIGNORE, encoding="utf-8")
+            print("  ✓ Created .gitignore with _gm-materials/")
+        else:
+            print("  ⚠ Missing .gitignore (requires _gm-materials/ exclusion)")
+            all_passed = False
+    except OSError as exc:
+        print(f"  ✗ Failed to inspect or update .gitignore: {exc}")
         all_passed = False
 
     for path, desc in [

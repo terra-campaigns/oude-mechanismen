@@ -5,10 +5,10 @@ Air-gapped local session audio transcriber and two-pass notes extractor for tabl
 Pipeline stages handled:
 1. Executes acoustic audio transcription via Metal GPU Whisper (whisper-cli) with dynamic glossary bias into local disk air-gap (~/Private/rpg-sessions/<campaign>/).
 2. Executes decomposed local two-pass de-personalised extraction via Ollama:
-   - Pass 2A: Chronological & tactical facts (<slug>_tactical_facts.md in Google Drive _sessions/).
-   - Pass 2B: Sensory & environmental textures (<slug>_sensory_textures.md in Google Drive _sessions/).
+   - Pass 2A: Chronological & tactical facts (<slug>_tactical_facts.md in _gm-materials/session-summaries/).
+   - Pass 2B: Sensory & environmental textures (<slug>_sensory_textures.md in _gm-materials/session-summaries/).
 
-Outputs are de-personalised and stored in Google Drive, clearing the air-gap for Gemini in Antigravity chat to merge notes and draft chapter prose.
+Outputs are de-personalised and stored in _gm-materials/session-summaries/, clearing the air-gap for Gemini in Antigravity chat to merge notes and draft chapter prose.
 All outputs, prompts, and logs strictly adhere to British English.
 """
 
@@ -398,7 +398,7 @@ def extract_tactical_facts(
     """
     Pass 2A: Prompt local Ollama model to extract chronological and tactical facts.
     Strictly de-personalises the transcript by stripping player banter and real-world names.
-    Outputs structured Markdown saved to Google Drive (_sessions/<slug>_tactical_facts.md).
+    Outputs structured Markdown saved to _gm-materials/session-summaries/<slug>_tactical_facts.md.
     """
     prompt = build_tactical_prompt(manifest, context)
     raw_facts = query_ollama_stream(
@@ -424,7 +424,7 @@ def extract_sensory_textures(
     """
     Pass 2B: Prompt local Ollama model to extract evocative sensory and atmospheric textures.
     Strictly de-personalises the transcript by capturing in-character dialogue and physical descriptions.
-    Outputs structured Markdown saved to Google Drive (_sessions/<slug>_sensory_textures.md).
+    Outputs structured Markdown saved to _gm-materials/session-summaries/<slug>_sensory_textures.md.
     """
     prompt = build_sensory_prompt(manifest, context)
     raw_textures = query_ollama_stream(
@@ -544,8 +544,8 @@ def main() -> None:
     print("LOCAL EXTRACTION COMPLETE")
     print(f"Elapsed Time:    {elapsed / 60:.1f} minutes")
     print(f"Tier 0 Air-Gap:  {manifest['transcript_path']}")
-    print(f"Tactical Facts:  {manifest['tactical_facts_path']} (Tier 2 Drive)")
-    print(f"Sensory Textures:{manifest['sensory_textures_path']} (Tier 2 Drive)")
+    print(f"Tactical Facts:  {manifest['tactical_facts_path']} (Tier 2 _gm-materials/session-summaries/)")
+    print(f"Sensory Textures:{manifest['sensory_textures_path']} (Tier 2 _gm-materials/session-summaries/)")
     print("\nAir-gap privacy boundary cleared.")
     print("Ready for Gemini in Antigravity chat to merge notes and draft chapter prose.")
     print("=" * 70)

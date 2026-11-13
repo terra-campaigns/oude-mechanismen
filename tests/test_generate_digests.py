@@ -189,7 +189,11 @@ class TestGenerateDigests(unittest.TestCase):
         pdf_path = self.repo_root / "Test_Book.pdf"
         pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-        with patch.object(generate_digests, "extract_pdf_toc", return_value=([{"title": "Intro", "page": 1, "level": 1}], 12)):
+        fake_reader = unittest.mock.MagicMock()
+        fake_reader.pages = [None] * 12
+        fake_reader.metadata = None
+        with patch.object(generate_digests.pypdf, "PdfReader", return_value=fake_reader), \
+             patch.object(generate_digests, "extract_pdf_outline", return_value=[("Intro", 1, 12)]):
             generate_digests.scaffold_digest(self.repo_root, self.repo_root, "Test_Book.pdf")
 
         expected_out = self.repo_root / "_gm-materials" / "digests" / "test_book.md"

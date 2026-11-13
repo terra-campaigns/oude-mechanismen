@@ -12,7 +12,7 @@ This repository contains the shared procedural engine, agent skills library, and
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
 3. **Storage Separation & Privacy Air-Gap**:
    - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
-   - **Tier 2 Canon (Google Drive `_sessions/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+   - **Tier 2 Canon (`_gm-materials/session-summaries/` & `_gm-materials/session-preps/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`_gm-materials/session-preps/<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
    - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
 
 ---
@@ -75,10 +75,10 @@ When a user asks an agent: *"Help me set up my new (or existing) campaign vault 
 From the `oude-mechanismen` directory, run the initialisation command:
 
 ```bash
-./sync.sh --init "/path/to/target/campaign-vault"
+oude init "/path/to/target/campaign-vault"
 ```
 
-This creates standard directories (`campaigns/`, `directory/`, `systems/`, `imgs/gallery/`, `imgs/badges/`, `.agents/context/`), copies missing starter templates from `templates/`, copies neutral fallback badges, and executes `./bin/setup`.
+This creates standard directories (`campaigns/`, `directory/`, `systems/`, `imgs/gallery/`, `imgs/badges/`, `.agents/context/`, `_gm-materials/`), copies missing starter templates from `templates/`, copies neutral fallback badges, and installs global skills.
 
 ### Step 2: Interview the GM for Campaign Parameters
 
@@ -86,7 +86,7 @@ Ask the GM 5 focused questions to populate their campaign specification:
 
 1. **Setting Genre & Tone**: (e.g. "Grimdark industrial sci-fi", "Psychedelic science fantasy", "Gothic horror").
 2. **Cadence & Sentence Style**: (e.g. "One sentence per line, terse corporate register, sensory grime").
-3. **Reference Sourcebooks**: Absolute path to their Google Drive rulebooks/PDFs folder (for `tier1_sources.yml`).
+3. **Reference Sourcebooks**: Path to their rulebooks/PDFs and `_gm-materials/` root (defaults to `.` in `tier1_sources.yml`).
 4. **Chapter Conventions**: Subfolder path (e.g. `campaigns/my-arc/`), naming convention (e.g. `ep_{num:03d}.md` or `{num:03d}.md`), and timestamp format (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`).
 5. **Visual Palette Preferences**: Colour mood for graphic-novel artwork (e.g. amber CRT phosphor, desert turquoise, or monochrome ink).
 
@@ -94,7 +94,7 @@ Ask the GM 5 focused questions to populate their campaign specification:
 
 Write the user's answers into the target vault:
 - `.agents/AGENTS.md`: Update `## Campaign Specification` (Style & Tone, Reference Material, Calibration Examples, Structural Defaults).
-- `.agents/context/tier1_sources.yml`: Set `drive_dir: "<path_to_rulebooks_folder>"`.
+- `.agents/context/tier1_sources.yml`: Set `drive_dir: .` (or custom path if using an external rulebooks directory).
 - `.agents/context/aesthetics.yml`: Adjust colour stops and active presets.
 - `_config.yml`: Update site `title` and `description`.
 
@@ -117,8 +117,8 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
 - **Tier 1 (Canonical Published Notes)**: Published markdown files indexed by `_plugins/data_extractor.rb` into `.agents/context/catalog.json`. This is hard canon.
-- **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes and prep in Google Drive (`<drive_dir>/_sessions/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
-- **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_digests/*.md`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
+- **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
+- **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
 ### Low-Token Progressive Retrieval Protocol
 
@@ -126,7 +126,7 @@ When searching for lore, locations, NPCs, or mechanics:
 1. Never read all markdown notes or large reference PDFs in bulk.
 2. Use the `lookup-context` skill or consult `.agents/context/catalog.json` first to identify target entities and line ranges.
 3. Open only the identified note using targeted line-range reads.
-4. For external rules or lore, consult `_digests/*.md` via `.agents/context/references.json` before opening raw PDFs.
+4. For external rules or lore, consult `_gm-materials/digests/` via `.agents/context/references.json` before opening raw PDFs.
 
 ---
 

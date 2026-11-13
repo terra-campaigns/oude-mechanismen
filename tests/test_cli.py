@@ -766,22 +766,26 @@ class TestOudeCLI(unittest.TestCase):
         self.assertTrue(engine_version_dir.is_dir())
 
     def test_init_scaffolds_gm_materials_and_excludes(self):
-        """Verify oude init scaffolds _gm-materials subdirectories, .gitignore rule, and _config.yml exclude."""
+        """Verify oude init scaffolds top-level _gm-materials/, .gitignore rule, and _config.yml exclude."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
              patch.object(cli, "_install_skills", return_value=0):
             cli._init_repository(self.target_dir)
 
-        for subdir in ["session-summaries", "prep", "digests"]:
-            self.assertTrue(
-                (self.target_dir / "_gm-materials" / subdir).is_dir(),
-                f"Expected _gm-materials/{subdir} directory to be created",
+        self.assertTrue(
+            (self.target_dir / "_gm-materials").is_dir(),
+            "Expected top-level _gm-materials/ directory to be created",
+        )
+        for subdir in ["session-summaries", "session-preps", "digests"]:
+            self.assertFalse(
+                (self.target_dir / "_gm-materials" / subdir).exists(),
+                f"Expected _gm-materials/{subdir} not to be pre-created during init",
             )
 
         gitignore_text = (self.target_dir / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("_gm-materials/", gitignore_text)
 
         tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
-        self.assertIn('drive_dir: "."', tier1_text)
+        self.assertIn("drive_dir: .", tier1_text)
 
         config_text = (self.target_dir / "_config.yml").read_text(encoding="utf-8")
         self.assertTrue(cli._has_jekyll_exclude(config_text, "_gm-materials"))
@@ -833,6 +837,14 @@ class TestOudeCLI(unittest.TestCase):
             self.assertEqual(config_path.read_text(encoding="utf-8"), expected_cfg)
             with patch("sys.stdout", new=io.StringIO()):
                 self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_data_extractor_rb_excludes_gm_materials(self):
+        """Verify jekyll/_plugins/data_extractor.rb unconditionally filters _gm-materials/ from catalog.json."""
+        extractor_path = cli.resolve_asset_dir("jekyll/_plugins/data_extractor.rb")
+        if not extractor_path.is_file():
+            extractor_path = cli.resolve_asset_dir("jekyll") / "_plugins" / "data_extractor.rb"
+        content = extractor_path.read_text(encoding="utf-8")
+        self.assertIn('f.start_with?("_gm-materials/")', content)
 
 
 if __name__ == "__main__":
