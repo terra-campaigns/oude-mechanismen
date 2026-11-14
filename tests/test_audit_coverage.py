@@ -32,6 +32,16 @@ class TestAuditCoverage(unittest.TestCase):
             os.chdir(prev_cwd)
         self.assertEqual(resolved, self.repo_root.resolve())
 
+    def test_resolve_drive_dir_strips_inline_yaml_comments(self):
+        for yml_line in (
+            "drive_dir: . # inline comment\n",
+            'drive_dir: "." # quoted inline comment\n',
+            "drive_dir: './' # single-quoted comment\n",
+        ):
+            with self.subTest(yml_line=yml_line):
+                (self.context_dir / "tier1_sources.yml").write_text(yml_line)
+                self.assertEqual(audit_coverage.resolve_drive_dir(self.repo_root), self.repo_root.resolve())
+
     def test_resolve_drive_dir_falls_back_to_repo_root_when_missing_or_empty(self):
         self.assertEqual(
             audit_coverage.resolve_drive_dir(self.repo_root),

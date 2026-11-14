@@ -116,32 +116,30 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
-        if clean_headings:
-            cleaned = ensure_heading_blank_lines(content)
-            if cleaned != content:
-                md_file.write_text(cleaned, encoding="utf-8")
-                content = cleaned
-
         frontmatter: Dict[str, Any] = {}
+        fm_prefix = ""
         body = content
         if content.startswith("---"):
             fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
             if fm_match:
+                fm_prefix = content[: fm_match.end()]
+                body = content[fm_match.end() :]
                 try:
                     loaded = yaml.safe_load(fm_match.group(1))
                     if isinstance(loaded, dict):
                         frontmatter = loaded
-                        body = content[fm_match.end() :]
                     elif loaded is not None:
                         print(f"[WARN] Non-mapping YAML frontmatter in {md_file}; falling back to heading parser.", file=sys.stderr)
-                        body = content[fm_match.end() :]
-                    else:
-                        body = content[fm_match.end() :]
                 except yaml.YAMLError as exc:
                     print(f"[WARN] Malformed YAML frontmatter in {md_file}: {exc}; falling back to heading parser.", file=sys.stderr)
-                    body = content[fm_match.end() :]
 
-        lines = content.splitlines()
+        if clean_headings:
+            cleaned_body = ensure_heading_blank_lines(body)
+            cleaned = fm_prefix + cleaned_body
+            if cleaned != content:
+                md_file.write_text(cleaned, encoding="utf-8")
+                body = cleaned_body
+
         body_lines = body.splitlines()
         title = md_file.stem
         source_pdf = None
@@ -201,7 +199,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
         # 4. Parse Headings & Sections
         sections = []
-        for idx, line in enumerate(lines, start=1):
+        for idx, line in enumerate(body_lines, start=fm_prefix.count("\n") + 1):
             m = re.match(r"^(#{2,3})\s+(.+?)\s*$", line)
             if m:
                 sections.append({
@@ -211,10 +209,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                 })
 
         slug = md_file.relative_to(digests_dir).with_suffix("").as_posix()
-        try:
-            digest_path = md_file.relative_to(drive_dir).as_posix()
-        except ValueError:
-            digest_path = md_file.as_posix()
+        digest_path = md_file.relative_to(drive_dir).as_posix()
 
         entry: Dict[str, Any] = {
             "slug": slug,

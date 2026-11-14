@@ -62,9 +62,19 @@ def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Pa
     tier1_path = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if tier1_path.exists():
         content = tier1_path.read_text(encoding="utf-8")
-        m = re.search(r"^drive_dir:\s*['\"]?(.*?)['\"]?\s*$", content, re.MULTILINE)
-        if m and m.group(1).strip():
-            raw_str = m.group(1).strip()
+        m = re.search(
+            r"""^drive_dir:\s*(?:"([^"]*)"(?:\s*#.*)?|'([^']*)'(?:\s*#.*)?|([^\r\n]+?))?\s*$""",
+            content,
+            re.MULTILINE,
+        )
+        raw_str = ""
+        if m:
+            quoted = m.group(1) if m.group(1) is not None else m.group(2)
+            if quoted is not None:
+                raw_str = quoted.strip()
+            elif m.group(3) is not None:
+                raw_str = re.sub(r"(?:^|\s+)#.*$", "", m.group(3)).strip()
+        if raw_str:
             raw = Path(raw_str).expanduser()
             target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
             if target.is_dir():

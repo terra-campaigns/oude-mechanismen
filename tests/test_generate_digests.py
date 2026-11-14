@@ -129,8 +129,10 @@ class TestGenerateDigests(unittest.TestCase):
         digests_dir = self.repo_root / "_gm-materials" / "digests"
         (digests_dir / "book_a").mkdir(parents=True)
 
-        (digests_dir / "book_a" / "faction_alpha.md").write_text(
+        alpha_md = digests_dir / "book_a" / "faction_alpha.md"
+        alpha_content = (
             "---\n"
+            "## Frontmatter Comment That Looks Like H2\n"
             "title: Frontmatter Alpha\n"
             "source_pdf: Book_A.pdf\n"
             "entity_type: faction\n"
@@ -143,6 +145,7 @@ class TestGenerateDigests(unittest.TestCase):
             "## Operations\n\n"
             "Details.\n"
         )
+        alpha_md.write_text(alpha_content)
         (digests_dir / "book_a" / "broken_frontmatter.md").write_text(
             "---\n"
             "title: [unclosed\n"
@@ -163,6 +166,11 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertEqual(alpha["entity_type"], "faction")
         self.assertEqual(alpha["pages"], "14-18")
         self.assertEqual(alpha["tags"], ["syndicate", "trade"])
+        self.assertEqual(alpha["sections"], [{"level": 2, "heading": "Operations", "line": 13}])
+
+        # Ensure --clean-headings ignores YAML frontmatter comments while keeping body clean.
+        generate_digests.compile_references(self.repo_root, self.repo_root, clean_headings=True)
+        self.assertEqual(alpha_md.read_text(), alpha_content)
 
         broken = by_slug["book_a/broken_frontmatter"]
         self.assertEqual(broken["title"], "Fallback Heading")

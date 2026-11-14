@@ -11,7 +11,7 @@ A structured, interactive procedure to prepare the next session of a campaign. T
 ## Guiding Principles
 
 - **Iterative and Conversational**: Do not dump all steps in a single monolithic response. Guide the GM through each step one at a time, presenting options, incorporating their steer, and refining before advancing to the next step.
-- **Canon Grounding**: Draw consistently from Tier 1 published notes (`campaigns/`, `directory/`), Tier 2 active rulings (`.agents/context/decisions.md`), and Tier 3 reference digests in `_gm-materials/digests/`. 
+- **Canon Grounding**: Draw consistently from Tier 1 published notes (`campaigns/`, `directory/`), Tier 2 active rulings (`.agents/context/decisions.md`), and Tier 3 reference digests in `_gm-materials/digests/`.
 - **Setting Flavour**: Align tone, hazards, naming conventions, and aesthetics with the `## Campaign Specification` in `.agents/AGENTS.md`.
 - **Notebook-Optimised Delivery (No Read-Aloud Text)**: Never generate boxed narrative text (`> Table Read-Aloud`) or scripted monologue paragraphs. The GM copies prep into a physical notebook. Keep output ultra-terse, delivering maximum operational density with minimum word count.
 
