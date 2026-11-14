@@ -162,7 +162,7 @@ def enforce_markdown_cleanliness(text: str) -> str:
 def strip_prompt_echo(raw_text: str, pass_label: str = "extraction") -> str:
     """
     Strip any echoed prompt boundary sections (Glossary, Active Decisions, or Verbatim Transcript)
-    so Tier 0 verbatim dialogue can never leak into Tier 2 Google Drive notes, and reject empty output.
+    so Tier 0 verbatim dialogue can never leak into Tier 2 _gm-materials/session-summaries/ notes, and reject empty output.
     """
     clean_text = PROMPT_BOUNDARY_RE.split(raw_text, maxsplit=1)[0].strip()
     if not clean_text:

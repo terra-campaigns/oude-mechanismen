@@ -63,7 +63,7 @@ def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Pa
     if tier1_path.exists():
         content = tier1_path.read_text(encoding="utf-8")
         m = re.search(
-            r"""^drive_dir:\s*(?:"([^"]*)"(?:\s*#.*)?|'([^']*)'(?:\s*#.*)?|([^\r\n]+?))?\s*$""",
+            r"""^drive_dir:[ \t]*(?:"([^"]*)"(?:[ \t]*#[^\r\n]*)?|'([^']*)'(?:[ \t]*#[^\r\n]*)?|([^\r\n]+?))?[ \t\r]*$""",
             content,
             re.MULTILINE,
         )
@@ -73,7 +73,7 @@ def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Pa
             if quoted is not None:
                 raw_str = quoted.strip()
             elif m.group(3) is not None:
-                raw_str = re.sub(r"(?:^|\s+)#.*$", "", m.group(3)).strip()
+                raw_str = re.sub(r"(?:^|[ \t]+)#.*$", "", m.group(3)).strip()
         if raw_str:
             raw = Path(raw_str).expanduser()
             target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
@@ -160,7 +160,7 @@ def resolve_unindexed_file_action(
     return "Reference file"
 
 
-def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, Any]:
+def audit_drive_sync(repo_root: Path, drive_dir: Path) -> Dict[str, Any]:
     """Audit physical source files against references.json and _gm-materials/digests/."""
     results: Dict[str, Any] = {
         "drive_accessible": False,
@@ -183,7 +183,7 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
 
     results["indexed_sources"] = list(indexed_map.keys())
 
-    if not drive_dir or not drive_dir.exists():
+    if not drive_dir.is_dir():
         return results
 
     results["drive_accessible"] = True
@@ -203,6 +203,8 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
         "imgs",
         "_sass",
         "_plugins",
+        "node_modules",
+        "bin",
     }
 
     drive_files: List[Path] = []
@@ -638,7 +640,7 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
 
 def run_gap_analysis(
     repo_root: Path,
-    drive_dir: Optional[Path],
+    drive_dir: Path,
     max_hops: int = 2,
     campaign_subfolder: Optional[str] = None
 ) -> Dict[str, Any]:

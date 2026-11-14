@@ -811,6 +811,7 @@ class TestOudeCLI(unittest.TestCase):
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
         self.assertEqual(gitignore_path.read_text(encoding="utf-8"), "_site/\n_gm-materials/\n")
+        self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 

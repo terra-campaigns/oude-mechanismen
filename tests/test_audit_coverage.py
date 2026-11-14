@@ -47,11 +47,17 @@ class TestAuditCoverage(unittest.TestCase):
             audit_coverage.resolve_drive_dir(self.repo_root),
             self.repo_root.resolve(),
         )
-        (self.context_dir / "tier1_sources.yml").write_text('drive_dir: ""\n')
-        self.assertEqual(
-            audit_coverage.resolve_drive_dir(self.repo_root),
-            self.repo_root.resolve(),
-        )
+        for yml_content in (
+            'drive_dir: ""\n',
+            "drive_dir:\ninclude_paths:\n  - campaigns\n",
+            "drive_dir: # unset\ninclude_paths:\n  - campaigns\n",
+        ):
+            with self.subTest(yml_content=yml_content):
+                (self.context_dir / "tier1_sources.yml").write_text(yml_content)
+                self.assertEqual(
+                    audit_coverage.resolve_drive_dir(self.repo_root),
+                    self.repo_root.resolve(),
+                )
 
     def test_resolve_drive_dir_raises_file_not_found_on_missing_or_file(self):
         with self.assertRaises(FileNotFoundError):
@@ -78,6 +84,8 @@ class TestAuditCoverage(unittest.TestCase):
             "directory",
             "systems",
             "imgs",
+            "node_modules",
+            "bin",
             ".git",
         ]:
             d = self.repo_root / ignored

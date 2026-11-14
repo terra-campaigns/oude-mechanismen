@@ -283,16 +283,16 @@ def _has_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") ->
     return bool(re.search(block_pattern, config_content) or re.search(inline_pattern, config_content))
 
 
-def _format_inline_plugin_list(prefix: str, inner: str, suffix: str, plugin: str) -> str:
-    """Append *plugin* to a YAML inline plugin sequence while preserving quote style."""
+def _format_inline_list(prefix: str, inner: str, suffix: str, item: str) -> str:
+    """Append *item* to a YAML inline sequence while preserving quote style."""
     if not inner.strip():
-        return f"{prefix}{plugin}{suffix}"
+        return f"{prefix}{item}{suffix}"
     if '"' in inner:
-        entry = f'"{plugin}"'
+        entry = f'"{item}"'
     elif "'" in inner:
-        entry = f"'{plugin}'"
+        entry = f"'{item}'"
     else:
-        entry = plugin
+        entry = item
     body = inner.rstrip()
     separator = " " if body.endswith(",") else ", "
     return f"{prefix}{body}{separator}{entry}{suffix}"
@@ -309,7 +309,7 @@ def _append_jekyll_list_item(
     if re.search(rf"(?m)^{escaped_key}:[ \t]*\[[^\]]*\]", config_content):
         return re.sub(
             rf"(?m)^({escaped_key}:[ \t]*\[)([^\]]*)(\])",
-            lambda m: _format_inline_plugin_list(m.group(1), m.group(2), m.group(3), item),
+            lambda m: _format_inline_list(m.group(1), m.group(2), m.group(3), item),
             config_content,
             count=1,
         )
@@ -359,7 +359,7 @@ def _append_jekyll_exclude(config_content: str, entry: str = "_gm-materials") ->
 def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -> bool:
     """Return True if *entry* is present in .gitignore."""
     base = re.escape(entry.rstrip("/"))
-    return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#.*)?$", gitignore_content))
+    return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#[^\r\n]*)?\r?$", gitignore_content))
 
 
 def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:

@@ -267,7 +267,7 @@ All Phase 1 work executes as one cohesive change set across the CLI, Jekyll excl
 #### 8. [`scripts/scribe_session.py`](../../scripts/scribe_session.py) (Modify)
 
 *   **Type / Scope**: Local Ollama two-pass extraction script (Pass 2A extracts chronological/tactical facts; Pass 2B extracts sensory/environmental textures; output paths are read from the `transcribe_session.py` manifest).
-*   **Proposed Changes**: Update all 17+ hardcoded `Google Drive` and `_sessions/` strings and comments across the module docstring, `build_tactical_prompt()`, `build_sensory_prompt()`, `extract_tactical_facts()`, `extract_sensory_textures()`, and `main()` CLI output to reference `_gm-materials/session-summaries/`.
+*   **Proposed Changes**: Update hardcoded `Google Drive` and `_sessions/` strings and comments across the module docstring, `strip_prompt_echo()`, `extract_tactical_facts()`, `extract_sensory_textures()`, and `main()` CLI output to reference `_gm-materials/session-summaries/`.
 
 #### 9. [`scripts/audit_coverage.py`](../../scripts/audit_coverage.py) (Modify)
 

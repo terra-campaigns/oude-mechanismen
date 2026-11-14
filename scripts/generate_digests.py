@@ -94,10 +94,7 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
 
     if repo_root.is_dir():
         return repo_root
-    raise FileNotFoundError(
-        f"Could not locate reference digests for campaign '{repo_root.name}'. "
-        f"Please define 'drive_dir' in {config_file} or pass --drive-dir."
-    )
+    raise FileNotFoundError(f"Repository root '{repo_root}' does not exist or is not a directory.")
 
 
 def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = False):
@@ -155,8 +152,10 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
         # 2. Parse Source PDF
         raw_src = None
+        src_from_frontmatter = False
         if frontmatter.get("source_pdf") is not None and str(frontmatter.get("source_pdf")).strip():
             raw_src = str(frontmatter["source_pdf"]).strip()
+            src_from_frontmatter = True
         else:
             for line in body_lines[:10]:
                 m = re.search(r"(?:Source(?:\s+PDF)?):\s*(?:\*\*\s*)?(?:Google Drive\s*)?`([^`]+)`", line, flags=re.IGNORECASE)
@@ -165,20 +164,19 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                     break
 
         if raw_src:
-            if frontmatter.get("source_pdf") is not None:
-                source_pdf = raw_src
-            elif raw_src.startswith("/"):
+            if src_from_frontmatter or raw_src.startswith("/"):
                 source_pdf = raw_src
             elif (drive_dir / raw_src).exists():
-                source_pdf = str(drive_dir / raw_src)
+                # Drive-local source: normalise to a portable POSIX relative path.
+                source_pdf = Path(raw_src).as_posix()
             elif (rpg_root / raw_src).exists():
                 source_pdf = str(rpg_root / raw_src)
             else:
-                source_pdf = raw_src if "/" not in raw_src else str(drive_dir / raw_src)
+                source_pdf = Path(raw_src).as_posix()
 
         # 3. Categorisation heuristic (derived from source folder and generic keywords)
         stem = md_file.stem.lower()
-        src_lower = (source_pdf or "").lower()
+        src_lower = f"/{(source_pdf or '').lower().lstrip('/')}"
 
         if "postcard" in stem or "/postcards/" in src_lower:
             category = "postcards"

@@ -177,6 +177,30 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertEqual(broken["source_pdf"], "Fallback.pdf")
         self.assertNotIn("entity_type", broken)
 
+    def test_compile_references_empty_frontmatter_source_pdf_falls_back_to_body(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests"
+        digests_dir.mkdir(parents=True)
+        supp_pdf = self.repo_root / "supplements" / "Local_Sub.pdf"
+        supp_pdf.parent.mkdir(parents=True)
+        supp_pdf.write_bytes(b"%PDF-1.4")
+
+        (digests_dir / "empty_fm_src.md").write_text(
+            "---\n"
+            "title: Local Sub\n"
+            'source_pdf: ""\n'
+            "---\n"
+            "# Local Sub — Reference Digest\n\n"
+            "> **Source PDF:** `supplements/Local_Sub.pdf`\n\n"
+            "## Contents\n\n"
+            "Intro.\n"
+        )
+
+        generate_digests.compile_references(self.repo_root, self.repo_root)
+        refs = json.loads((self.context_dir / "references.json").read_text())
+        entry = refs["sources"][0]
+        self.assertEqual(entry["source_pdf"], "supplements/Local_Sub.pdf")
+        self.assertEqual(entry["category"], "supplement")
+
     def test_compile_references_idempotent_generated_timestamp(self):
         digests_dir = self.repo_root / "_gm-materials" / "digests"
         digests_dir.mkdir(parents=True)
