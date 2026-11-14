@@ -71,7 +71,7 @@ class TestStorageSeparation(unittest.TestCase):
         custom_airgap = Path(self.test_dir) / "custom_airgap"
         airgap_dir = transcribe_session.find_airgap_dir(self.repo_root, explicit_airgap_dir=str(custom_airgap))
         drive_dir = transcribe_session.find_drive_dir(self.repo_root)
-        sessions_dir = drive_dir / "_sessions"
+        sessions_dir = drive_dir / "_gm-materials" / "session-summaries"
 
         slug = "2026-11-02_ep001"
         transcript_path = airgap_dir / f"{slug}_transcript.txt"
@@ -121,21 +121,50 @@ class TestStorageSeparation(unittest.TestCase):
 
         transcript_p = Path(manifest["transcript_path"])
         glossary_p = Path(manifest["glossary_path"])
+        expected_sessions_dir = self.fake_drive / "_gm-materials" / "session-summaries"
 
         self.assertTrue(transcript_p.exists())
         self.assertEqual(transcript_p.parent, custom_airgap.resolve())
 
         self.assertTrue(glossary_p.exists())
-        self.assertEqual(glossary_p.parent, self.fake_drive / "_sessions")
+        self.assertEqual(glossary_p.parent, expected_sessions_dir)
 
         self.assertIn("tactical_facts_path", manifest)
         self.assertIn("sensory_textures_path", manifest)
-        self.assertEqual(Path(manifest["tactical_facts_path"]).parent, self.fake_drive / "_sessions")
-        self.assertEqual(Path(manifest["sensory_textures_path"]).parent, self.fake_drive / "_sessions")
+        self.assertEqual(Path(manifest["tactical_facts_path"]).parent, expected_sessions_dir)
+        self.assertEqual(Path(manifest["sensory_textures_path"]).parent, expected_sessions_dir)
 
         # Verify Google Drive contains NO .txt files
-        gdrive_txt_files = list((self.fake_drive / "_sessions").glob("*.txt"))
+        gdrive_txt_files = list(expected_sessions_dir.glob("*.txt"))
         self.assertEqual(gdrive_txt_files, [])
+
+    def test_find_drive_dir_relative_and_fallback(self):
+        """Verify relative drive_dir resolves against repo_root and missing/empty falls back to repo_root."""
+        tier1_yml = self.repo_root / ".agents" / "context" / "tier1_sources.yml"
+        tier1_yml.write_text('drive_dir: "."\n', encoding="utf-8")
+        other_cwd = Path(self.test_dir) / "elsewhere"
+        other_cwd.mkdir()
+        prev_cwd = Path.cwd()
+        try:
+            os.chdir(other_cwd)
+            self.assertEqual(transcribe_session.find_drive_dir(self.repo_root), self.repo_root.resolve())
+        finally:
+            os.chdir(prev_cwd)
+
+        tier1_yml.write_text('drive_dir: ""\n', encoding="utf-8")
+        self.assertEqual(transcribe_session.find_drive_dir(self.repo_root), self.repo_root.resolve())
+        tier1_yml.unlink()
+        self.assertEqual(transcribe_session.find_drive_dir(self.repo_root), self.repo_root.resolve())
+
+    def test_find_drive_dir_nonexistent_or_file_raises(self):
+        """Verify find_drive_dir raises FileNotFoundError when path is missing or is a regular file."""
+        with self.assertRaises(FileNotFoundError):
+            transcribe_session.find_drive_dir(self.repo_root, explicit_drive_dir="missing_dir")
+
+        regular_file = self.repo_root / "not_a_dir.txt"
+        regular_file.write_text("file\n", encoding="utf-8")
+        with self.assertRaises(FileNotFoundError):
+            transcribe_session.find_drive_dir(self.repo_root, explicit_drive_dir="not_a_dir.txt")
 
 
 if __name__ == "__main__":

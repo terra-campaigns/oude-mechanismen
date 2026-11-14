@@ -602,8 +602,14 @@ class TestOudeCLI(unittest.TestCase):
 
         config_path = self.target_dir / "_config.yml"
         for initial, expected in [
-            ("title: Test\nplugins: [jekyll-feed]\n", "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\n"),
-            ("title: Test\nplugins: []\n", "title: Test\nplugins: [oude-mechanismen]\n"),
+            (
+                "title: Test\nplugins: [jekyll-feed]\nexclude: [_gm-materials]\n",
+                "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\nexclude: [_gm-materials]\n",
+            ),
+            (
+                "title: Test\nplugins: []\nexclude: [_gm-materials]\n",
+                "title: Test\nplugins: [oude-mechanismen]\nexclude: [_gm-materials]\n",
+            ),
         ]:
             config_path.write_text(initial, encoding="utf-8")
             with patch("sys.stdout", new=io.StringIO()):
@@ -697,32 +703,32 @@ class TestOudeCLI(unittest.TestCase):
         config_path = self.target_dir / "_config.yml"
         cases = [
             (
-                'title: Test\nplugins: ["jekyll-feed"]\n',
-                'title: Test\nplugins: ["jekyll-feed", "oude-mechanismen"]\n',
+                'title: Test\nplugins: ["jekyll-feed"]\nexclude: ["_gm-materials"]\n',
+                'title: Test\nplugins: ["jekyll-feed", "oude-mechanismen"]\nexclude: ["_gm-materials"]\n',
             ),
             (
-                "title: Test\nplugins: ['jekyll-feed']\n",
-                "title: Test\nplugins: ['jekyll-feed', 'oude-mechanismen']\n",
+                "title: Test\nplugins: ['jekyll-feed']\nexclude: ['_gm-materials']\n",
+                "title: Test\nplugins: ['jekyll-feed', 'oude-mechanismen']\nexclude: ['_gm-materials']\n",
             ),
             (
-                "title: Test\nplugins: [jekyll-feed, ]\n",
-                "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\n",
+                "title: Test\nplugins: [jekyll-feed, ]\nexclude: [_gm-materials]\n",
+                "title: Test\nplugins: [jekyll-feed, oude-mechanismen]\nexclude: [_gm-materials]\n",
             ),
             (
-                "title: Test\nplugins: [jekyll-feed] # core plugins\n",
-                "title: Test\nplugins: [jekyll-feed, oude-mechanismen] # core plugins\n",
+                "title: Test\nplugins: [jekyll-feed] # core plugins\nexclude: [_gm-materials]\n",
+                "title: Test\nplugins: [jekyll-feed, oude-mechanismen] # core plugins\nexclude: [_gm-materials]\n",
             ),
             (
-                "title: Test\nplugins: [my-oude-mechanismen]\n",
-                "title: Test\nplugins: [my-oude-mechanismen, oude-mechanismen]\n",
+                "title: Test\nplugins: [my-oude-mechanismen]\nexclude: [_gm-materials]\n",
+                "title: Test\nplugins: [my-oude-mechanismen, oude-mechanismen]\nexclude: [_gm-materials]\n",
             ),
             (
-                'title: Test\nplugins: # gems\n  - "jekyll-feed"\n',
-                'title: Test\nplugins: # gems\n  - "oude-mechanismen"\n  - "jekyll-feed"\n',
+                'title: Test\nplugins: # gems\n  - "jekyll-feed"\nexclude:\n  - "_gm-materials"\n',
+                'title: Test\nplugins: # gems\n  - "oude-mechanismen"\n  - "jekyll-feed"\nexclude:\n  - "_gm-materials"\n',
             ),
             (
                 "",
-                "plugins:\n  - oude-mechanismen\n",
+                "plugins:\n  - oude-mechanismen\n\nexclude:\n  - \"_gm-materials\"\n",
             ),
         ]
         for initial, expected in cases:
@@ -747,7 +753,10 @@ class TestOudeCLI(unittest.TestCase):
         )
 
         config_path = self.target_dir / "_config.yml"
-        config_path.write_text('title: Test\nplugins:\n  - "oude-mechanismen"\n', encoding="utf-8")
+        config_path.write_text(
+            'title: Test\nplugins:\n  - "oude-mechanismen"\nexclude:\n  - "_gm-materials"\n',
+            encoding="utf-8",
+        )
 
         engine_version_dir = self.target_dir / ".agents" / ".engine-version"
         engine_version_dir.mkdir(parents=True, exist_ok=True)
@@ -755,6 +764,88 @@ class TestOudeCLI(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
         self.assertTrue(engine_version_dir.is_dir())
+
+    def test_init_scaffolds_gm_materials_and_excludes(self):
+        """Verify oude init scaffolds top-level _gm-materials/, .gitignore rule, and _config.yml exclude."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        self.assertTrue(
+            (self.target_dir / "_gm-materials").is_dir(),
+            "Expected top-level _gm-materials/ directory to be created",
+        )
+        for subdir in ["session-summaries", "session-preps", "digests"]:
+            self.assertFalse(
+                (self.target_dir / "_gm-materials" / subdir).exists(),
+                f"Expected _gm-materials/{subdir} not to be pre-created during init",
+            )
+
+        gitignore_text = (self.target_dir / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("_gm-materials/", gitignore_text)
+
+        tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
+        self.assertIn("drive_dir: .", tier1_text)
+
+        config_text = (self.target_dir / "_config.yml").read_text(encoding="utf-8")
+        self.assertTrue(cli._has_jekyll_exclude(config_text, "_gm-materials"))
+
+    def test_doctor_checks_and_fixes_gitignore_and_config_exclude_for_gm_materials(self):
+        """Verify doctor checks and --fix repairs missing _gm-materials in .gitignore and _config.yml."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        gitignore_path = self.target_dir / ".gitignore"
+        config_path = self.target_dir / "_config.yml"
+
+        # Case 1: .gitignore missing _gm-materials/ (and no trailing newline)
+        gitignore_path.write_text("_site/", encoding="utf-8")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        self.assertEqual(gitignore_path.read_text(encoding="utf-8"), "_site/\n_gm-materials/\n")
+        self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+        # Case 2: _config.yml inline and block exclude variants
+        exclude_cases = [
+            (
+                'title: Test # header\nplugins: ["oude-mechanismen"]\nexclude: ["Gemfile"]\n',
+                'title: Test # header\nplugins: ["oude-mechanismen"]\nexclude: ["Gemfile", "_gm-materials"]\n',
+            ),
+            (
+                "title: Test\nplugins: [oude-mechanismen]\nexclude:\n  - Gemfile\n",
+                'title: Test\nplugins: [oude-mechanismen]\nexclude:\n  - "_gm-materials"\n  - Gemfile\n',
+            ),
+            (
+                "title: Test\nplugins: [oude-mechanismen]\n",
+                'title: Test\nplugins: [oude-mechanismen]\n\nexclude:\n  - "_gm-materials"\n',
+            ),
+        ]
+        for initial_cfg, expected_cfg in exclude_cases:
+            config_path.write_text(initial_cfg, encoding="utf-8")
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 1)
+                self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            self.assertEqual(config_path.read_text(encoding="utf-8"), expected_cfg)
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_data_extractor_rb_excludes_gm_materials(self):
+        """Verify jekyll/_plugins/data_extractor.rb unconditionally filters _gm-materials/ from catalog.json."""
+        extractor_path = cli.resolve_asset_dir("jekyll/_plugins/data_extractor.rb")
+        if not extractor_path.is_file():
+            extractor_path = cli.resolve_asset_dir("jekyll") / "_plugins" / "data_extractor.rb"
+        content = extractor_path.read_text(encoding="utf-8")
+        self.assertIn('f.start_with?("_gm-materials/")', content)
 
 
 if __name__ == "__main__":

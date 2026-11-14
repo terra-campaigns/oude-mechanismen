@@ -7,8 +7,9 @@
 # Do NOT list individual subfolders here (e.g. avoid directory/RegionA, directory/RegionB),
 # as newly scaffolded locations will be silently excluded from catalog.json.
 
-# Path to external reference sourcebooks and Markdown digests (optional)
-drive_dir: /path/to/campaign/source_folder
+# Path to private GM materials (_gm-materials/: session-summaries/, session-preps/, digests/)
+# and external reference sourcebooks. Defaults to "." (repository root).
+drive_dir: .
 
 include_paths:
   - campaigns

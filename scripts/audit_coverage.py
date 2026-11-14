@@ -3,8 +3,8 @@
 Automated Gap Analysis for Tabletop RPG Campaign Vaults.
 
 Performs a multi-layered campaign audit:
-1. Google Drive Sync: Audits raw sourcebooks, PDFs, and Google Sheets against
-   the Tier 3 routing index (.agents/context/references.json) and _digests/.
+1. Reference Sync: Audits raw sourcebooks, PDFs, and Google Sheets against
+   the Tier 3 routing index (.agents/context/references.json) and _gm-materials/digests/.
 2. Route Topology & Proximity Gaps (optional): When .agents/context/route_graph.json
    is present, maps the trail/star system graph from the latest session log,
    and flags unvisited destinations within N hops (default: 2).
@@ -49,38 +49,43 @@ def find_repo_root(custom_dir: Optional[str] = None) -> Path:
     )
 
 
-def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Optional[Path]:
-    """Resolve the campaign Google Drive directory from tier1_sources.yml or fallback glob."""
+def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Path:
+    """Resolve the campaign storage directory from tier1_sources.yml, falling back to repo_root."""
+    repo_root = repo_root.resolve()
     if custom_drive:
-        p = Path(custom_drive).resolve()
-        if p.exists() and p.is_dir():
-            return p
+        raw = Path(custom_drive).expanduser()
+        target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+        if target.is_dir():
+            return target
+        raise FileNotFoundError(f"Explicit drive_dir '{custom_drive}' does not exist or is not a directory.")
 
     tier1_path = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if tier1_path.exists():
-        try:
-            content = tier1_path.read_text(encoding="utf-8")
-            m = re.search(r"^drive_dir:\s*['\"]?(.*?)['\"]?\s*$", content, re.MULTILINE)
-            if m and m.group(1).strip():
-                raw = m.group(1).strip()
-                p = Path(os.path.expanduser(raw)).resolve()
-                if p.exists():
-                    return p
-        except Exception:
-            pass
+        content = tier1_path.read_text(encoding="utf-8")
+        m = re.search(
+            r"""^drive_dir:[ \t]*(?:"([^"]*)"(?:[ \t]*#[^\r\n]*)?|'([^']*)'(?:[ \t]*#[^\r\n]*)?|([^\r\n]+?))?[ \t\r]*$""",
+            content,
+            re.MULTILINE,
+        )
+        raw_str = ""
+        if m:
+            quoted = m.group(1) if m.group(1) is not None else m.group(2)
+            if quoted is not None:
+                raw_str = quoted.strip()
+            elif m.group(3) is not None:
+                raw_str = re.sub(r"(?:^|[ \t]+)#.*$", "", m.group(3)).strip()
+        if raw_str:
+            raw = Path(raw_str).expanduser()
+            target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+            if target.is_dir():
+                return target
+            raise FileNotFoundError(
+                f"Configured 'drive_dir' path '{raw_str}' in {tier1_path} does not exist or is not a directory."
+            )
 
-    # Generic CloudStorage glob fallback without hardcoded personal accounts
-    repo_name = repo_root.name
-    try:
-        cloud_storage = Path.home() / "Library" / "CloudStorage"
-        if cloud_storage.exists():
-            matches = list(cloud_storage.glob(f"GoogleDrive-*/My Drive/RPG/campaigns/{repo_name}"))
-            if matches and matches[0].exists():
-                return matches[0]
-    except Exception:
-        pass
-
-    return None
+    if repo_root.is_dir():
+        return repo_root
+    raise FileNotFoundError(f"Repository root '{repo_root}' does not exist or is not a directory.")
 
 
 def load_route_graph(repo_root: Path) -> Optional[Dict[str, Any]]:
@@ -155,8 +160,8 @@ def resolve_unindexed_file_action(
     return "Reference file"
 
 
-def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, Any]:
-    """Audit physical Google Drive files against references.json and _digests/."""
+def audit_drive_sync(repo_root: Path, drive_dir: Path) -> Dict[str, Any]:
+    """Audit physical source files against references.json and _gm-materials/digests/."""
     results: Dict[str, Any] = {
         "drive_accessible": False,
         "indexed_sources": [],
@@ -178,16 +183,34 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
 
     results["indexed_sources"] = list(indexed_map.keys())
 
-    if not drive_dir or not drive_dir.exists():
+    if not drive_dir.is_dir():
         return results
 
     results["drive_accessible"] = True
-    digests_dir = drive_dir / "_digests"
+    digests_dir = drive_dir / "_gm-materials" / "digests"
+
+    ignored_walk_dirs = {
+        "_gm-materials",
+        "_digests",
+        "_sessions",
+        "_site",
+        ".jekyll-cache",
+        ".sass-cache",
+        "vendor",
+        "campaigns",
+        "directory",
+        "systems",
+        "imgs",
+        "_sass",
+        "_plugins",
+        "node_modules",
+        "bin",
+    }
 
     drive_files: List[Path] = []
     try:
         for root, dirs, files in os.walk(drive_dir):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("_digests", "_sessions")]
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ignored_walk_dirs]
             for f in files:
                 if not f.startswith(".") and not f.startswith("~"):
                     drive_files.append(Path(root) / f)
@@ -197,7 +220,7 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
 
     results["total_drive_files"] = len(drive_files)
 
-    known_names = {Path(s.get("source_pdf", "")).name for s in indexed_map.values()}
+    known_names = {Path(s.get("source_pdf", "")).name for s in indexed_map.values() if s.get("source_pdf")}
 
     scripts_cache: Optional[List[Tuple[str, str]]] = None
     docs_cache: Optional[List[Tuple[str, str]]] = None
@@ -216,7 +239,12 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
 
             docs_cache = []
             for root, dirs, files in os.walk(repo_root):
-                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("_site", ".jekyll-cache", "node_modules", "vendor")]
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if not d.startswith(".")
+                    and d not in ("_site", ".jekyll-cache", "node_modules", "vendor", "_gm-materials")
+                ]
                 for f in files:
                     if f.endswith(".md"):
                         p = Path(root) / f
@@ -243,7 +271,13 @@ def audit_drive_sync(repo_root: Path, drive_dir: Optional[Path]) -> Dict[str, An
                 })
 
     for slug, src in indexed_map.items():
-        digest_file = Path(src.get("digest_path", digests_dir / f"{slug}.md"))
+        raw_path = src.get("digest_path")
+        fallback_path = digests_dir / f"{slug}.md"
+        if raw_path:
+            candidate = Path(raw_path) if Path(raw_path).is_absolute() else (drive_dir / raw_path)
+            digest_file = candidate if candidate.exists() else fallback_path
+        else:
+            digest_file = fallback_path
         if not digest_file.exists():
             results["missing_digests"].append({
                 "slug": slug,
@@ -606,7 +640,7 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
 
 def run_gap_analysis(
     repo_root: Path,
-    drive_dir: Optional[Path],
+    drive_dir: Path,
     max_hops: int = 2,
     campaign_subfolder: Optional[str] = None
 ) -> Dict[str, Any]:

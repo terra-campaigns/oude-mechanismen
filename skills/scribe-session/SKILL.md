@@ -14,7 +14,7 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 - **Dynamic Canon Grounding:** Dynamically queries `.agents/context/catalog.json`, `.agents/context/decisions.md`, and `.agents/AGENTS.md` to bias Whisper acoustic recognition and eliminate phonetic misspellings without manual glossary maintenance.
 - **Three-Tier Storage Separation & Privacy Air-Gap:**
   1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
-  2. *Tier 2 Canon (Google Drive `_sessions/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
+  2. *Tier 2 Canon (`<drive_dir>/_gm-materials/session-summaries/` & `<drive_dir>/_gm-materials/session-preps/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`_gm-materials/session-preps/<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
   3. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
 - **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and drafts the canonical chapter and archival notes.
 - **Objective In-World Observer Perspective:** All archival GM notes are narrated from the perspective of an invisible, objective in-world observer witnessing events within the universe. Zero player meta-talk, zero table out-of-character banter, zero boxed read-aloud prose.
@@ -40,21 +40,21 @@ oude scribe "<input_file>"
 This local execution:
 1. Normalises audio to 16 kHz mono WAV and transcribes via Apple Metal GPU Whisper (`whisper-cli`) using the dynamic proper-noun glossary prompt.
 2. Saves the verbatim transcript strictly to `~/Private/rpg-sessions/<campaign>/<slug>_transcript.txt` (Tier 0 Air-Gap, never uploaded or ingested into cloud chat).
-3. Compiles the session acoustic glossary in Google Drive (`<drive_dir>/_sessions/<slug>_glossary.md`).
-4. **Pass 2A (Tactical Facts Extraction):** Local Ollama (`qwen2.5:14b`) extracts chronological timeline, combat actions, damage, mechanical rolls, sustained wounds/stress, and inventory/credits ledger -> saves `<drive_dir>/_sessions/<slug>_tactical_facts.md` (Tier 2 Canon, de-personalised).
-5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_sessions/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
+3. Compiles the session acoustic glossary in `<drive_dir>/_gm-materials/session-summaries/<slug>_glossary.md`.
+4. **Pass 2A (Tactical Facts Extraction):** Local Ollama (`qwen2.5:14b`) extracts chronological timeline, combat actions, damage, mechanical rolls, sustained wounds/stress, and inventory/credits ledger -> saves `<drive_dir>/_gm-materials/session-summaries/<slug>_tactical_facts.md` (Tier 2 Canon, de-personalised).
+5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_gm-materials/session-summaries/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
 
-At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in Google Drive.
+At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in `_gm-materials/session-summaries/`.
 
 ---
 
 ### Step 2: Ingest De-personalised Notes in Antigravity Chat
 
-The Gemini agent in chat reads the non-Tier-0 materials from Google Drive:
+The Gemini agent in chat reads the non-Tier-0 materials from `<drive_dir>/_gm-materials/session-summaries/`:
 
-1. **De-personalised Tactical Facts:** Read `<drive_dir>/_sessions/<slug>_tactical_facts.md`.
-2. **De-personalised Sensory Textures:** Read `<drive_dir>/_sessions/<slug>_sensory_textures.md`.
-3. **Session Acoustic Glossary:** Read `<drive_dir>/_sessions/<slug>_glossary.md`.
+1. **De-personalised Tactical Facts:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_tactical_facts.md`.
+2. **De-personalised Sensory Textures:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_sensory_textures.md`.
+3. **Session Acoustic Glossary:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_glossary.md`.
 4. **Active Table Decisions (Tier 2):** Read `.agents/context/decisions.md`.
 5. **Campaign Specification:** Inspect `.agents/AGENTS.md` for style, cadence, vocabulary, and calibration examples.
 6. **Past Chapter Files:** Inspect the past 2–3 chapters (or as many as needed) to ground voice, style calibration, calendar progression, and narrative continuity.
@@ -77,7 +77,7 @@ Gemini in chat merges Pass 2A and Pass 2B into the canonical **8-section Archiva
   8. `## 7. Table Rulings & Candidate Tier 2 Decisions`: GM rulings and custom procedures to propose for `.agents/context/decisions.md`.
   9. `## 8. Unresolved Hooks & Next Steps`: Active cliffhangers and immediate player intentions.
 - **Frontier Quality Gate 1:** Audit notes against previous sessions for continuity of ongoing debts and character states. Automated refinement loop (up to 3 iterations) if plot points or ledger entries are incomplete.
-- **Save File:** Write finalised notes to `<drive_dir>/_sessions/<slug>_session_notes.md` in Google Drive (Tier 2).
+- **Save File:** Write finalised notes to `<drive_dir>/_gm-materials/session-summaries/<slug>_session_notes.md` (Tier 2).
 
 ---
 

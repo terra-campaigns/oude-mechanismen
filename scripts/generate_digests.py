@@ -8,7 +8,7 @@
 # ///
 """
 Compile Tier 3 reference routing index (.agents/context/references.json) from
-Markdown digests in the campaign's Google Drive _digests/ directory.
+Markdown digests in the campaign's _gm-materials/digests/ directory.
 
 Setting-agnostic: contains zero campaign lore. Discovers sources dynamically.
 """
@@ -59,44 +59,51 @@ def find_repo_root(custom_dir: str = None) -> Path:
     )
 
 
-def find_drive_dir(repo_root: Path, explicit_drive_dir: str = None) -> Path:
+def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) -> Path:
+    repo_root = repo_root.resolve()
     if explicit_drive_dir:
-        p = Path(explicit_drive_dir).expanduser()
-        if p.exists():
-            return p
-        raise FileNotFoundError(f"Explicit drive_dir '{explicit_drive_dir}' does not exist.")
+        raw = Path(explicit_drive_dir).expanduser()
+        target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+        if target.is_dir():
+            return target
+        raise FileNotFoundError(f"Explicit drive_dir '{explicit_drive_dir}' does not exist or is not a directory.")
 
-    # Check tier1_sources.yml
     config_file = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if config_file.exists():
         try:
             cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-            if "drive_dir" in cfg and cfg["drive_dir"]:
-                p = Path(cfg["drive_dir"]).expanduser()
-                if p.exists():
-                    return p
+            if not isinstance(cfg, dict):
+                cfg = {}
+            raw_drive = cfg.get("drive_dir")
+            if raw_drive:
+                raw = Path(str(raw_drive)).expanduser()
+                target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+                if target.is_dir():
+                    return target
                 raise FileNotFoundError(
-                    f"Configured 'drive_dir' path '{cfg['drive_dir']}' does not exist. "
+                    f"Configured 'drive_dir' path '{raw_drive}' does not exist or is not a directory. "
                     f"Please verify {config_file}."
                 )
+        except yaml.YAMLError as e:
+            print(f"[WARN] Failed to parse YAML in {config_file}: {e}", file=sys.stderr)
+            raise
         except Exception as e:
             if isinstance(e, FileNotFoundError):
                 raise
             print(f"[WARN] Failed to read drive_dir from {config_file}: {e}", file=sys.stderr)
 
-    raise FileNotFoundError(
-        f"Could not locate reference digests for campaign '{repo_root.name}'. "
-        f"Please define 'drive_dir' in {config_file} or pass --drive-dir."
-    )
+    if repo_root.is_dir():
+        return repo_root
+    raise FileNotFoundError(f"Repository root '{repo_root}' does not exist or is not a directory.")
 
 
 def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = False):
-    digests_dir = drive_dir / "_digests"
+    digests_dir = drive_dir / "_gm-materials" / "digests"
     if not digests_dir.exists():
-        print(f"[WARN] No _digests directory found at {digests_dir}")
+        print(f"[WARN] No _gm-materials/digests directory found at {digests_dir}")
         return
 
-    md_files = sorted(digests_dir.glob("*.md"))
+    md_files = sorted(digests_dir.rglob("*.md"), key=lambda p: p.as_posix())
     if not md_files:
         print(f"[WARN] No Markdown digest files found in {digests_dir}")
         return
@@ -106,41 +113,70 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
+        frontmatter: Dict[str, Any] = {}
+        fm_prefix = ""
+        body = content
+        if content.startswith("---"):
+            fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
+            if fm_match:
+                fm_prefix = content[: fm_match.end()]
+                body = content[fm_match.end() :]
+                try:
+                    loaded = yaml.safe_load(fm_match.group(1))
+                    if isinstance(loaded, dict):
+                        frontmatter = loaded
+                    elif loaded is not None:
+                        print(f"[WARN] Non-mapping YAML frontmatter in {md_file}; falling back to heading parser.", file=sys.stderr)
+                except yaml.YAMLError as exc:
+                    print(f"[WARN] Malformed YAML frontmatter in {md_file}: {exc}; falling back to heading parser.", file=sys.stderr)
+
         if clean_headings:
-            cleaned = ensure_heading_blank_lines(content)
+            cleaned_body = ensure_heading_blank_lines(body)
+            cleaned = fm_prefix + cleaned_body
             if cleaned != content:
                 md_file.write_text(cleaned, encoding="utf-8")
-                content = cleaned
+                body = cleaned_body
 
-        lines = content.splitlines()
+        body_lines = body.splitlines()
         title = md_file.stem
         source_pdf = None
 
         # 1. Parse Title
-        for line in lines[:5]:
+        for line in body_lines[:5]:
             m = re.match(r"^#\s+(.+?)(?:\s*—\s*Reference Digest)?$", line)
             if m:
                 title = m.group(1).strip()
                 break
+        if frontmatter.get("title") is not None and str(frontmatter.get("title")).strip():
+            title = str(frontmatter["title"]).strip()
 
         # 2. Parse Source PDF
-        for line in lines[:10]:
-            m = re.search(r"Source:\s*(?:Google Drive\s*)?`([^`]+)`", line)
-            if m:
-                raw_src = m.group(1).strip()
-                if raw_src.startswith("/"):
-                    source_pdf = raw_src
-                elif (drive_dir / raw_src).exists():
-                    source_pdf = str(drive_dir / raw_src)
-                elif (rpg_root / raw_src).exists():
-                    source_pdf = str(rpg_root / raw_src)
-                else:
-                    source_pdf = str(drive_dir / raw_src)
-                break
+        raw_src = None
+        src_from_frontmatter = False
+        if frontmatter.get("source_pdf") is not None and str(frontmatter.get("source_pdf")).strip():
+            raw_src = str(frontmatter["source_pdf"]).strip()
+            src_from_frontmatter = True
+        else:
+            for line in body_lines[:10]:
+                m = re.search(r"(?:Source(?:\s+PDF)?):\s*(?:\*\*\s*)?(?:Google Drive\s*)?`([^`]+)`", line, flags=re.IGNORECASE)
+                if m:
+                    raw_src = m.group(1).strip()
+                    break
+
+        if raw_src:
+            if src_from_frontmatter or raw_src.startswith("/"):
+                source_pdf = raw_src
+            elif (drive_dir / raw_src).exists():
+                # Drive-local source: normalise to a portable POSIX relative path.
+                source_pdf = Path(raw_src).as_posix()
+            elif (rpg_root / raw_src).exists():
+                source_pdf = str(rpg_root / raw_src)
+            else:
+                source_pdf = Path(raw_src).as_posix()
 
         # 3. Categorisation heuristic (derived from source folder and generic keywords)
         stem = md_file.stem.lower()
-        src_lower = (source_pdf or "").lower()
+        src_lower = f"/{(source_pdf or '').lower().lstrip('/')}"
 
         if "postcard" in stem or "/postcards/" in src_lower:
             category = "postcards"
@@ -161,7 +197,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
         # 4. Parse Headings & Sections
         sections = []
-        for idx, line in enumerate(lines, start=1):
+        for idx, line in enumerate(body_lines, start=fm_prefix.count("\n") + 1):
             m = re.match(r"^(#{2,3})\s+(.+?)\s*$", line)
             if m:
                 sections.append({
@@ -170,16 +206,24 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                     "line": idx
                 })
 
-        sources.append({
-            "slug": md_file.stem,
+        slug = md_file.relative_to(digests_dir).with_suffix("").as_posix()
+        digest_path = md_file.relative_to(drive_dir).as_posix()
+
+        entry: Dict[str, Any] = {
+            "slug": slug,
             "title": title,
             "category": category,
             "tier": 3,
             "source_pdf": source_pdf,
-            "digest_path": str(md_file),
+            "digest_path": digest_path,
             "digest_exists": True,
-            "sections": sections
-        })
+            "sections": sections,
+        }
+        for opt_key in ("entity_type", "pages", "tags"):
+            if opt_key in frontmatter and frontmatter[opt_key] is not None:
+                entry[opt_key] = frontmatter[opt_key]
+
+        sources.append(entry)
 
     # Write output to repo idempotently (preserve timestamp if sources unchanged)
     campaign_name = repo_root.name
@@ -341,7 +385,7 @@ def scaffold_digest(
         clean_stem = re.sub(r"[-_]v\d+.*$", "", pdf_path.stem, flags=re.IGNORECASE)
         slug = slugify(clean_stem)
 
-    digests_dir = drive_dir / "_digests"
+    digests_dir = drive_dir / "_gm-materials" / "digests"
     out_file = digests_dir / f"{slug}.md"
 
     if out_file.exists() and not force:
