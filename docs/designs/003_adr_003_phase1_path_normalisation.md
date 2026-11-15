@@ -1,7 +1,7 @@
 # Design 003: ADR 003 Phase 1 — Path & Gitignore Normalisation
 
 *   **Author:** Estevão Alvarenga (`efsalvarenga`) / Antigravity
-*   **Status:** Proposed
+*   **Status:** Implemented (PR #38, v0.6.0)
 *   **Date:** 2026-11-13
 
 --------------------------------------------------------------------------------
