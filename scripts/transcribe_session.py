@@ -55,31 +55,42 @@ def find_campaign_root(explicit_root: Optional[str] = None) -> Path:
 
 
 def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) -> Path:
-    """Resolve the campaign's Google Drive storage directory from tier1_sources.yml."""
+    """Resolve the campaign's storage directory from tier1_sources.yml (falling back to repo_root)."""
+    repo_root = repo_root.resolve()
     if explicit_drive_dir:
-        p = Path(explicit_drive_dir).expanduser().resolve()
-        if p.exists():
-            return p
-        raise FileNotFoundError(f"Explicit drive_dir '{explicit_drive_dir}' does not exist.")
+        raw = Path(explicit_drive_dir).expanduser()
+        target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+        if target.is_dir():
+            return target
+        raise FileNotFoundError(f"Explicit drive_dir '{explicit_drive_dir}' does not exist or is not a directory.")
 
     config_file = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if config_file.exists():
         try:
             cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-            if "drive_dir" in cfg and cfg["drive_dir"]:
-                p = Path(cfg["drive_dir"]).expanduser().resolve()
-                if p.exists():
-                    return p
+            if not isinstance(cfg, dict):
+                cfg = {}
+            raw_drive = cfg.get("drive_dir")
+            if raw_drive:
+                raw = Path(str(raw_drive)).expanduser()
+                target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+                if target.is_dir():
+                    return target
                 raise FileNotFoundError(
-                    f"Configured 'drive_dir' path '{cfg['drive_dir']}' in {config_file} does not exist."
+                    f"Configured 'drive_dir' path '{raw_drive}' in {config_file} does not exist or is not a directory."
                 )
+        except yaml.YAMLError as e:
+            print(f"[WARN] Failed to parse YAML in {config_file}: {e}", file=sys.stderr)
+            raise
         except Exception as e:
             if isinstance(e, FileNotFoundError):
                 raise
             print(f"[WARN] Failed to read drive_dir from {config_file}: {e}", file=sys.stderr)
 
+    if repo_root.is_dir():
+        return repo_root
     raise FileNotFoundError(
-        f"Could not locate Google Drive folder for campaign '{repo_root.name}'. "
+        f"Could not locate storage folder for campaign '{repo_root.name}'. "
         f"Please define 'drive_dir' in {config_file} or pass --drive-dir."
     )
 
@@ -585,7 +596,7 @@ def main():
     repo_root = find_campaign_root(args.repo_root)
     airgap_dir = find_airgap_dir(repo_root, args.airgap_dir)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
-    sessions_dir = drive_dir / "_sessions"
+    sessions_dir = drive_dir / "_gm-materials" / "session-summaries"
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
     input_path = Path(args.input_file).expanduser().resolve() if args.input_file else None

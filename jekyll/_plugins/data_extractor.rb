@@ -38,7 +38,8 @@ module OudeMechanismen
             f.start_with?("vendor/") ||
             f.start_with?(".git/") ||
             f.start_with?("_plugins/") ||
-            f.start_with?(".agents/")
+            f.start_with?(".agents/") ||
+            f.start_with?("_gm-materials/")
         end
 
         # Track internal link connections for links_out and links_in

@@ -31,6 +31,7 @@ exclude:
   - ".agents"
   - ".githooks"
   - ".obsidian"
+  - "_gm-materials"
   - "bin"
   - "Gemfile"
   - "Gemfile.lock"

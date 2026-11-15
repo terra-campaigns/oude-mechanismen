@@ -15,7 +15,7 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 - **Tier 1 (Catalogue):** Inspect `.agents/context/catalog.json`. Search the `entries` list for matches against `title`, `type`, `region`, or `parent`.
 - **Tier 2 (Rulings Log & Session Records):**
   - Inspect `.agents/context/decisions.md` to check if a table ruling or conversational decision has already been agreed with the GM.
-  - When querying recent table events, party conditions, inventory/debts, or unresolved plot hooks, inspect recent synthesised session notes in Google Drive (`<drive_dir>/_sessions/*_session_notes.md`).
+  - When querying recent table events, party conditions, inventory/debts, or unresolved plot hooks, inspect recent synthesised session notes in `_gm-materials/session-summaries/*_session_notes.md`.
 
 ### 2. Targeted Reading
 
@@ -26,7 +26,7 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 ### 3. Consult Tier 3 Reference Digests (When Needed)
 
 - If the topic relates to unvisited sectors/trail stations, weird rules, external sourcebooks, or general setting lore not yet found in Tier 1:
-  1. Inspect `.agents/context/references.json` to find the relevant source and section.
+  1. Inspect `.agents/context/references.json` to find the relevant source (`slug`) and section (`_gm-materials/digests/`).
   2. Open the matching digest file using the path specified under `digest_path` in `references.json`.
   3. Only inspect raw source PDFs if exact table entries or art details on a specific cited page (`[p. X]`) are strictly needed.
 
@@ -34,6 +34,6 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 
 - **Label Canon Tiers:** Always mark facts by their canon status:
   - **Tier 1 (Established Canon):** Drawn directly from published campaign notes.
-  - **Tier 2 (Agreed Rulings & Table Records):** Recorded in `.agents/context/decisions.md` or Google Drive session notes (`_sessions/*_session_notes.md`).
+  - **Tier 2 (Agreed Rulings & Table Records):** Recorded in `.agents/context/decisions.md` or session notes (`_gm-materials/session-summaries/*_session_notes.md`).
   - **Tier 3 (Influence / Possibility):** From reference PDFs and digests; not canon until adopted by the GM.
 - **Mark Gaps:** If an entity or fact is not found in the indexes, report it clearly as unestablished. Never invent lore or continuity without explicitly marking it as a proposal for the GM.

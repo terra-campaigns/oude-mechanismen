@@ -178,6 +178,8 @@ vendor/
 *_studio.html
 *_preview_*.png
 *_raw.*
+# Private GM materials (session summaries, session preps, digests)
+_gm-materials/
 EOF
       echo "  + Scaffolded .gitignore"
     fi
