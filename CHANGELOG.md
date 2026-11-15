@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2026-11-15
+
+### Added
+
+- **Unified `_gm-materials/` Root & Four-Layer Exclusion (ADR 003 Phase 1, PR #38)**:
+  - Consolidated Pillar 2 private GM artefacts under `<drive_dir>/_gm-materials/` (`session-summaries/`, `session-preps/`, `digests/`), defaulting `drive_dir: .` in `templates/tier1_sources.yml.template`.
+  - Enforced four-layer exclusion across `DEFAULT_GITIGNORE` / `sync.sh`, `templates/jekyll/_config.yml.template`, `jekyll/_plugins/data_extractor.rb` (`_gm-materials/` filter), and `oude doctor` / `oude doctor --fix` (with CRLF `.gitignore` tolerance and shared `_append_jekyll_list_item` helper).
+
+- **Recursive Reference Indexing & Frontmatter Metadata (`scripts/generate_digests.py`)**:
+  - Updated `compile_references()` to recursively index `_gm-materials/digests/**/*.md` with collision-free relative slugs (`<source>/<rel_path>`) whilst preserving bare `<slug>` identifiers for root-level flat digests.
+  - Added optional YAML frontmatter parsing (`entity_type`, `pages`, `tags`, `title`, `source_pdf`) with `[WARN]` fallback on malformed/non-mapping headers, `--clean-headings` isolation from frontmatter blocks, exact section line offsets, and portable POSIX relative `source_pdf` normalisation.
+
+- **Normalised `drive_dir` Resolution & Tooling Alignment**:
+  - Harmonised `find_drive_dir()` (`scripts/generate_digests.py`, `scripts/transcribe_session.py`) and `resolve_drive_dir()` (`scripts/audit_coverage.py`) to resolve relative paths against `repo_root`, validate `is_dir()`, strip inline YAML comments without multiline spillover, and fall back to `repo_root.resolve()`.
+  - Updated `scripts/audit_coverage.py`, `scripts/scribe_session.py`, `AGENTS.md`, `templates/AGENTS.md.template`, and skills (`add-chapter`, `lookup-context`, `prep-session`, `scribe-session`) to target `_gm-materials/` subdirectories.
+  - Added comprehensive unit test suites in `tests/test_generate_digests.py`, `tests/test_audit_coverage.py`, `tests/test_cli.py`, and `tests/test_transcribe_session.py` (`111 passed, 45 subtests passed`).
+
 ## [0.5.3] - 2026-11-12
 
 ### Added
