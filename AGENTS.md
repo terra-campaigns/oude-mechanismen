@@ -155,3 +155,4 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 1. **Branch Deletion Invariant**: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches.
 2. **Automated Remote Deletion**: Campaign vaults with GitHub remotes must enable automatic branch deletion on merge (`gh repo edit --delete-branch-on-merge`).
 3. **Post-Merge Local Cleanup**: Once a Pull Request is merged, check out `main`, pull latest remote changes (`git checkout main && git pull`), delete the local branch (`git branch -d <branch>`), and prune remote tracking references (`git fetch --prune`).
+4. **Pull-Request-Only `main` Policy**: Never push commits directly to `main` or bypass branch protection rules—including for release bumps (`VERSION`, `CHANGELOG.md`). Always push to a branch, open a Pull Request, merge it into `main`, and only then tag and publish the release.
