@@ -282,7 +282,7 @@ def _block_list_lines(config_content: str, key: str) -> Optional[List[str]]:
     between '- item' lines. Note that in Python regex '$' does not match before
     '\\r' and '\\n' does not match '\\r\\n', so line endings are handled explicitly.
     """
-    header = re.search(rf"(?m)^{re.escape(key)}:[ \t]*(?:#[^\r\n]*)?\r?\n", config_content)
+    header = re.search(rf"(?m)^{re.escape(key)}:[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)", config_content)
     if not header:
         return None
     lines = config_content[header.end() :].splitlines(keepends=True)
@@ -343,10 +343,10 @@ def _append_jekyll_list_item(
             config_content,
             count=1,
         )
-    block_header = re.search(rf"(?m)^{escaped_key}:[ \t]*(?:#[^\r\n]*)?\r?\n", config_content)
+    block_header = re.search(rf"(?m)^{escaped_key}:[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)", config_content)
     if block_header:
         header_text = block_header.group(0)
-        newline = "\r\n" if header_text.endswith("\r\n") else "\n"
+        newline = "\r\n" if (header_text.endswith("\r\n") or "\r\n" in config_content) else "\n"
         tail = config_content[block_header.end() :]
         indent, quote = "  ", default_quote
         for line in tail.splitlines(keepends=True):
@@ -359,6 +359,9 @@ def _append_jekyll_list_item(
                 break
         entry = f"{quote}{item}{quote}"
         prefix = config_content[: block_header.end()]
+        if not prefix.endswith(("\n", "\r")):
+            # Bare key at EOF without a trailing newline: terminate the header line first
+            prefix += newline
         return f"{prefix}{indent}- {entry}{newline}{tail}"
     formatted_default = f"{default_quote}{item}{default_quote}"
     newline = "\r\n" if "\r\n" in config_content else "\n"

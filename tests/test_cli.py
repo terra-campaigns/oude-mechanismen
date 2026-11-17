@@ -936,6 +936,67 @@ class TestOudeCLI(unittest.TestCase):
         appended = cli._append_jekyll_exclude("title: Test\r\n")
         self.assertIn('exclude:\r\n  - "_gm-materials"\r\n', appended)
 
+    def test_append_and_doctor_fix_with_bare_key_at_eof_without_trailing_newline(self):
+        """Verify bare 'exclude:'/'plugins:' at EOF (LF and CRLF) are extended in place without duplicate keys."""
+        # Direct unit checks on _append_jekyll_exclude / _append_jekyll_plugin
+        unit_cases = [
+            (cli._append_jekyll_exclude, "title: Test\nexclude:", 'title: Test\nexclude:\n  - "_gm-materials"\n'),
+            (cli._append_jekyll_exclude, "title: Test\r\nexclude:", 'title: Test\r\nexclude:\r\n  - "_gm-materials"\r\n'),
+            (cli._append_jekyll_plugin, "title: Test\nplugins:", "title: Test\nplugins:\n  - oude-mechanismen\n"),
+            (cli._append_jekyll_plugin, "title: Test\r\nplugins:", "title: Test\r\nplugins:\r\n  - oude-mechanismen\r\n"),
+        ]
+        for func, initial, expected in unit_cases:
+            updated = func(initial)
+            self.assertEqual(updated, expected)
+            key = "exclude" if "exclude" in initial else "plugins"
+            self.assertEqual(updated.count(f"{key}:"), 1, f"Duplicate '{key}:' key emitted for {initial!r}")
+
+        # End-to-end doctor --fix checks on a real vault
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        config_path = self.target_dir / "_config.yml"
+        e2e_cases = [
+            (
+                "title: Test\nplugins: [oude-mechanismen]\nexclude:",
+                'title: Test\nplugins: [oude-mechanismen]\nexclude:\n  - "_gm-materials"\n',
+                "exclude",
+            ),
+            (
+                # _doctor reads via read_text (universal newlines), so CRLF is normalised to LF on write
+                "title: Test\r\nplugins: [oude-mechanismen]\r\nexclude:",
+                'title: Test\nplugins: [oude-mechanismen]\nexclude:\n  - "_gm-materials"\n',
+                "exclude",
+            ),
+            (
+                "title: Test\nexclude: [_gm-materials]\nplugins:",
+                "title: Test\nexclude: [_gm-materials]\nplugins:\n  - oude-mechanismen\n",
+                "plugins",
+            ),
+            (
+                "title: Test\r\nexclude: [_gm-materials]\r\nplugins:",
+                "title: Test\nexclude: [_gm-materials]\nplugins:\n  - oude-mechanismen\n",
+                "plugins",
+            ),
+        ]
+        for initial, expected, key in e2e_cases:
+            config_path.write_bytes(initial.encode("utf-8"))
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 1)
+                self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            updated = config_path.read_bytes().decode("utf-8")
+            self.assertEqual(updated, expected)
+            self.assertEqual(updated.count(f"{key}:"), 1, f"Duplicate '{key}:' key emitted for {initial!r}")
+            with patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(cli._doctor(self.target_dir), 0)
+
     def test_agents_md_template_uses_jekyll_build_and_doctor_fix(self):
         """Verify templates/AGENTS.md.template references bundle exec jekyll build and oude doctor --fix, not the legacy ruby plugin."""
         template_path = REPO_ROOT / "templates" / "AGENTS.md.template"
