@@ -847,6 +847,112 @@ class TestOudeCLI(unittest.TestCase):
         content = extractor_path.read_text(encoding="utf-8")
         self.assertIn('f.start_with?("_gm-materials/")', content)
 
+    def test_has_jekyll_exclude_with_crlf_and_blank_comment_lines(self):
+        """Verify _has_jekyll_exclude recognises _gm-materials with CRLF endings and blank/comment lines in block lists."""
+        cases = [
+            # CRLF inline list
+            "title: Test\r\nplugins: [oude-mechanismen]\r\nexclude: [_gm-materials]\r\n",
+            # CRLF block list
+            "title: Test\r\nplugins: [oude-mechanismen]\r\nexclude:\r\n  - _gm-materials\r\n",
+            # CRLF block list with trailing slash and quotes
+            'title: Test\r\nexclude:\r\n  - "_gm-materials/"\r\n',
+            # LF block list with blank and comment lines before the item
+            "title: Test\nexclude:\n\n  # private GM materials\n  - _gm-materials\n",
+            # LF block list with blank and comment lines between items
+            "title: Test\nexclude:\n  - Gemfile\n\n  # comment between items\n  - _gm-materials\n",
+            # CRLF block list with blank and comment lines before and between items
+            "title: Test\r\nexclude:\r\n\r\n  # private GM materials\r\n  - Gemfile\r\n\r\n  - _gm-materials\r\n",
+        ]
+        for content in cases:
+            self.assertTrue(
+                cli._has_jekyll_exclude(content, "_gm-materials"),
+                f"_has_jekyll_exclude failed to detect _gm-materials in: {content!r}",
+            )
+
+        # Negative cases: entry absent or only as a substring
+        negative_cases = [
+            "title: Test\nexclude:\n  - Gemfile\n",
+            "title: Test\nexclude: [Gemfile]\n",
+            "title: Test\nexclude:\n  - _gm-materials-backup\n",
+        ]
+        for content in negative_cases:
+            self.assertFalse(
+                cli._has_jekyll_exclude(content, "_gm-materials"),
+                f"_has_jekyll_exclude falsely detected _gm-materials in: {content!r}",
+            )
+
+    def test_append_jekyll_exclude_and_doctor_fix_with_crlf_and_blank_comment_lines(self):
+        """Verify _append_jekyll_exclude and doctor --fix handle CRLF configs and block lists with blank/comment lines."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+
+        config_path = self.target_dir / "_config.yml"
+
+        # Case 1: CRLF inline exclude list
+        config_path.write_bytes(b"title: Test\r\nplugins: [oude-mechanismen]\r\nexclude: [Gemfile]\r\n")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        updated = config_path.read_text(encoding="utf-8")
+        self.assertIn('exclude: [Gemfile, "_gm-materials"]', updated)
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+        # Case 2: CRLF block exclude with comment and blank line before the first item
+        config_path.write_bytes(
+            b"title: Test\r\nplugins: [oude-mechanismen]\r\nexclude:\r\n  # private materials\r\n\r\n  - Gemfile\r\n"
+        )
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        updated = config_path.read_text(encoding="utf-8")
+        self.assertIn('  - "_gm-materials"\n', updated)
+        self.assertIn("  - Gemfile\n", updated)
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+        # Case 3: CRLF config with no exclude section at all
+        config_path.write_bytes(b"title: Test\r\nplugins: [oude-mechanismen]\r\n")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        updated = config_path.read_text(encoding="utf-8")
+        self.assertIn('exclude:\n  - "_gm-materials"\n', updated)
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+        # Direct unit checks on _append_jekyll_exclude
+        appended = cli._append_jekyll_exclude("title: Test\r\nexclude: [Gemfile]\r\n")
+        self.assertIn('exclude: [Gemfile, "_gm-materials"]', appended)
+        appended = cli._append_jekyll_exclude("title: Test\r\nexclude:\r\n  # note\r\n\r\n  - Gemfile\r\n")
+        self.assertIn('  - "_gm-materials"\r\n', appended)
+        appended = cli._append_jekyll_exclude("title: Test\r\n")
+        self.assertIn('exclude:\r\n  - "_gm-materials"\r\n', appended)
+
+    def test_agents_md_template_uses_jekyll_build_and_doctor_fix(self):
+        """Verify templates/AGENTS.md.template references bundle exec jekyll build and oude doctor --fix, not the legacy ruby plugin."""
+        template_path = REPO_ROOT / "templates" / "AGENTS.md.template"
+        content = template_path.read_text(encoding="utf-8")
+        self.assertNotIn("_plugins/data_extractor.rb", content)
+        self.assertIn("bundle exec jekyll build", content)
+        self.assertIn("oude doctor --fix", content)
+
+        # Every Markdown heading must be followed by an immediately blank line
+        lines = content.splitlines()
+        for idx, line in enumerate(lines):
+            if line.startswith("#"):
+                self.assertTrue(
+                    idx + 1 < len(lines) and lines[idx + 1].strip() == "",
+                    f"Heading at line {idx + 1} is not followed by a blank line: {line!r}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,8 +7,10 @@
 # Do NOT list individual subfolders here (e.g. avoid directory/RegionA, directory/RegionB),
 # as newly scaffolded locations will be silently excluded from catalog.json.
 
-# Path to private GM materials (_gm-materials/: session-summaries/, session-preps/, digests/)
-# and external reference sourcebooks. Defaults to "." (repository root).
+# Path to private GM materials (_gm-materials/: session-summaries/, session-preps/, digests/).
+# "." is the portable default: it resolves relative to the repository root, so
+# _gm-materials/ lives inside the campaign vault. External reference sourcebook
+# PDFs may reside outside the repository via an absolute or relative path.
 drive_dir: .
 
 include_paths:

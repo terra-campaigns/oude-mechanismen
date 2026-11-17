@@ -9,7 +9,7 @@
 Setting-agnostic audio transcription and campaign context extractor for table RPG sessions.
 
 Pipeline stages handled:
-1. Resolves campaign context and Google Drive session directory from .agents/context/tier1_sources.yml.
+1. Resolves campaign context and campaign storage directory (_gm-materials/) from .agents/context/tier1_sources.yml.
 2. Extracts a dynamic campaign glossary from .agents/context/catalog.json, decisions.md, and AGENTS.md.
 3. Formulates a compact proper-noun prompt to bias Whisper speech recognition on Apple Metal.
 4. Normalises audio containers (.mkv, .mp4, .m4a, .wav, etc.) to 16 kHz mono WAV via ffmpeg.
@@ -66,26 +66,20 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
 
     config_file = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if config_file.exists():
-        try:
-            cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-            if not isinstance(cfg, dict):
-                cfg = {}
-            raw_drive = cfg.get("drive_dir")
-            if raw_drive:
-                raw = Path(str(raw_drive)).expanduser()
-                target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
-                if target.is_dir():
-                    return target
-                raise FileNotFoundError(
-                    f"Configured 'drive_dir' path '{raw_drive}' in {config_file} does not exist or is not a directory."
-                )
-        except yaml.YAMLError as e:
-            print(f"[WARN] Failed to parse YAML in {config_file}: {e}", file=sys.stderr)
-            raise
-        except Exception as e:
-            if isinstance(e, FileNotFoundError):
-                raise
-            print(f"[WARN] Failed to read drive_dir from {config_file}: {e}", file=sys.stderr)
+        # Configuration errors (malformed YAML, unreadable or non-UTF-8 files) must
+        # propagate loudly rather than silently falling back to repo_root.
+        cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        raw_drive = cfg.get("drive_dir")
+        if raw_drive:
+            raw = Path(str(raw_drive)).expanduser()
+            target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+            if target.is_dir():
+                return target
+            raise FileNotFoundError(
+                f"Configured 'drive_dir' path '{raw_drive}' in {config_file} does not exist or is not a directory."
+            )
 
     if repo_root.is_dir():
         return repo_root
@@ -572,7 +566,7 @@ def main():
     )
     parser.add_argument("--repo-root", type=str, default=None, help="Campaign repository root (defaults to CWD)")
     parser.add_argument("--airgap-dir", type=str, default=None, help="Override local air-gap storage directory (default: ~/Private/rpg-sessions/<campaign>)")
-    parser.add_argument("--drive-dir", type=str, default=None, help="Override Google Drive campaign folder")
+    parser.add_argument("--drive-dir", type=str, default=None, help="Override campaign storage directory (drive_dir containing _gm-materials/)")
     parser.add_argument("--session-slug", type=str, default=None, help="Custom slug (e.g. 2026-10-23_ep012)")
     parser.add_argument(
         "--language", "-l",
@@ -645,7 +639,7 @@ def main():
             ep_prefix = Path(next_chapter_info["next_filename"]).stem
             slug = f"{date_prefix}_{ep_prefix}"
 
-    # Tier 2 Canon (Google Drive)
+    # Tier 2 Canon (_gm-materials/ campaign storage)
     glossary_path = sessions_dir / f"{slug}_glossary.md"
     notes_path = sessions_dir / f"{slug}_session_notes.md"
     tactical_facts_path = sessions_dir / f"{slug}_tactical_facts.md"

@@ -167,5 +167,39 @@ class TestStorageSeparation(unittest.TestCase):
             transcribe_session.find_drive_dir(self.repo_root, explicit_drive_dir="not_a_dir.txt")
 
 
+class TestFindDriveDirErrorPropagation(unittest.TestCase):
+    """Verify find_drive_dir propagates configuration errors loudly instead of silently falling back."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="oude_test_")
+        self.repo_root = (Path(self.test_dir) / "test_campaign").resolve()
+        self.repo_root.mkdir()
+        (self.repo_root / ".agents" / "context").mkdir(parents=True)
+        (self.repo_root / "_config.yml").write_text("title: Test Campaign\n", encoding="utf-8")
+        self.tier1_yml = self.repo_root / ".agents" / "context" / "tier1_sources.yml"
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_find_drive_dir_propagates_yaml_error(self):
+        """Verify malformed YAML in tier1_sources.yml raises yaml.YAMLError rather than falling back."""
+        import yaml
+        self.tier1_yml.write_text("drive_dir: [unclosed\n", encoding="utf-8")
+        with self.assertRaises(yaml.YAMLError):
+            transcribe_session.find_drive_dir(self.repo_root)
+
+    def test_find_drive_dir_propagates_oserror_when_config_is_directory(self):
+        """Verify an OSError (tier1_sources.yml is a directory) propagates instead of falling back."""
+        self.tier1_yml.mkdir()
+        with self.assertRaises(OSError):
+            transcribe_session.find_drive_dir(self.repo_root)
+
+    def test_find_drive_dir_propagates_unicode_decode_error(self):
+        """Verify invalid UTF-8 bytes in tier1_sources.yml raise UnicodeDecodeError instead of falling back."""
+        self.tier1_yml.write_bytes(b"drive_dir: \"\xff\xfe\x00invalid\"\n")
+        with self.assertRaises(UnicodeDecodeError):
+            transcribe_session.find_drive_dir(self.repo_root)
+
+
 if __name__ == "__main__":
     unittest.main()
