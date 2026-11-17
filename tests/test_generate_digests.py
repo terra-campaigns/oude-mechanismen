@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pypdf
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -216,6 +217,123 @@ class TestGenerateDigests(unittest.TestCase):
         generate_digests.compile_references(self.repo_root, self.repo_root)
         second = json.loads(refs_path.read_text())
         self.assertEqual(second["generated"], fixed_ts)
+
+    def test_find_drive_dir_propagates_os_error_when_config_is_directory(self):
+        (self.context_dir / "tier1_sources.yml").mkdir()
+        with self.assertRaises(OSError):
+            generate_digests.find_drive_dir(self.repo_root)
+
+    def test_find_drive_dir_propagates_unicode_decode_error_on_invalid_utf8(self):
+        (self.context_dir / "tier1_sources.yml").write_bytes(b"drive_dir: \xff\xfe\x80 invalid utf8\n")
+        with self.assertRaises(UnicodeDecodeError):
+            generate_digests.find_drive_dir(self.repo_root)
+
+    def test_compile_references_thematic_break_not_treated_as_frontmatter(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests"
+        digests_dir.mkdir(parents=True)
+        content = "---\n\n# Thematic Title\n\nIntro.\n\n---\n\n## Section\nText.\n"
+        md_file = digests_dir / "thematic.md"
+        md_file.write_text(content)
+
+        for clean in (False, True):
+            generate_digests.compile_references(self.repo_root, self.repo_root, clean_headings=clean)
+            refs = json.loads((self.context_dir / "references.json").read_text())
+            entry = refs["sources"][0]
+            self.assertEqual(entry["title"], "Thematic Title")
+            self.assertEqual(entry["sections"], [{"level": 2, "heading": "Section", "line": 9}])
+            self.assertIn("# Thematic Title", md_file.read_text())
+
+    def test_compile_references_non_mapping_yaml_frontmatter_preserved_as_body(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests"
+        digests_dir.mkdir(parents=True)
+        content = "---\n- item\n---\n\n# List Doc\n\n## Section\nText.\n"
+        md_file = digests_dir / "list_doc.md"
+        md_file.write_text(content)
+
+        for clean in (False, True):
+            generate_digests.compile_references(self.repo_root, self.repo_root, clean_headings=clean)
+            refs = json.loads((self.context_dir / "references.json").read_text())
+            entry = refs["sources"][0]
+            self.assertEqual(entry["title"], "List Doc")
+            self.assertEqual(entry["sections"], [{"level": 2, "heading": "Section", "line": 7}])
+            self.assertIn("# List Doc", md_file.read_text())
+
+    def test_compile_references_normalises_absolute_source_pdf_paths(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests"
+        digests_dir.mkdir(parents=True)
+        inside_pdf = self.repo_root / "books" / "Inside.pdf"
+        inside_pdf.parent.mkdir(parents=True)
+        inside_pdf.write_bytes(b"%PDF-1.4")
+
+        (digests_dir / "abs_inside.md").write_text(
+            "---\n"
+            "title: Abs Inside\n"
+            f"source_pdf: {inside_pdf}\n"
+            "---\n"
+            "# Abs Inside\n\n## S\nText.\n"
+        )
+        (digests_dir / "abs_outside.md").write_text(
+            "---\n"
+            "title: Abs Outside\n"
+            "source_pdf: /host/specific/path/Outside.pdf\n"
+            "---\n"
+            "# Abs Outside\n\n## S\nText.\n"
+        )
+
+        generate_digests.compile_references(self.repo_root, self.repo_root)
+        refs = json.loads((self.context_dir / "references.json").read_text())
+        by_slug = {entry["slug"]: entry for entry in refs["sources"]}
+        self.assertEqual(by_slug["abs_inside"]["source_pdf"], "books/Inside.pdf")
+        self.assertEqual(by_slug["abs_outside"]["source_pdf"], "Outside.pdf")
+
+    def _make_two_page_pdf(self, path: Path) -> None:
+        writer = pypdf.PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        writer.add_blank_page(width=612, height=792)
+        with open(path, "wb") as fh:
+            writer.write(fh)
+
+    def test_scaffold_digest_external_pdf_records_portable_name(self):
+        external_dir = Path(self.temp_dir.name) / "external"
+        external_dir.mkdir()
+        pdf_path = external_dir / "External_Book.pdf"
+        self._make_two_page_pdf(pdf_path)
+
+        out = generate_digests.scaffold_digest(self.repo_root, self.repo_root, str(pdf_path))
+        text = out.read_text()
+        self.assertIn("External_Book.pdf", text)
+        self.assertNotIn(str(external_dir), text)
+        self.assertNotIn(str(Path(self.temp_dir.name)), text)
+
+    def test_scaffold_digest_pdf_in_legacy_rpg_root_records_name_not_absolute(self):
+        drive_dir = self.repo_root / "drive"
+        drive_dir.mkdir()
+        rpg_root = drive_dir.parents[1]
+        pdf_path = rpg_root / "Legacy_Root.pdf"
+        self._make_two_page_pdf(pdf_path)
+
+        out = generate_digests.scaffold_digest(self.repo_root, drive_dir, str(pdf_path))
+        text = out.read_text()
+        self.assertIn("Legacy_Root.pdf", text)
+        self.assertNotIn(str(rpg_root), text)
+
+    def test_scaffold_digest_source_pdf_override(self):
+        external_dir = Path(self.temp_dir.name) / "external"
+        external_dir.mkdir()
+        pdf_path = external_dir / "External_Book.pdf"
+        self._make_two_page_pdf(pdf_path)
+
+        out = generate_digests.scaffold_digest(
+            self.repo_root, self.repo_root, str(pdf_path), source_pdf="canonical/portable.pdf"
+        )
+        self.assertIn("canonical/portable.pdf", out.read_text())
+
+    def test_scaffold_digest_missing_explicit_pdf_raises_file_not_found(self):
+        with self.assertRaises(FileNotFoundError):
+            generate_digests.scaffold_digest(self.repo_root, self.repo_root, "does_not_exist.pdf")
+
+    def test_find_pdf_removed(self):
+        self.assertFalse(hasattr(generate_digests, "find_pdf"))
 
     def test_scaffold_digest_writes_to_gm_materials_digests(self):
         pdf_path = self.repo_root / "Test_Book.pdf"

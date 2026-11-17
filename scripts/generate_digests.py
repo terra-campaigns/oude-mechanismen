@@ -17,7 +17,6 @@ import argparse
 import json
 import os
 import re
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -70,27 +69,21 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
 
     config_file = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if config_file.exists():
-        try:
-            cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-            if not isinstance(cfg, dict):
-                cfg = {}
-            raw_drive = cfg.get("drive_dir")
-            if raw_drive:
-                raw = Path(str(raw_drive)).expanduser()
-                target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
-                if target.is_dir():
-                    return target
-                raise FileNotFoundError(
-                    f"Configured 'drive_dir' path '{raw_drive}' does not exist or is not a directory. "
-                    f"Please verify {config_file}."
-                )
-        except yaml.YAMLError as e:
-            print(f"[WARN] Failed to parse YAML in {config_file}: {e}", file=sys.stderr)
-            raise
-        except Exception as e:
-            if isinstance(e, FileNotFoundError):
-                raise
-            print(f"[WARN] Failed to read drive_dir from {config_file}: {e}", file=sys.stderr)
+        # Non-YAML read failures (OSError, UnicodeDecodeError, yaml.YAMLError) propagate loudly
+        # instead of silently falling back to repo_root.
+        cfg = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        raw_drive = cfg.get("drive_dir")
+        if raw_drive:
+            raw = Path(str(raw_drive)).expanduser()
+            target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
+            if target.is_dir():
+                return target
+            raise FileNotFoundError(
+                f"Configured 'drive_dir' path '{raw_drive}' does not exist or is not a directory. "
+                f"Please verify {config_file}."
+            )
 
     if repo_root.is_dir():
         return repo_root
@@ -109,7 +102,6 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
         return
 
     sources = []
-    rpg_root = drive_dir.parents[1] if len(drive_dir.parents) >= 2 else drive_dir.parent
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
@@ -119,16 +111,16 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
         if content.startswith("---"):
             fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
             if fm_match:
-                fm_prefix = content[: fm_match.end()]
-                body = content[fm_match.end() :]
+                # Only split frontmatter when the leading '---' block parses as a YAML mapping;
+                # Markdown thematic breaks and non-mapping YAML (lists, scalars) stay in the body.
                 try:
                     loaded = yaml.safe_load(fm_match.group(1))
-                    if isinstance(loaded, dict):
-                        frontmatter = loaded
-                    elif loaded is not None:
-                        print(f"[WARN] Non-mapping YAML frontmatter in {md_file}; falling back to heading parser.", file=sys.stderr)
-                except yaml.YAMLError as exc:
-                    print(f"[WARN] Malformed YAML frontmatter in {md_file}: {exc}; falling back to heading parser.", file=sys.stderr)
+                except yaml.YAMLError:
+                    loaded = None
+                if isinstance(loaded, dict):
+                    fm_prefix = content[: fm_match.end()]
+                    body = content[fm_match.end() :]
+                    frontmatter = loaded
 
         if clean_headings:
             cleaned_body = ensure_heading_blank_lines(body)
@@ -164,13 +156,14 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                     break
 
         if raw_src:
-            if src_from_frontmatter or raw_src.startswith("/"):
-                source_pdf = raw_src
-            elif (drive_dir / raw_src).exists():
-                # Drive-local source: normalise to a portable POSIX relative path.
-                source_pdf = Path(raw_src).as_posix()
-            elif (rpg_root / raw_src).exists():
-                source_pdf = str(rpg_root / raw_src)
+            if raw_src.startswith("/"):
+                # Normalise host-specific absolute paths: relative POSIX when inside
+                # drive_dir, otherwise the portable basename (zero host paths in references.json).
+                abs_src = Path(raw_src).resolve()
+                try:
+                    source_pdf = abs_src.relative_to(drive_dir.resolve()).as_posix()
+                except ValueError:
+                    source_pdf = abs_src.name
             else:
                 source_pdf = Path(raw_src).as_posix()
 
@@ -267,36 +260,6 @@ def format_title_from_stem(stem: str) -> str:
     return s.title()
 
 
-def find_pdf(drive_dir: Path, query: str) -> Optional[Path]:
-    """Find a PDF by relative path, filename, or unique substring in Google Drive."""
-    p = Path(query)
-    if p.is_absolute() and p.exists():
-        return p
-    if (drive_dir / query).exists():
-        return drive_dir / query
-
-    q_norm = query.lower().strip()
-    candidates: List[Path] = []
-    for f in drive_dir.rglob("*.pdf"):
-        if f.name.lower() == q_norm or str(f.relative_to(drive_dir)).lower() == q_norm:
-            return f
-        if q_norm in f.name.lower():
-            candidates.append(f)
-
-    if len(candidates) == 1:
-        return candidates[0]
-    elif len(candidates) > 1:
-        exact = [c for c in candidates if c.stem.lower() == q_norm]
-        if len(exact) == 1:
-            return exact[0]
-        c_list = "\n".join(f"  - {c.relative_to(drive_dir)}" for c in candidates)
-        raise ValueError(
-            f"Ambiguous PDF query '{query}'. Multiple matches found:\n{c_list}\nPlease specify a more exact relative path."
-        )
-
-    return None
-
-
 def extract_pdf_outline(reader: Any, max_depth: int = 1) -> List[Tuple[str, int, int]]:
     """Extract outline items up to max_depth with computed page ranges (title, start_page, end_page)."""
     if not getattr(reader, "outline", None):
@@ -354,35 +317,45 @@ def extract_pdf_outline(reader: Any, max_depth: int = 1) -> List[Tuple[str, int,
 def scaffold_digest(
     repo_root: Path,
     drive_dir: Path,
-    pdf_query: str,
+    pdf_path: str,
     custom_slug: Optional[str] = None,
     category: Optional[str] = None,
     depth: int = 1,
-    force: bool = False
+    force: bool = False,
+    source_pdf: Optional[str] = None
 ) -> Path:
-    """Scaffold a new Tier 3 Markdown digest from a Google Drive PDF using pypdf outline metadata."""
+    """Scaffold a new Tier 3 Markdown digest from an explicit PDF path using pypdf outline metadata."""
     if pypdf is None:
         raise ImportError(
             "pypdf is required for digest scaffolding. Please install it using 'pip install pypdf'."
         )
 
-    pdf_path = find_pdf(drive_dir, pdf_query)
-    if not pdf_path:
-        raise FileNotFoundError(f"Could not locate PDF matching '{pdf_query}' in {drive_dir}")
+    # Resolve the explicit PDF path; never scan drive_dir for candidates.
+    raw = Path(pdf_path).expanduser()
+    if raw.is_absolute():
+        resolved = raw.resolve()
+    else:
+        cwd_candidate = raw if raw.exists() else None
+        if cwd_candidate is not None:
+            resolved = cwd_candidate.resolve()
+        else:
+            resolved = (drive_dir / raw).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Explicit PDF path '{pdf_path}' does not exist or is not a file.")
 
-    try:
-        rel_path = str(pdf_path.relative_to(drive_dir))
-    except ValueError:
-        rpg_root = drive_dir.parents[1] if len(drive_dir.parents) >= 2 else drive_dir.parent
+    # Portable identifier: explicit override, drive-relative POSIX path, or basename.
+    if source_pdf:
+        rel_path = source_pdf
+    else:
         try:
-            rel_path = str(pdf_path.relative_to(rpg_root))
+            rel_path = resolved.relative_to(drive_dir.resolve()).as_posix()
         except ValueError:
-            rel_path = str(pdf_path)
+            rel_path = resolved.name
 
     if custom_slug:
         slug = slugify(custom_slug)
     else:
-        clean_stem = re.sub(r"[-_]v\d+.*$", "", pdf_path.stem, flags=re.IGNORECASE)
+        clean_stem = re.sub(r"[-_]v\d+.*$", "", resolved.stem, flags=re.IGNORECASE)
         slug = slugify(clean_stem)
 
     digests_dir = drive_dir / "_gm-materials" / "digests"
@@ -393,7 +366,7 @@ def scaffold_digest(
             f"Digest already exists at {out_file}. Pass --force to overwrite."
         )
 
-    reader = pypdf.PdfReader(str(pdf_path))
+    reader = pypdf.PdfReader(str(resolved))
     total_pages = len(reader.pages)
 
     doc_title = None
@@ -403,10 +376,10 @@ def scaffold_digest(
             doc_title = candidate_title
 
     if not doc_title:
-        doc_title = format_title_from_stem(pdf_path.stem)
+        doc_title = format_title_from_stem(resolved.stem)
 
     if not category:
-        parent_name = pdf_path.parent.name.lower()
+        parent_name = resolved.parent.name.lower()
         if "core" in parent_name or "core" in slug:
             category = "core_setting"
         elif "module" in parent_name or "incursion" in slug or "adventure" in slug:
@@ -456,11 +429,12 @@ def scaffold_digest(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index or scaffold new digests from Google Drive.")
+    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index or scaffold new digests from explicit PDF paths.")
     parser.add_argument("--repo-root", "--repo-dir", dest="repo_root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
-    parser.add_argument("--drive-dir", type=str, default=None, help="Path to Google Drive campaign folder")
+    parser.add_argument("--drive-dir", type=str, default=None, help="Path to the campaign materials directory")
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
-    parser.add_argument("--scaffold", type=str, default=None, metavar="PDF_QUERY", help="Scaffold a new Tier 3 Markdown digest from a PDF in Google Drive")
+    parser.add_argument("--scaffold", type=str, default=None, metavar="PDF_PATH", help="Scaffold a new Tier 3 Markdown digest from an explicit PDF path")
+    parser.add_argument("--source-pdf", type=str, default=None, help="Portable identifier recorded as source_pdf for a scaffolded digest")
     parser.add_argument("--slug", type=str, default=None, help="Custom slug/filename for scaffolded digest")
     parser.add_argument("--category", type=str, default=None, help="Category for scaffolded digest (core_setting, supplement, module, rules, bestiary)")
     parser.add_argument("--depth", type=int, default=1, help="Maximum outline depth to extract (default: 1 for top-level chapters)")
@@ -478,7 +452,8 @@ def main():
             custom_slug=args.slug,
             category=args.category,
             depth=args.depth,
-            force=args.force
+            force=args.force,
+            source_pdf=args.source_pdf
         )
     else:
         compile_references(repo_root, drive_dir, clean_headings=args.clean_headings)

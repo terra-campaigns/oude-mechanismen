@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2026-11-17
+
+### Fixed
+
+- **Phase 1 Hygiene & Google Drive Decoupling (Design 004 Stage A, `#36`, `#37`, `#39`)**:
+  - Updated `resolve_unindexed_file_action()` in `scripts/audit_coverage.py` to suggest `oude digest --scaffold "{rel}"` instead of the deleted `.agents/scripts/generate_digests.py`, aligned `resolve_drive_dir()` with `yaml.safe_load()` and loud error propagation, and removed obsolete Google Drive phrasing.
+  - Propagated non-YAML read failures (`OSError`, `UnicodeDecodeError`) in `find_drive_dir()` (`scripts/transcribe_session.py`, `scripts/generate_digests.py`) instead of silently falling back to `repo_root`.
+  - Updated `_has_jekyll_exclude()`, `_has_jekyll_plugin()`, and `_append_jekyll_list_item()` in `src/oude_mechanismen/cli.py` to tolerate CRLF (`\r\n`) line endings and blank/comment lines inside YAML list blocks.
+  - Replaced the deleted `_plugins/data_extractor.rb` instruction in `templates/AGENTS.md.template` with `bundle exec jekyll build` / `oude doctor --fix`, and clarified `drive_dir: .` as the portable repository-root default in `templates/tier1_sources.yml.template`.
+  - Guarded `compile_references()` in `scripts/generate_digests.py` against slicing Markdown thematic breaks (`---`) when frontmatter is absent or non-mapping, removed `rpg_root` (`drive_dir.parents[1]`) and `find_pdf()` (`drive_dir.rglob("*.pdf")`), and updated `scaffold_digest()` to resolve explicit `<PDF_PATH>` arguments with portable `source_pdf` identifiers (`--source-pdf`).
+
 ## [0.6.0] - 2026-11-15
 
 ### Added

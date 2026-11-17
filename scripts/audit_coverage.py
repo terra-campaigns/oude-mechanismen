@@ -3,7 +3,7 @@
 Automated Gap Analysis for Tabletop RPG Campaign Vaults.
 
 Performs a multi-layered campaign audit:
-1. Reference Sync: Audits raw sourcebooks, PDFs, and Google Sheets against
+1. Reference Sync: Audits raw sourcebooks, PDFs, and linked documents against
    the Tier 3 routing index (.agents/context/references.json) and _gm-materials/digests/.
 2. Route Topology & Proximity Gaps (optional): When .agents/context/route_graph.json
    is present, maps the trail/star system graph from the latest session log,
@@ -28,6 +28,8 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+import yaml
 
 
 def find_repo_root(custom_dir: Optional[str] = None) -> Path:
@@ -61,19 +63,14 @@ def resolve_drive_dir(repo_root: Path, custom_drive: Optional[str] = None) -> Pa
 
     tier1_path = repo_root / ".agents" / "context" / "tier1_sources.yml"
     if tier1_path.exists():
-        content = tier1_path.read_text(encoding="utf-8")
-        m = re.search(
-            r"""^drive_dir:[ \t]*(?:"([^"]*)"(?:[ \t]*#[^\r\n]*)?|'([^']*)'(?:[ \t]*#[^\r\n]*)?|([^\r\n]+?))?[ \t\r]*$""",
-            content,
-            re.MULTILINE,
-        )
+        # Parse via yaml.safe_load (matching sibling scripts); malformed YAML raises
+        # yaml.YAMLError and read failures propagate OSError / UnicodeDecodeError loudly.
+        cfg = yaml.safe_load(tier1_path.read_text(encoding="utf-8"))
         raw_str = ""
-        if m:
-            quoted = m.group(1) if m.group(1) is not None else m.group(2)
-            if quoted is not None:
-                raw_str = quoted.strip()
-            elif m.group(3) is not None:
-                raw_str = re.sub(r"(?:^|[ \t]+)#.*$", "", m.group(3)).strip()
+        if isinstance(cfg, dict):
+            val = cfg.get("drive_dir")
+            if val:
+                raw_str = str(val).strip()
         if raw_str:
             raw = Path(raw_str).expanduser()
             target = raw.resolve() if raw.is_absolute() else (repo_root / raw).resolve()
@@ -104,7 +101,7 @@ def load_route_graph(repo_root: Path) -> Optional[Dict[str, Any]]:
 
 
 def extract_gdrive_pointer_id(fpath: Path) -> Optional[str]:
-    """Extract doc_id from a Google Drive .gsheet or .gdoc pointer file."""
+    """Extract doc_id from a cloud .gsheet or .gdoc pointer file."""
     if not fpath.is_file():
         return None
     try:
@@ -125,9 +122,9 @@ def resolve_unindexed_file_action(
     scripts_cache: List[Tuple[str, str]],
     docs_cache: List[Tuple[str, str]],
 ) -> str:
-    """Dynamically discover action hint for an unindexed Drive file by inspecting vault references."""
+    """Dynamically discover action hint for an unindexed storage file by inspecting vault references."""
     if ext == ".pdf":
-        return f"Run `python3 .agents/scripts/generate_digests.py --scaffold \"{rel}\"`"
+        return f"Run `oude digest --scaffold \"{rel}\"`"
 
     doc_id = extract_gdrive_pointer_id(fpath)
     identifiers: List[str] = [x for x in [doc_id, fpath.name] if x]
@@ -152,7 +149,7 @@ def resolve_unindexed_file_action(
                 file_type_label = "Spreadsheet" if ext == ".gsheet" else "Document"
                 return f"{file_type_label} linked in `{doc_rel}`"
 
-    # 3. Fallbacks for unreferenced Drive files
+    # 3. Fallbacks for unreferenced storage files
     if ext == ".gsheet":
         return "Unlinked spreadsheet — link in a directory note or add to sync script"
     elif ext == ".gdoc":
@@ -689,9 +686,9 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
     unindexed_count = len(drive.get("unindexed_files", []))
     missing_digests_count = len(drive.get("missing_digests", []))
 
-    lines.append(f"- **Google Drive Access:** {'Accessible' if drive.get('drive_accessible') else 'Offline / Not Found'}")
+    lines.append(f"- **Storage Access:** {'Accessible' if drive.get('drive_accessible') else 'Offline / Not Found'}")
     lines.append(f"- **Indexed Tier 3 Sources:** {len(drive.get('indexed_sources', []))}")
-    lines.append(f"- **Unindexed Drive Files:** {unindexed_count}")
+    lines.append(f"- **Unindexed Source Files:** {unindexed_count}")
     lines.append(f"- **Missing Digests:** {missing_digests_count}")
     lines.append(f"- **Latest Session:** `{loc.get('latest_episode', 'None')}`")
     lines.append(f"- **Current Location:** {loc.get('raw_region', 'Unknown')}")
@@ -700,10 +697,10 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
     lines.append("")
 
     # Section 1: Drive Sync
-    lines.append("## Tier 3 Source Material & Drive Sync")
+    lines.append("## Tier 3 Source Material & Storage Sync")
     lines.append("")
     if unindexed_count > 0:
-        lines.append("### Unindexed Drive Files")
+        lines.append("### Unindexed Source Files")
         lines.append("")
         lines.append("| Filename | Type | Recommended Action |")
         lines.append("|---|---|---|")
@@ -719,7 +716,7 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
         lines.append("")
 
     if unindexed_count == 0 and missing_digests_count == 0:
-        lines.append("All reference materials in Google Drive match the active Tier 3 digest index.")
+        lines.append("All reference materials match the active Tier 3 digest index.")
         lines.append("")
 
     # Section 2: Proximity Gaps (if route graph available)
@@ -812,7 +809,7 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Audit campaign coverage and gap analysis.")
     parser.add_argument("--repo-dir", "--repo-root", dest="repo_dir", help="Path to campaign repository root.")
-    parser.add_argument("--drive-dir", help="Path to campaign Google Drive folder.")
+    parser.add_argument("--drive-dir", help="Path to campaign storage directory.")
     parser.add_argument("--campaign-dir", help="Subfolder under campaigns/ (e.g. campaigns/UVG24XX).")
     parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in hops (default: 2).")
     parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries displaying fallback badges.")

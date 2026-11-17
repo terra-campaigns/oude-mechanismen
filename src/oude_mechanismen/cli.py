@@ -275,24 +275,54 @@ def _install_skills() -> int:
     return 0
 
 
+def _block_list_lines(config_content: str, key: str) -> Optional[List[str]]:
+    """Return the lines of a block-style YAML list under *key*, or None if absent.
+
+    Tolerates CRLF line endings as well as blank and comment lines before or
+    between '- item' lines. Note that in Python regex '$' does not match before
+    '\\r' and '\\n' does not match '\\r\\n', so line endings are handled explicitly.
+    """
+    header = re.search(rf"(?m)^{re.escape(key)}:[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)", config_content)
+    if not header:
+        return None
+    lines = config_content[header.end() :].splitlines(keepends=True)
+    block: List[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            block.append(line)
+            continue
+        if re.match(r"^[ \t]+-", line):
+            block.append(line)
+        else:
+            break
+    return block
+
+
 def _has_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> bool:
     """Return True if *plugin* is configured under Jekyll plugins in _config.yml."""
     escaped = re.escape(plugin)
-    block_pattern = rf"(?m)^[ \t]*-[ \t]*[\"']?{escaped}[\"']?(?:[ \t]*(?:#.*)?)$"
     inline_pattern = rf"(?m)^plugins:[ \t]*\[[^\]]*(?<=[\s,'\"\[]){escaped}(?=[\s,'\"\],])[^\]]*\]"
-    return bool(re.search(block_pattern, config_content) or re.search(inline_pattern, config_content))
+    if re.search(inline_pattern, config_content):
+        return True
+    block = _block_list_lines(config_content, "plugins")
+    if block:
+        item_pattern = rf"(?m)^[ \t]*-[ \t]*[\"']?{escaped}[\"']?[ \t]*(?:#[^\r\n]*)?\r?$"
+        if any(re.search(item_pattern, line) for line in block):
+            return True
+    return False
 
 
-def _format_inline_list(prefix: str, inner: str, suffix: str, item: str) -> str:
+def _format_inline_list(prefix: str, inner: str, suffix: str, item: str, default_quote: str = "") -> str:
     """Append *item* to a YAML inline sequence while preserving quote style."""
     if not inner.strip():
-        return f"{prefix}{item}{suffix}"
+        return f"{prefix}{default_quote}{item}{default_quote}{suffix}"
     if '"' in inner:
         entry = f'"{item}"'
     elif "'" in inner:
         entry = f"'{item}'"
     else:
-        entry = item
+        entry = f"{default_quote}{item}{default_quote}"
     body = inner.rstrip()
     separator = " " if body.endswith(",") else ", "
     return f"{prefix}{body}{separator}{entry}{suffix}"
@@ -309,25 +339,35 @@ def _append_jekyll_list_item(
     if re.search(rf"(?m)^{escaped_key}:[ \t]*\[[^\]]*\]", config_content):
         return re.sub(
             rf"(?m)^({escaped_key}:[ \t]*\[)([^\]]*)(\])",
-            lambda m: _format_inline_list(m.group(1), m.group(2), m.group(3), item),
+            lambda m: _format_inline_list(m.group(1), m.group(2), m.group(3), item, default_quote),
             config_content,
             count=1,
         )
-    block_header = re.search(rf"(?m)^{escaped_key}:[ \t]*(?:#[^\n]*)?(?:\n|$)", config_content)
+    block_header = re.search(rf"(?m)^{escaped_key}:[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)", config_content)
     if block_header:
+        header_text = block_header.group(0)
+        newline = "\r\n" if (header_text.endswith("\r\n") or "\r\n" in config_content) else "\n"
         tail = config_content[block_header.end() :]
-        first_item = re.match(r"^([ \t]*)-[ \t]*([\"'])?", tail)
-        indent = first_item.group(1) if first_item and first_item.group(1) else "  "
-        quote = first_item.group(2) if first_item and first_item.group(2) else default_quote
+        indent, quote = "  ", default_quote
+        for line in tail.splitlines(keepends=True):
+            item_match = re.match(r"^([ \t]*)-[ \t]*([\"'])?", line)
+            if item_match:
+                indent = item_match.group(1) or "  "
+                quote = item_match.group(2) or default_quote
+                break
+            if line.strip() and not line.strip().startswith("#"):
+                break
         entry = f"{quote}{item}{quote}"
         prefix = config_content[: block_header.end()]
-        if not prefix.endswith("\n"):
-            prefix += "\n"
-        return f"{prefix}{indent}- {entry}\n{tail}"
+        if not prefix.endswith(("\n", "\r")):
+            # Bare key at EOF without a trailing newline: terminate the header line first
+            prefix += newline
+        return f"{prefix}{indent}- {entry}{newline}{tail}"
     formatted_default = f"{default_quote}{item}{default_quote}"
+    newline = "\r\n" if "\r\n" in config_content else "\n"
     if not config_content.strip():
-        return f"{key}:\n  - {formatted_default}\n"
-    return config_content.rstrip() + f"\n\n{key}:\n  - {formatted_default}\n"
+        return f"{key}:{newline}  - {formatted_default}{newline}"
+    return config_content.rstrip() + f"{newline}{newline}{key}:{newline}  - {formatted_default}{newline}"
 
 
 def _append_jekyll_plugin(config_content: str, plugin: str = "oude-mechanismen") -> str:
@@ -343,10 +383,10 @@ def _has_jekyll_exclude(config_content: str, entry: str = "_gm-materials") -> bo
         inner = inline_match.group(1)
         if re.search(rf"(?:^|[\s,'\"\[]){base}/?(?=$|[\s,'\"\],])", inner):
             return True
-    block_header = re.search(r"(?m)^exclude:[ \t]*(?:#[^\n]*)?\n((?:[ \t]+-[^\n]*(?:\n|$))*)", config_content)
-    if block_header:
-        block_body = block_header.group(1)
-        if re.search(rf"(?m)^[ \t]*-[ \t]*[\"']?{base}/?[\"']?(?:[ \t]*(?:#.*)?)$", block_body):
+    block = _block_list_lines(config_content, "exclude")
+    if block:
+        item_pattern = rf"(?m)^[ \t]*-[ \t]*[\"']?{base}/?[\"']?[ \t]*(?:#[^\r\n]*)?\r?$"
+        if any(re.search(item_pattern, line) for line in block):
             return True
     return False
 

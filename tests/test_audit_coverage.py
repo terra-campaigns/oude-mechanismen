@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import audit_coverage
 
@@ -120,6 +122,54 @@ class TestAuditCoverage(unittest.TestCase):
         self.assertIn("Unindexed_Source.pdf", unindexed_names)
         self.assertNotIn("ignored_doc.pdf", unindexed_names)
         self.assertEqual(findings["missing_digests"], [])
+
+    def test_resolve_unindexed_file_action_pdf_suggests_oude_digest_scaffold(self):
+        action = audit_coverage.resolve_unindexed_file_action(
+            Path("book.pdf"), ".pdf", "sourcebooks/book.pdf", [], []
+        )
+        self.assertEqual(action, 'Run `oude digest --scaffold "sourcebooks/book.pdf"`')
+        self.assertNotIn(".agents/scripts/generate_digests.py", action)
+
+    def test_resolve_drive_dir_raises_yaml_error_on_malformed_yaml(self):
+        (self.context_dir / "tier1_sources.yml").write_text("drive_dir: [unclosed\n")
+        with self.assertRaises(yaml.YAMLError):
+            audit_coverage.resolve_drive_dir(self.repo_root)
+
+    def test_resolve_drive_dir_propagates_read_errors_loudly(self):
+        # A directory in place of the YAML file forces an OSError on read.
+        (self.context_dir / "tier1_sources.yml").mkdir()
+        with self.assertRaises(OSError):
+            audit_coverage.resolve_drive_dir(self.repo_root)
+
+        # Invalid UTF-8 forces a UnicodeDecodeError on read.
+        (self.context_dir / "tier1_sources.yml").rmdir()
+        (self.context_dir / "tier1_sources.yml").write_bytes(b"drive_dir: \xff\xfe\x00bad")
+        with self.assertRaises(UnicodeDecodeError):
+            audit_coverage.resolve_drive_dir(self.repo_root)
+
+    def test_resolve_drive_dir_treats_non_dict_yaml_as_unset(self):
+        (self.context_dir / "tier1_sources.yml").write_text("- just\n- a\n- list\n")
+        self.assertEqual(
+            audit_coverage.resolve_drive_dir(self.repo_root),
+            self.repo_root.resolve(),
+        )
+
+    def test_format_markdown_report_has_no_google_drive_phrasing(self):
+        report = {
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "repo_root": str(self.repo_root),
+            "drive_audit": {
+                "drive_accessible": True,
+                "indexed_sources": [],
+                "unindexed_files": [],
+                "missing_digests": [],
+            },
+            "location": {"latest_episode": None, "raw_region": "Unknown"},
+            "route_graph_available": False,
+            "unillustrated_entries": [],
+        }
+        output = audit_coverage.format_markdown_report(report)
+        self.assertNotIn("Google Drive", output)
 
 
 if __name__ == "__main__":
