@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Phase 2 Zero-Wrapper LAN Preview & ADR 003 Amendment (Design 004 Stage B, `#44`)**:
+  - Amended `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md` (§2 Layer 4, §3.4, §3.5, §4, §5): dropped the planned `oude serve` wrapper and `_config_dev.yml` overlay in favour of pre-flight `oude doctor` plus `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""` (`use_wsrv` stays disabled outside `JEKYLL_ENV=production`), and `oude digest` + `skills/digest-book/` replacing `oude digest-deep`.
+  - Updated `README.md` quickstart: `oude init` instead of `./sync.sh --init`, `_gm-materials/` instead of `_sessions/` / `_digests/`, pre-serve `oude doctor`, and LAN preview at `http://artemis.local:4000` (avahi-daemon) with non-mDNS IP fallback.
+  - Marked Design 004 status as Accepted.
+
 ---
 
 ## [0.6.1] - 2026-11-17
