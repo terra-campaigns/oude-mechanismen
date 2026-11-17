@@ -17,6 +17,8 @@ import argparse
 import json
 import os
 import re
+import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -212,7 +214,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
             "digest_exists": True,
             "sections": sections,
         }
-        for opt_key in ("entity_type", "pages", "tags"):
+        for opt_key in ("entity_type", "pages", "tags", "source"):
             if opt_key in frontmatter and frontmatter[opt_key] is not None:
                 entry[opt_key] = frontmatter[opt_key]
 
@@ -331,17 +333,7 @@ def scaffold_digest(
         )
 
     # Resolve the explicit PDF path; never scan drive_dir for candidates.
-    raw = Path(pdf_path).expanduser()
-    if raw.is_absolute():
-        resolved = raw.resolve()
-    else:
-        cwd_candidate = raw if raw.exists() else None
-        if cwd_candidate is not None:
-            resolved = cwd_candidate.resolve()
-        else:
-            resolved = (drive_dir / raw).expanduser().resolve()
-    if not resolved.is_file():
-        raise FileNotFoundError(f"Explicit PDF path '{pdf_path}' does not exist or is not a file.")
+    resolved = _resolve_pdf_path(drive_dir, pdf_path)
 
     # Portable identifier: explicit override, drive-relative POSIX path, or basename.
     if source_pdf:
@@ -428,8 +420,350 @@ def scaffold_digest(
     return out_file
 
 
+def _resolve_pdf_path(drive_dir: Path, pdf_path: str) -> Path:
+    """Resolve an explicit PDF path (CWD-relative first, then drive_dir-relative); never scan for candidates."""
+    raw = Path(pdf_path).expanduser()
+    if raw.is_absolute():
+        resolved = raw.resolve()
+    else:
+        cwd_candidate = raw if raw.exists() else None
+        if cwd_candidate is not None:
+            resolved = cwd_candidate.resolve()
+        else:
+            resolved = (drive_dir / raw).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Explicit PDF path '{pdf_path}' does not exist or is not a file.")
+    return resolved
+
+
+def _page_text(reader: Any, page_no: int, cache: Dict[int, Tuple[str, int]]) -> str:
+    """Return layout-mode UTF-8 text for a 1-based page number; cache maps page to (text, utf8_byte_len)."""
+    if page_no not in cache:
+        try:
+            text = reader.pages[page_no - 1].extract_text(extraction_mode="layout") or ""
+        except TypeError:
+            text = reader.pages[page_no - 1].extract_text() or ""
+        except Exception:
+            text = ""
+        cache[page_no] = (text, len(text.encode("utf-8")))
+    return cache[page_no][0]
+
+
+def _span_bytes(reader: Any, cache: Dict[int, Tuple[str, int]], start: int, end: int) -> int:
+    total = 0
+    for p in range(start, end + 1):
+        _page_text(reader, p, cache)
+        total += cache[p][1]
+    return total
+
+
+def _split_window(
+    title: str,
+    start: int,
+    end: int,
+    chunk_pages: int,
+    max_bytes: int,
+    reader: Any,
+    cache: Dict[int, Tuple[str, int]],
+) -> List[Tuple[str, int, int]]:
+    """Split an outline span into (title, start_page, end_page) windows whose text fits *max_bytes*.
+
+    Spans larger than *chunk_pages* are first split into sequential chunk-sized windows;
+    any still-oversized window is halved recursively down to single pages. A single
+    oversized page is kept whole here and line-split at emit time.
+    """
+    if end < start:
+        return []
+    if start == end or _span_bytes(reader, cache, start, end) <= max_bytes:
+        return [(title, start, end)]
+    out: List[Tuple[str, int, int]] = []
+    if end - start + 1 > chunk_pages:
+        p = start
+        while p <= end:
+            e = min(end, p + chunk_pages - 1)
+            out.extend(_split_window(title, p, e, chunk_pages, max_bytes, reader, cache))
+            p = e + 1
+    else:
+        mid = (start + end) // 2
+        out.extend(_split_window(title, start, mid, chunk_pages, max_bytes, reader, cache))
+        out.extend(_split_window(title, mid + 1, end, chunk_pages, max_bytes, reader, cache))
+    return out
+
+
+def plan_extract_windows(
+    reader: Any, max_depth: int, chunk_pages: int, max_bytes: int
+) -> Tuple[List[Tuple[str, int, int]], Dict[int, Tuple[str, int]]]:
+    """Flatten the outline into page-span windows sized below *max_bytes*; outline-less PDFs get one whole-book span."""
+    total = len(reader.pages)
+    spans = extract_pdf_outline(reader, max_depth=max_depth) or [("Whole Book", 1, total)]
+    cache: Dict[int, Tuple[str, int]] = {}
+    windows: List[Tuple[str, int, int]] = []
+    for title, start, end in spans:
+        windows.extend(_split_window(title, start, end, chunk_pages, max_bytes, reader, cache))
+    return windows, cache
+
+
+def _cut_prefix(text: str, max_bytes: int) -> int:
+    """Largest character count of *text* whose UTF-8 encoding fits in *max_bytes*."""
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(text[:mid].encode("utf-8")) <= max_bytes:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
+
+
+def _split_single_page(body: str, page_no: int, max_bytes: int) -> List[str]:
+    """Line-split a single oversized page into <= *max_bytes* parts, each prefixed with a '--- Page N (part K) ---' marker."""
+    parts: List[str] = []
+    cur = ""
+    for line in body.splitlines(keepends=True):
+        candidate = cur + line
+        while candidate and len(candidate.encode("utf-8")) > max_bytes:
+            cut = _cut_prefix(candidate, max_bytes)
+            parts.append(candidate[:cut])
+            candidate = candidate[cut:]
+        cur = candidate
+    if cur:
+        parts.append(cur)
+    marked: List[str] = []
+    for k, part in enumerate(parts or [""], start=1):
+        marker = f"--- Page {page_no} (part {k}) ---\n"
+        room = max(1, max_bytes - len(marker.encode("utf-8")))
+        if len(part.encode("utf-8")) > room:
+            part = part[: _cut_prefix(part, room)]
+        marked.append(marker + part)
+    return marked
+
+
+def extract_pdf(
+    pdf_path: str,
+    drive_dir: Path,
+    out_dir: Optional[str] = None,
+    format: str = "auto",
+    max_depth: int = 1,
+    chunk_pages: int = 10,
+    pdf_slice_pages: int = 5,
+    max_bytes: int = 38000,
+    min_chars_per_page: int = 80,
+) -> Path:
+    """Extract bounded page-tagged slices from an explicit PDF into *out_dir* plus a manifest.json.
+
+    format="text" emits layout-mode UTF-8 slices with '--- Page N ---' markers; format="pdf"
+    emits PdfWriter page-range slices; format="auto" falls back to .pdf per slice when the
+    extracted character density drops below *min_chars_per_page* per page.
+    """
+    if pypdf is None:
+        raise ImportError("pypdf is required for PDF extraction. Please install it using 'pip install pypdf'.")
+    resolved = _resolve_pdf_path(drive_dir, pdf_path)
+    slug = slugify(re.sub(r"[-_]v\d+.*$", "", resolved.stem, flags=re.IGNORECASE))
+    target_dir = Path(out_dir) if out_dir else Path(tempfile.gettempdir()) / "oude-extract" / slug
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for old in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
+        old.unlink()
+    manifest_path = target_dir / "manifest.json"
+    if manifest_path.exists():
+        manifest_path.unlink()
+
+    reader = pypdf.PdfReader(str(resolved))
+    total_pages = len(reader.pages)
+    windows, cache = plan_extract_windows(reader, max_depth, chunk_pages, max_bytes)
+
+    slices: List[Dict[str, Any]] = []
+    index = 0
+    for title, start, end in windows:
+        pages = end - start + 1
+        window_text = "".join(f"--- Page {p} ---\n{_page_text(reader, p, cache)}\n" for p in range(start, end + 1))
+        byte_size = len(window_text.encode("utf-8"))
+        char_count = len(window_text)
+        slice_format = format
+        fallback_reason = None
+        if format == "auto" and char_count < min_chars_per_page * pages:
+            slice_format = "pdf"
+            fallback_reason = (
+                f"low text density: {char_count} chars over {pages} page(s) "
+                f"below {min_chars_per_page} chars/page threshold"
+            )
+        if slice_format == "text" and byte_size > max_bytes and pages == 1:
+            for part in _split_single_page(_page_text(reader, start, cache), start, max_bytes):
+                index += 1
+                fname = f"{index:03d}_{slugify(title)}_p{start}_part.txt"
+                (target_dir / fname).write_text(part, encoding="utf-8")
+                slices.append({
+                    "index": index,
+                    "title": f"{title} (part)",
+                    "start_page": start,
+                    "end_page": start,
+                    "format": "text",
+                    "path": fname,
+                    "byte_size": len(part.encode("utf-8")),
+                    "char_count": len(part),
+                    "auto_fallback_reason": None,
+                })
+            continue
+        if slice_format == "pdf":
+            p = start
+            while p <= end:
+                e = min(end, p + pdf_slice_pages - 1)
+                index += 1
+                fname = f"{index:03d}_{slugify(title)}_pp{p}-{e}.pdf"
+                writer = pypdf.PdfWriter()
+                for pg in range(p, e + 1):
+                    writer.add_page(reader.pages[pg - 1])
+                with open(target_dir / fname, "wb") as fh:
+                    writer.write(fh)
+                sub_chars = sum(len(_page_text(reader, pg, cache)) for pg in range(p, e + 1))
+                slices.append({
+                    "index": index,
+                    "title": title,
+                    "start_page": p,
+                    "end_page": e,
+                    "format": "pdf",
+                    "path": fname,
+                    "byte_size": (target_dir / fname).stat().st_size,
+                    "char_count": sub_chars,
+                    "auto_fallback_reason": fallback_reason if p == start else None,
+                })
+                p = e + 1
+            continue
+        index += 1
+        fname = f"{index:03d}_{slugify(title)}.txt"
+        (target_dir / fname).write_text(window_text, encoding="utf-8")
+        slices.append({
+            "index": index,
+            "title": title,
+            "start_page": start,
+            "end_page": end,
+            "format": "text",
+            "path": fname,
+            "byte_size": byte_size,
+            "char_count": char_count,
+            "auto_fallback_reason": None,
+        })
+
+    manifest = {
+        "source_pdf": resolved.name,
+        "slug": slug,
+        "total_pages": total_pages,
+        "format_requested": format,
+        "min_chars_per_page": min_chars_per_page,
+        "slices": slices,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    text_n = sum(1 for s in slices if s["format"] == "text")
+    pdf_n = len(slices) - text_n
+    fb_n = sum(1 for s in slices if s.get("auto_fallback_reason"))
+    print(f"[EXTRACT] {len(slices)} slice(s) ({text_n} text, {pdf_n} pdf, {fb_n} auto-fallback) from {resolved.name} ({total_pages} pages) into {target_dir}")
+    print(f"[EXTRACT] Manifest written to {manifest_path}")
+    return manifest_path
+
+
+VALID_ENTITY_TYPES = {"index", "faction", "location", "person", "creature", "artefact", "mechanic", "table", "other"}
+LINK_EXCLUDED_DIRS = {".git", "_site", "vendor"}
+
+
+def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] = None) -> int:
+    """Validate digest notes against hard invariants; return 0 on pass, 1 on any failure.
+
+    Hard invariants: YAML-mapping frontmatter with non-empty 'source' and 'title', 'tier' == 3,
+    'entity_type' in VALID_ENTITY_TYPES; a blank line immediately after every Markdown heading
+    (outside fenced code blocks); every relative Markdown link resolves to an existing file inside
+    the repository root and outside LINK_EXCLUDED_DIRS. Soft sizing stays non-fatal [INFO] output.
+    """
+    repo_root = repo_root.resolve()
+    digest_dir = digest_dir.resolve()
+    if not digest_dir.is_dir():
+        print(f"[FAIL] {digest_dir}: digest directory does not exist")
+        return 1
+    md_files = sorted(digest_dir.rglob("*.md"), key=lambda p: p.as_posix())
+    errors: List[str] = []
+    for md_file in md_files:
+        resolved_md = md_file.resolve()
+        rel = resolved_md.relative_to(repo_root).as_posix() if repo_root in resolved_md.parents else str(md_file)
+        content = md_file.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        fm_match = None
+        if not content.startswith("---"):
+            errors.append(f"{rel}:1: missing YAML frontmatter block")
+        else:
+            fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
+            if not fm_match:
+                errors.append(f"{rel}:1: malformed frontmatter delimiters")
+            else:
+                try:
+                    loaded = yaml.safe_load(fm_match.group(1))
+                except yaml.YAMLError as exc:
+                    errors.append(f"{rel}:1: malformed YAML frontmatter: {exc}")
+                    loaded = None
+                if loaded is not None and not isinstance(loaded, dict):
+                    errors.append(f"{rel}:1: frontmatter must be a YAML mapping, got {type(loaded).__name__}")
+                    loaded = None
+                if isinstance(loaded, dict):
+                    if not (isinstance(loaded.get("source"), str) and loaded["source"].strip()):
+                        errors.append(f"{rel}:1: frontmatter 'source' must be a non-empty string")
+                    if loaded.get("tier") != 3:
+                        errors.append(f"{rel}:1: frontmatter 'tier' must equal 3")
+                    if loaded.get("entity_type") not in VALID_ENTITY_TYPES:
+                        errors.append(f"{rel}:1: frontmatter 'entity_type' must be one of {sorted(VALID_ENTITY_TYPES)}")
+                    if not (isinstance(loaded.get("title"), str) and loaded["title"].strip()):
+                        errors.append(f"{rel}:1: frontmatter 'title' must be a non-empty string")
+        fm_end_line = content[: fm_match.end()].count("\n") if fm_match else 0
+        in_fence = False
+        for i, line in enumerate(lines):
+            if i < fm_end_line:
+                continue
+            stripped = line.lstrip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if re.match(r"^#{1,6}\s+\S", line) and i + 1 < len(lines) and lines[i + 1].strip() != "":
+                errors.append(f"{rel}:{i + 1}: heading not followed by a blank line")
+        body = content[fm_match.end():] if fm_match else content
+        for m in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", body):
+            target = m.group(1).strip().strip("<>")
+            if not target or target.startswith(("http://", "https://", "mailto:")):
+                continue
+            target = target.split("#", 1)[0]
+            if not target:
+                continue
+            link_line = content[: m.start()].count("\n") + 1
+            link_resolved = (md_file.parent / target).resolve()
+            if repo_root not in link_resolved.parents and link_resolved != repo_root:
+                errors.append(f"{rel}:{link_line}: link '{target}' escapes the repository root")
+                continue
+            if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(repo_root).parts):
+                errors.append(f"{rel}:{link_line}: link '{target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})")
+                continue
+            if not link_resolved.exists():
+                errors.append(f"{rel}:{link_line}: broken relative link '{target}'")
+    total_lines = sum(len(f.read_text(encoding="utf-8").splitlines()) for f in md_files)
+    print(f"[INFO] {len(md_files)} digest note(s), {total_lines} total line(s) in {digest_dir}")
+    if manifest:
+        mpath = Path(manifest)
+        if mpath.exists():
+            data = json.loads(mpath.read_text(encoding="utf-8"))
+            reasons: Dict[str, int] = {}
+            for s in data.get("slices", []):
+                reason = s.get("auto_fallback_reason")
+                if reason:
+                    reasons[reason] = reasons.get(reason, 0) + 1
+            if reasons:
+                print(f"[INFO] auto-fallback slice counts: {json.dumps(reasons, ensure_ascii=False)}")
+    for err in errors:
+        print(f"[FAIL] {err}")
+    if errors:
+        print(f"[VALIDATE] {len(errors)} hard-invariant failure(s) in {digest_dir}")
+        return 1
+    print(f"[VALIDATE] OK — {len(md_files)} note(s) passed in {digest_dir}")
+    return 0
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index or scaffold new digests from explicit PDF paths.")
+    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index, scaffold digests, extract PDF slices, or validate digests.")
     parser.add_argument("--repo-root", "--repo-dir", dest="repo_root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Path to the campaign materials directory")
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
@@ -439,12 +773,39 @@ def main():
     parser.add_argument("--category", type=str, default=None, help="Category for scaffolded digest (core_setting, supplement, module, rules, bestiary)")
     parser.add_argument("--depth", type=int, default=1, help="Maximum outline depth to extract (default: 1 for top-level chapters)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing digest file during scaffolding")
+    parser.add_argument("--extract", type=str, default=None, metavar="PDF_PATH", help="Extract bounded page-tagged slices from an explicit PDF plus manifest.json")
+    parser.add_argument("--format", choices=["auto", "text", "pdf"], default="auto", help="Slice format for --extract (default: auto with low-density pdf fallback)")
+    parser.add_argument("--out-dir", type=str, default=None, help="Output directory for --extract slices (default: <tempdir>/oude-extract/<slug>)")
+    parser.add_argument("--max-depth", type=int, default=1, help="Maximum outline depth for --extract (default: 1)")
+    parser.add_argument("--chunk-pages", type=int, default=10, help="Page window size for oversized outline spans under --extract (default: 10)")
+    parser.add_argument("--pdf-slice-pages", type=int, default=5, help="Pages per emitted .pdf slice under --extract (default: 5)")
+    parser.add_argument("--max-bytes", type=int, default=38000, help="Maximum bytes per text slice under --extract (default: 38000)")
+    parser.add_argument("--min-chars-per-page", type=int, default=80, help="Auto-fallback threshold for --extract --format auto (default: 80)")
+    parser.add_argument("--validate", nargs="?", const="", default=None, metavar="DIGEST_DIR", help="Validate digest notes against hard invariants (default dir: <drive_dir>/_gm-materials/digests)")
+    parser.add_argument("--manifest", type=str, default=None, help="manifest.json from --extract, used by --validate for auto-fallback telemetry")
     args = parser.parse_args()
 
     repo_root = find_repo_root(args.repo_root)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
 
-    if args.scaffold:
+    if args.extract:
+        extract_pdf(
+            args.extract,
+            drive_dir,
+            out_dir=args.out_dir,
+            format=args.format,
+            max_depth=args.max_depth,
+            chunk_pages=args.chunk_pages,
+            pdf_slice_pages=args.pdf_slice_pages,
+            max_bytes=args.max_bytes,
+            min_chars_per_page=args.min_chars_per_page,
+        )
+    elif args.validate is not None:
+        digest_dir = Path(args.validate) if args.validate else drive_dir / "_gm-materials" / "digests"
+        if not digest_dir.is_absolute():
+            digest_dir = repo_root / digest_dir
+        raise SystemExit(validate_digests(repo_root, digest_dir, manifest=args.manifest))
+    elif args.scaffold:
         scaffold_digest(
             repo_root,
             drive_dir,

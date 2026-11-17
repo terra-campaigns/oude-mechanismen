@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Stage C Hybrid PDF Extraction, Validation & `skills/digest-book/` (Design 004, `#45`)**:
+  - `scripts/generate_digests.py` gained `oude digest --extract <PDF_PATH>` (`--format auto|text|pdf`, `--out-dir`, `--max-depth`, `--chunk-pages`, `--pdf-slice-pages`, `--max-bytes`, `--min-chars-per-page`) emitting bounded page-tagged slices plus `manifest.json`, with outline/chunk-window splitting, recursive halving, newline line-split for oversized single pages, and low-density `.pdf` auto-fallback; `oude digest --validate [DIGEST_DIR]` enforces hard invariants (YAML frontmatter schema with `tier: 3` and `entity_type`, blank line after every heading, resolvable in-repo relative links) with `file:line:` diagnostics and non-fatal fallback telemetry via `--manifest`; `compile_references()` now copies the optional `source` frontmatter field into `references.json`.
+  - New harness-agnostic `skills/digest-book/SKILL.md` (manifest-driven synthesis, priority-order folder classification, atomic staged replace, dense-table spot-checking guidance); `skills/lookup-context/SKILL.md` documents the 3-hop digest navigation and `source` matching.
+  - Programmatic `pypdf.PdfWriter` synthetic-PDF tests cover extraction modes, chunking, line-split, auto-fallback, validation failures, and `source` parity.
+
 ---
 
 ## [0.6.1] - 2026-11-17
