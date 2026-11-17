@@ -60,6 +60,7 @@ TEMPLATE_MAPPINGS = [
 # Pass-through script mappings (command name : filename in scripts/)
 PASS_THROUGH_SCRIPTS = {
     "lint": "lint_chapter.py",
+    "lint-wiki": "lint_wiki.py",
     "audit": "audit_coverage.py",
     "digest": "generate_digests.py",
     "harvest": "harvest_archival.py",
