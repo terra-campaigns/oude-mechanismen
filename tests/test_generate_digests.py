@@ -463,6 +463,23 @@ class TestExtractAndValidate(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             generate_digests.extract_pdf("nope.pdf", self.repo_root, out_dir=str(Path(self.temp_dir.name) / "out"))
 
+    def test_extract_auto_fallback_splits_sparse_page_inside_text_window(self):
+        pdf = Path(self.temp_dir.name) / "mixed.pdf"
+        _make_pdf(pdf, [self.dense, "x", self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        manifest_path = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="auto", min_chars_per_page=80)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        by_page = {}
+        for s in manifest["slices"]:
+            for p in range(s["start_page"], s["end_page"] + 1):
+                by_page[p] = s
+        self.assertEqual(set(by_page), {1, 2, 3})
+        self.assertEqual(by_page[1]["format"], "text")
+        self.assertEqual(by_page[3]["format"], "text")
+        self.assertEqual(by_page[2]["format"], "pdf")
+        self.assertIn("page 2", by_page[2]["auto_fallback_reason"])
+        self.assertIn("low text density", by_page[2]["auto_fallback_reason"])
+
     def test_extract_covers_pages_before_first_outline_item(self):
         pdf = Path(self.temp_dir.name) / "late_outline.pdf"
         _make_pdf(pdf, [self.dense, self.dense, self.dense], outline=[("Chapter 1", 2)])

@@ -541,6 +541,17 @@ def _split_single_page(body: str, page_no: int, max_bytes: int) -> List[str]:
     return marked
 
 
+def _consecutive_runs(pages: List[int]) -> List[Tuple[int, int]]:
+    """Group sorted page numbers into maximal consecutive (start, end) runs."""
+    runs: List[Tuple[int, int]] = []
+    for p in pages:
+        if runs and p == runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], p)
+        else:
+            runs.append((p, p))
+    return runs
+
+
 def extract_pdf(
     pdf_path: str,
     drive_dir: Path,
@@ -556,7 +567,7 @@ def extract_pdf(
 
     format="text" emits layout-mode UTF-8 slices with '--- Page N ---' markers; format="pdf"
     emits PdfWriter page-range slices; format="auto" falls back to .pdf per slice when the
-    extracted character density drops below *min_chars_per_page* per page.
+    extracted character density drops below *min_chars_per_page* per page (sparse pages inside a text window are split out into individual .pdf slices).
     """
     if pypdf is None:
         raise ImportError("pypdf is required for PDF extraction. Please install it using 'pip install pypdf'.")
@@ -577,39 +588,30 @@ def extract_pdf(
     slices: List[Dict[str, Any]] = []
     index = 0
     for title, start, end in windows:
-        pages = end - start + 1
-        window_text = "".join(f"--- Page {p} ---\n{_page_text(reader, p, cache)}\n" for p in range(start, end + 1))
-        byte_size = len(window_text.encode("utf-8"))
-        char_count = len(window_text)
-        slice_format = format
-        fallback_reason = None
-        if format == "auto" and char_count < min_chars_per_page * pages:
-            slice_format = "pdf"
-            fallback_reason = (
-                f"low text density: {char_count} chars over {pages} page(s) "
-                f"below {min_chars_per_page} chars/page threshold"
-            )
-        if slice_format == "text" and byte_size > max_bytes and pages == 1:
-            for part in _split_single_page(_page_text(reader, start, cache), start, max_bytes):
-                index += 1
-                fname = f"{index:03d}_{slugify(title)}_p{start}_part.txt"
-                (target_dir / fname).write_text(part, encoding="utf-8")
-                slices.append({
-                    "index": index,
-                    "title": f"{title} (part)",
-                    "start_page": start,
-                    "end_page": start,
-                    "format": "text",
-                    "path": fname,
-                    "byte_size": len(part.encode("utf-8")),
-                    "char_count": len(part),
-                    "auto_fallback_reason": None,
-                })
-            continue
-        if slice_format == "pdf":
-            p = start
-            while p <= end:
-                e = min(end, p + pdf_slice_pages - 1)
+        all_pages = list(range(start, end + 1))
+        fallback_for: Dict[int, str] = {}
+        if format == "pdf":
+            sparse_runs: List[Tuple[int, int]] = [(start, end)]
+            dense_runs: List[Tuple[int, int]] = []
+        elif format == "auto":
+            sparse = [p for p in all_pages if len(_page_text(reader, p, cache)) < min_chars_per_page]
+            dense = [p for p in all_pages if p not in set(sparse)]
+            sparse_runs = _consecutive_runs(sparse)
+            dense_runs = _consecutive_runs(dense)
+            fallback_for = {
+                p: f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
+                   f"below {min_chars_per_page} chars/page threshold"
+                for p in sparse
+            }
+        else:
+            sparse_runs = []
+            dense_runs = [(start, end)]
+
+        # Sparse pages (auto mode) become .pdf slices, grouped by pdf_slice_pages.
+        for run_start, run_end in sparse_runs:
+            p = run_start
+            while p <= run_end:
+                e = min(run_end, p + pdf_slice_pages - 1)
                 index += 1
                 fname = f"{index:03d}_{slugify(title)}_pp{p}-{e}.pdf"
                 writer = pypdf.PdfWriter()
@@ -627,24 +629,46 @@ def extract_pdf(
                     "path": fname,
                     "byte_size": (target_dir / fname).stat().st_size,
                     "char_count": sub_chars,
-                    "auto_fallback_reason": fallback_reason if p == start else None,
+                    "auto_fallback_reason": fallback_for.get(p),
                 })
                 p = e + 1
-            continue
-        index += 1
-        fname = f"{index:03d}_{slugify(title)}.txt"
-        (target_dir / fname).write_text(window_text, encoding="utf-8")
-        slices.append({
-            "index": index,
-            "title": title,
-            "start_page": start,
-            "end_page": end,
-            "format": "text",
-            "path": fname,
-            "byte_size": byte_size,
-            "char_count": char_count,
-            "auto_fallback_reason": None,
-        })
+
+        # Dense runs become text slices; _split_window already capped whole-span bytes at
+        # max_bytes, so only a single oversized page needs the newline line-split.
+        for run_start, run_end in dense_runs:
+            run_text = "".join(f"--- Page {p} ---\n{_page_text(reader, p, cache)}\n" for p in range(run_start, run_end + 1))
+            byte_size = len(run_text.encode("utf-8"))
+            if byte_size > max_bytes and run_start == run_end:
+                for part in _split_single_page(_page_text(reader, run_start, cache), run_start, max_bytes):
+                    index += 1
+                    fname = f"{index:03d}_{slugify(title)}_p{run_start}_part.txt"
+                    (target_dir / fname).write_text(part, encoding="utf-8")
+                    slices.append({
+                        "index": index,
+                        "title": f"{title} (part)",
+                        "start_page": run_start,
+                        "end_page": run_start,
+                        "format": "text",
+                        "path": fname,
+                        "byte_size": len(part.encode("utf-8")),
+                        "char_count": len(part),
+                        "auto_fallback_reason": None,
+                    })
+                continue
+            index += 1
+            fname = f"{index:03d}_{slugify(title)}.txt"
+            (target_dir / fname).write_text(run_text, encoding="utf-8")
+            slices.append({
+                "index": index,
+                "title": title,
+                "start_page": run_start,
+                "end_page": run_end,
+                "format": "text",
+                "path": fname,
+                "byte_size": byte_size,
+                "char_count": len(run_text),
+                "auto_fallback_reason": None,
+            })
 
     manifest = {
         "source_pdf": resolved.name,
