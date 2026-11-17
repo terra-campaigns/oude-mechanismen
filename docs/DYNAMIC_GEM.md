@@ -10,17 +10,7 @@ How the `oude-mechanismen` RubyGem powers a campaign vault's Jekyll site, how to
 
 ## Installation
 
-In the vault's `Gemfile`:
-
-```ruby
-source "https://rubygems.org"
-gem "jekyll", "~> 4.4.1"
-gem "just-the-docs", "0.12.0"
-gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanismen.git", tag: "v0.6.1"
-gem "jekyll-relative-links"
-gem "jekyll-redirect-from"
-gem "webrick"
-```
+Copy `templates/jekyll/Gemfile.template` from the engine checkout into the vault as `Gemfile`, and set the `oude-mechanismen` `tag:` to the release you want (e.g. `v0.6.0`; list available tags with `git ls-remote --tags`).
 
 In `_config.yml`:
 
@@ -43,14 +33,14 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 - **Site identity**: `title`, `description`, `url`, `baseurl` in `_config.yml` (production GitHub Pages values; LAN preview works without touching them — see the [Migration Guide](MIGRATION_GUIDE.md#step-7--lan-preview-smoke-check)).
 - **Exclusions**: keep `_gm-materials` (and friends) in `_config.yml` `exclude:` — `oude doctor` verifies this.
 - **Theme overrides**: `_sass/custom/custom.scss` for just-the-docs overrides; vault-local `_includes/` shadow gem includes of the same name.
-- **Art filter presets**: `.agents/context/aesthetics.yml`; **skills discovery**: `.agents/skills.json` paths pointing at the engine `skills/` directory.
+- **Art filter presets**: `.agents/context/aesthetics.yml`; **skills discovery**: `.agents/skills.json` paths pointing at your engine checkout's `skills/` directory (e.g. `~/Repos/oude-mechanismen/skills`).
 - **Procedural tooling**: the Python CLI (`oude init`, `oude doctor`, `oude digest`, `oude audit`, …) is distributed separately via `uv` (ADR 002) — the gem covers only the Jekyll build.
 
 ## Updating the engine
 
 1. Bump the `tag:` in the vault `Gemfile` to the new release.
 2. `bundle update oude-mechanismen && bundle exec jekyll build`.
-3. For engine-managed files that still ship outside the gem (git hooks, `requirements.txt` pin, `bin/setup`), run `./sync.sh --check <vault>` then `./sync.sh <vault>` from the engine checkout. `sync.sh` never overwrites locally modified files unless `--force` is passed.
+3. For the remaining engine-managed files listed in `sync.sh` `MANAGED_FILES` (git hook, `requirements.txt` pin, `bin/setup`), run `./sync.sh --check <vault>` then `./sync.sh <vault>` from the engine checkout. `sync.sh` never overwrites locally modified files unless `--force` is passed.
 4. Run `oude doctor --fix` to clean legacy state (notably it deletes the obsolete `.agents/scripts/` runner directory — ADR 002).
 
 ## Deprecations
@@ -66,5 +56,5 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 | `bundle exec jekyll build` fails with `cannot load such file -- oude_mechanismen` | The `plugins:` entry in `_config.yml` is missing; add `- oude-mechanismen`. |
 | Catalogue is stale after editing notes | Rebuild (`bundle exec jekyll build`) or run `oude doctor --fix`; the catalogue is generated in-memory at build time. |
 | `engine_version` in `catalog.json` does not match the gem tag | Update the gem (`bundle update oude-mechanismen`) and rebuild. |
-| Private `_gm-materials/` leaks into the built site | Check all four exclusion layers and run `oude doctor --fix`. |
+| Private `_gm-materials/` leaks into the built site | Check all four exclusion layers — `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and `oude doctor` — then run `oude doctor --fix`. |
 | Gem build fails locally | `gem build oude-mechanismen.gemspec` in the engine checkout; CI validates this on every PR. |

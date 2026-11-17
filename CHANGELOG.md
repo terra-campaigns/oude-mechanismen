@@ -11,11 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Stage D Reconciled Migration & Gem Documentation (Design 004, `#46`, closes `#22`)**:
-  - New `docs/MIGRATION_GUIDE.md` (Google Drive → `_gm-materials/` + Obsidian Sync cutover for `hostile`/`charged`: legacy folder moves, `drive_dir: .`, `references.json` re-anchoring, `oude doctor --fix` / `oude audit` validation, LAN preview smoke check) and `docs/DYNAMIC_GEM.md` (gem architecture, installation, in-memory plugin/include loading, customisation, updates, deprecations, troubleshooting); both linked from `AGENTS.md` and `README.md`.
-  - Removed legacy `.agents/scripts/` runner mappings from `sync.sh` `MANAGED_FILES` and deleted `templates/runners/` (dead weight; `oude doctor --fix` already deletes downstream runners per ADR 002).
-  - `bin/init_vault.sh` formally deprecated in favour of `oude init` (retained for CI compatibility).
-  - CI heading-blank-line check now covers `docs/**/*.md`; `AGENTS.md` Tier 1 wording updated to the in-memory gem catalogue.
+- **Stage D Reconciled Migration & Gem Documentation (Design 004, `#46`, closes `#22`)**: new `docs/MIGRATION_GUIDE.md` and `docs/DYNAMIC_GEM.md` (linked from `AGENTS.md` / `README.md`); `sync.sh` `MANAGED_FILES` now ships only git hook, `requirements.txt` pin, and `bin/setup` (gem-served Jekyll assets and legacy `.agents/scripts/` runners removed; `templates/runners/` deleted); `bin/init_vault.sh` deprecated in favour of `oude init`; CI heading check covers `docs/**/*.md`; `templates/jekyll/Gemfile.template` gem tag bumped to `v0.6.0`.
 
 ---
 

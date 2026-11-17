@@ -63,18 +63,12 @@ fi
 
 # Manifest of engine-managed files:
 # Format: "source_in_engine:destination_in_vault:is_executable"
+# Jekyll plugins/includes/all-content.md are served in-memory by the RubyGem, and
+# legacy .agents/scripts/ runner wrappers are deleted by `oude doctor --fix`
+# (ADR 001/002), so neither is synced here anymore.
 MANAGED_FILES=(
-  "jekyll/_plugins/data_extractor.rb:_plugins/data_extractor.rb:false"
-  "jekyll/_plugins/llm_content.rb:_plugins/llm_content.rb:false"
-  "jekyll/_includes/connected_to.html:_includes/connected_to.html:false"
-  "jekyll/_includes/header_chapter.md:_includes/header_chapter.md:false"
-  "jekyll/_includes/header_directories.md:_includes/header_directories.md:false"
-  "jekyll/_includes/image_gallery.html:_includes/image_gallery.html:false"
-  "jekyll/all-content.md:all-content.md:false"
   "githooks/pre-commit:.githooks/pre-commit:true"
   "requirements.txt:.agents/requirements.txt:false"
-# Legacy .agents/scripts/ runner mappings removed (ADR 002): downstream runners are
-# deleted by `oude doctor --fix`; vaults call the `oude` CLI directly.
   "templates/bin/setup.template:bin/setup:true"
 )
 

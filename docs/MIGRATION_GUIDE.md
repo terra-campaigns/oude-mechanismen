@@ -1,6 +1,6 @@
 # Vault Migration Guide
 
-Step-by-step cutover of an existing campaign vault (`hostile`, `charged`) off Google Drive onto the [ADR 003](adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md) dual-workstation model: git-ignored `_gm-materials/` synchronised peer-to-peer by Obsidian Sync between `ryu` (macOS tabletop) and `artemis` (Debian hub), with commercial PDFs kept on local Pillar 3 disk only.
+Step-by-step cutover of an existing campaign vault (e.g. `hostile`, `charged` — your own vault names go here) off Google Drive onto the [ADR 003](adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md) dual-workstation model: git-ignored `_gm-materials/` synchronised peer-to-peer by Obsidian Sync between `ryu` (macOS tabletop) and `artemis` (Debian hub), with commercial PDFs kept on local disk only (ADR 003 "Pillar 3": local storage outside Git and Obsidian Sync).
 
 > **Note**: the vaults currently exist on `ryu` and have not yet been cloned on `artemis`. Perform the cutover on `ryu` first, commit, then clone on `artemis` and enable Obsidian Sync.
 
@@ -8,7 +8,7 @@ Step-by-step cutover of an existing campaign vault (`hostile`, `charged`) off Go
 
 - `oude` CLI installed and on `PATH` (`uv tool install .` from the engine checkout, or the published package).
 - Obsidian Sync account with the `obsidian-sync.service` daemon running on both `ryu` and `artemis` (host-level contract; `oude doctor` cannot verify it).
-- A local Pillar 3 directory for sourcebook PDFs, e.g. `~/Repos/rpg-sourcebooks/` on each machine (or `smb://artemis.local/rpg`). Never commit PDFs to the public vault.
+- A local Pillar 3 directory for sourcebook PDFs (local-only disk outside Git and Obsidian Sync), e.g. `~/Repos/rpg-sourcebooks/` on each machine (or `smb://artemis.local/rpg`). Never commit PDFs to the public vault.
 
 ## Step 1 — Snapshot the vault
 
@@ -22,7 +22,7 @@ cp -R . /tmp/<campaign>-pre-migration-backup
 
 ```bash
 mkdir -p _gm-materials/session-summaries _gm-materials/session-preps _gm-materials/digests
-# Legacy top-level folders (ADR 003 Phase 1 replaced these):
+# Legacy top-level folders from pre-ADR-003 vaults:
 [ -d _sessions ] && mv _sessions/* _gm-materials/session-summaries/ && rmdir _sessions
 [ -d _prep ]    && mv _prep/*    _gm-materials/session-preps/    && rmdir _prep
 [ -d _digests ] && mv _digests/* _gm-materials/digests/          && rmdir _digests
@@ -44,17 +44,17 @@ External sourcebook PDFs may live outside the repository via an absolute or rela
 oude digest                 # recompiles .agents/context/references.json
 ```
 
-Confirm every entry in `.agents/context/references.json` has a portable `source_pdf` (relative path or basename — never a host-specific absolute path) and a relative `digest_path`. If legacy digests carry absolute `source_pdf` values, re-record them with `oude digest --scaffold <PDF_PATH> --source-pdf <rel>` or edit the frontmatter by hand.
+Confirm every entry in `.agents/context/references.json` has a portable `source_pdf` (relative path or basename — never a host-specific absolute path) and a relative `digest_path`. If legacy digest notes carry absolute `source_pdf` values in their frontmatter (the `.md` files under `_gm-materials/digests/`), re-record them with `oude digest --scaffold <PDF_PATH> --source-pdf <rel>` or edit the frontmatter by hand.
 
 ## Step 5 — Validate exclusions and hygiene
 
 ```bash
-oude doctor --fix           # repairs .gitignore / _config.yml exclude: / deletes legacy .agents/scripts/ runners
+oude doctor --fix           # repairs .gitignore / _config.yml exclude: / deletes legacy .agents/scripts/ runners and vault-local _plugins/, _includes/, all-content.md (the gem serves these in-memory)
 oude audit                  # coverage & gap report
 bundle exec jekyll build    # Tier 1 catalogue compiles with zero errors
 ```
 
-Verify the four-layer `_gm-materials/` exclusion holds: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and `oude doctor`.
+First ensure the vault consumes the gem: `Gemfile` pins `oude-mechanismen` (see [DYNAMIC_GEM.md](DYNAMIC_GEM.md#installation)) and `_config.yml` has `plugins: [oude-mechanismen]`. Then verify the four-layer `_gm-materials/` exclusion holds: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and `oude doctor`.
 
 ## Step 6 — Commit and clone on `artemis`
 
@@ -76,7 +76,7 @@ oude doctor
 bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
 ```
 
-Open `http://artemis.local:4000` from `ryu` or a phone (or `http://<artemis-ip>:4000` on non-mDNS clients). Confirm pages, `relative_url` links, and gallery images render. One vault at a time on port `4000`.
+Open `http://artemis.local:4000` from `ryu` or a phone — `artemis.local` resolves via mDNS (`avahi-daemon` on Linux; Bonjour on macOS). On non-mDNS clients use `http://<artemis-ip>:4000`, where `<artemis-ip>` is the host's LAN address (`ip addr` on `artemis`, or your router's client list). Confirm pages, `relative_url` links, and gallery images render. One vault at a time on port `4000`.
 
 ## Troubleshooting
 
@@ -86,5 +86,4 @@ Open `http://artemis.local:4000` from `ryu` or a phone (or `http://<artemis-ip>:
 | `references.json` still shows absolute paths | Re-record `source_pdf` as a relative path or basename (Step 4). |
 | `_gm-materials/` appears in the built site or git | Run `oude doctor --fix`; verify all four exclusion layers (Step 5). |
 | `python3 .agents/scripts/...` no longer exists | Legacy runners are deleted by `oude doctor --fix`; use the `oude` CLI (`oude digest`, `oude audit`, `oude transcribe`, …) instead. |
-| `bin/init_vault.sh` vs `oude init` confusion | `bin/init_vault.sh` is deprecated; bootstrap new vaults with `oude init <target>`. |
 | Jekyll build fails after gem update | `bundle update oude-mechanismen`, then `bundle exec jekyll build`; see [DYNAMIC_GEM.md](DYNAMIC_GEM.md). |

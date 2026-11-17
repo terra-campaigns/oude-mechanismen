@@ -133,7 +133,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ## 5. Synchronisation Engine Rules (`sync.sh`)
 
-- **Managed Files**: Engine updates to plugins, includes, git hooks, and setup scripts are tracked in `sync.sh`'s `MANAGED_FILES` array. Legacy `.agents/scripts/` runner wrappers are no longer synced; `oude doctor --fix` deletes them in favour of the `oude` CLI (ADR 002).
+- **Managed Files**: Engine updates to the git hook, `requirements.txt` pin, and `bin/setup` are tracked in `sync.sh`'s `MANAGED_FILES` array. Jekyll plugins/includes are served in-memory by the `oude-mechanismen` RubyGem, and legacy `.agents/scripts/` runner wrappers are no longer synced; `oude doctor --fix` deletes both downstream (ADR 001/002).
 - **Drift Safety**: `sync.sh` never overwrites locally modified (dirty) files in a campaign vault unless `--force` is explicitly passed.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
