@@ -463,6 +463,30 @@ class TestExtractAndValidate(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             generate_digests.extract_pdf("nope.pdf", self.repo_root, out_dir=str(Path(self.temp_dir.name) / "out"))
 
+    def test_extract_pages_filter_merges_into_existing_manifest(self):
+        pdf = Path(self.temp_dir.name) / "four.pdf"
+        _make_pdf(pdf, [self.dense, "x", self.dense, self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        m1 = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="auto", min_chars_per_page=80)
+        first = json.loads(m1.read_text(encoding="utf-8"))
+        covered1 = set()
+        for s in first["slices"]:
+            covered1.update(range(s["start_page"], s["end_page"] + 1))
+        self.assertEqual(covered1, {1, 2, 3, 4})
+        # Re-extract pages 2-3 as pdf into the same out_dir: manifest must merge, not wipe.
+        m2 = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="pdf", page_spec="2-3")
+        merged = json.loads(m2.read_text(encoding="utf-8"))
+        by_page = {}
+        for s in merged["slices"]:
+            for p in range(s["start_page"], s["end_page"] + 1):
+                by_page[p] = s["format"]
+        self.assertEqual(by_page, {1: "text", 2: "pdf", 3: "pdf", 4: "text"})
+        self.assertEqual([s["index"] for s in merged["slices"]], list(range(1, len(merged["slices"]) + 1)))
+        # Fresh full run still clears stale files.
+        m3 = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="text")
+        fresh = json.loads(m3.read_text(encoding="utf-8"))
+        self.assertTrue(all(s["format"] == "text" for s in fresh["slices"]))
+
     def test_extract_auto_fallback_splits_sparse_page_inside_text_window(self):
         pdf = Path(self.temp_dir.name) / "mixed.pdf"
         _make_pdf(pdf, [self.dense, "x", self.dense])

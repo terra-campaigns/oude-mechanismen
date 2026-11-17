@@ -27,7 +27,11 @@ oude digest --extract <pdf_path> [--format auto|text|pdf] [--out-dir <DIR>] \
 
 - Default `--out-dir` is `<tempdir>/oude-extract/<slug>` (outside Git and sync); slices and `manifest.json` are cleared on each run.
 - Read `<out-dir>/manifest.json`: iterate `slices` in `index` order, each with `title`, `start_page`/`end_page`, `format`, `path`, and optional `auto_fallback_reason`.
-- Slices with `auto_fallback_reason` are low-text-density (scanned or image-heavy) pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader. Dense two-column tabular pages can still pass the density threshold with interleaved text, so spot-check rollable tables and statblocks; re-run with `--format pdf` for chapters where tables interleave.
+- Slices with `auto_fallback_reason` are low-text-density (scanned or image-heavy) pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader. Dense two-column tabular pages can still pass the density threshold with interleaved text, so spot-check rollable tables and statblocks. For every slice that looks interleaved or unreadable, re-extract exactly those pages as `.pdf` into the same output directory (the manifest merges and replaces those pages' slices):
+  ```bash
+  oude digest --extract <pdf_path> --pages 209-211,261-263 --format pdf --out-dir <out-dir>
+  ```
+  Empirical note: on a 402-page dense two-column core rulebook, ~25% of text slices showed column interleaving, so plan for this quality-gate pass on such books.
 
 ### 2. Synthesise the wiki into staging
 

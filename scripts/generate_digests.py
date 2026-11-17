@@ -552,6 +552,21 @@ def _consecutive_runs(pages: List[int]) -> List[Tuple[int, int]]:
     return runs
 
 
+def _parse_page_ranges(spec: str) -> set:
+    """Parse a page-range spec like '2,5-8,12' into a set of 1-based page numbers."""
+    pages: set = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            pages.update(range(int(a), int(b) + 1))
+        else:
+            pages.add(int(part))
+    return pages
+
+
 def extract_pdf(
     pdf_path: str,
     drive_dir: Path,
@@ -562,12 +577,16 @@ def extract_pdf(
     pdf_slice_pages: int = 5,
     max_bytes: int = 38000,
     min_chars_per_page: int = 80,
+    page_spec: Optional[str] = None,
 ) -> Path:
     """Extract bounded page-tagged slices from an explicit PDF into *out_dir* plus a manifest.json.
 
     format="text" emits layout-mode UTF-8 slices with '--- Page N ---' markers; format="pdf"
-    emits PdfWriter page-range slices; format="auto" falls back to .pdf per slice when the
-    extracted character density drops below *min_chars_per_page* per page (sparse pages inside a text window are split out into individual .pdf slices).
+    emits PdfWriter page-range slices; format="auto" falls back to .pdf per page when the
+    extracted character density drops below *min_chars_per_page*. With *page_spec* (e.g.
+    "209-211,261"), those pages are forced to the requested format while all other pages keep
+    their auto decisions, and the manifest is rebuilt for the whole book — used to re-extract
+    interleaving-flagged pages as .pdf slices.
     """
     if pypdf is None:
         raise ImportError("pypdf is required for PDF extraction. Please install it using 'pip install pypdf'.")
@@ -575,37 +594,52 @@ def extract_pdf(
     slug = slugify(re.sub(r"[-_]v\d+.*$", "", resolved.stem, flags=re.IGNORECASE))
     target_dir = Path(out_dir) if out_dir else Path(tempfile.gettempdir()) / "oude-extract" / slug
     target_dir.mkdir(parents=True, exist_ok=True)
-    for old in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
-        old.unlink()
     manifest_path = target_dir / "manifest.json"
-    if manifest_path.exists():
-        manifest_path.unlink()
+    page_filter = _parse_page_ranges(page_spec) if page_spec else None
+    if page_filter is None:
+        for old in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
+            old.unlink()
+        if manifest_path.exists():
+            manifest_path.unlink()
 
     reader = pypdf.PdfReader(str(resolved))
     total_pages = len(reader.pages)
     windows, cache = plan_extract_windows(reader, max_depth, chunk_pages, max_bytes)
 
+    forced = set(page_filter) if page_filter is not None else set()
+
     slices: List[Dict[str, Any]] = []
     index = 0
     for title, start, end in windows:
         all_pages = list(range(start, end + 1))
-        fallback_for: Dict[int, str] = {}
-        if format == "pdf":
-            sparse_runs: List[Tuple[int, int]] = [(start, end)]
-            dense_runs: List[Tuple[int, int]] = []
-        elif format == "auto":
-            sparse = [p for p in all_pages if len(_page_text(reader, p, cache)) < min_chars_per_page]
-            dense = [p for p in all_pages if p not in set(sparse)]
-            sparse_runs = _consecutive_runs(sparse)
-            dense_runs = _consecutive_runs(dense)
-            fallback_for = {
-                p: f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
-                   f"below {min_chars_per_page} chars/page threshold"
-                for p in sparse
-            }
+        forced_pages = [p for p in all_pages if p in forced]
+        rest = [p for p in all_pages if p not in forced]
+        override = page_filter is not None
+        # Density-based sparse detection applies to non-forced pages whenever auto logic governs them.
+        if format == "auto" or override:
+            sparse_rest = [p for p in rest if len(_page_text(reader, p, cache)) < min_chars_per_page]
         else:
-            sparse_runs = []
-            dense_runs = [(start, end)]
+            sparse_rest = []
+        dense_rest = [p for p in rest if p not in set(sparse_rest)]
+        fallback_for = {
+            p: f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
+               f"below {min_chars_per_page} chars/page threshold"
+            for p in sparse_rest
+        }
+        if override:
+            # --pages override: forced pages take the requested format; the rest keep auto decisions.
+            if format == "pdf":
+                sparse, dense = forced_pages + sparse_rest, dense_rest
+            else:
+                sparse, dense = sparse_rest, forced_pages + dense_rest
+        elif format == "pdf":
+            sparse, dense = rest, []
+        elif format == "auto":
+            sparse, dense = sparse_rest, dense_rest
+        else:
+            sparse, dense = [], rest
+        sparse_runs = _consecutive_runs(sparse)
+        dense_runs = _consecutive_runs(dense)
 
         # Sparse pages (auto mode) become .pdf slices, grouped by pdf_slice_pages.
         for run_start, run_end in sparse_runs:
@@ -670,6 +704,15 @@ def extract_pdf(
                 "auto_fallback_reason": None,
             })
 
+    # Rebuild the manifest deterministically in page order; drop stale slice files on --pages runs.
+    slices.sort(key=lambda s: (s["start_page"], s["end_page"]))
+    for i, s in enumerate(slices, start=1):
+        s["index"] = i
+    if page_filter is not None:
+        referenced = {s["path"] for s in slices}
+        for stale in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
+            if stale.name not in referenced:
+                stale.unlink()
     manifest = {
         "source_pdf": resolved.name,
         "slug": slug,
@@ -808,6 +851,7 @@ def main():
     parser.add_argument("--pdf-slice-pages", type=int, default=5, help="Pages per emitted .pdf slice under --extract (default: 5)")
     parser.add_argument("--max-bytes", type=int, default=38000, help="Maximum bytes per text slice under --extract (default: 38000)")
     parser.add_argument("--min-chars-per-page", type=int, default=80, help="Auto-fallback threshold for --extract --format auto (default: 80)")
+    parser.add_argument("--pages", type=str, default=None, metavar="RANGES", help="Restrict --extract to page ranges (e.g. '209-211,261'); merges into an existing manifest, replacing those pages' slices")
     parser.add_argument("--validate", nargs="?", const="", default=None, metavar="DIGEST_DIR", help="Validate digest notes against hard invariants (default dir: <drive_dir>/_gm-materials/digests)")
     parser.add_argument("--manifest", type=str, default=None, help="manifest.json from --extract, used by --validate for auto-fallback telemetry")
     args = parser.parse_args()
@@ -826,6 +870,7 @@ def main():
             pdf_slice_pages=args.pdf_slice_pages,
             max_bytes=args.max_bytes,
             min_chars_per_page=args.min_chars_per_page,
+            page_spec=args.pages,
         )
     elif args.validate is not None:
         digest_dir = Path(args.validate) if args.validate else drive_dir / "_gm-materials" / "digests"
