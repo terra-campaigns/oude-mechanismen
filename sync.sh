@@ -73,12 +73,8 @@ MANAGED_FILES=(
   "jekyll/all-content.md:all-content.md:false"
   "githooks/pre-commit:.githooks/pre-commit:true"
   "requirements.txt:.agents/requirements.txt:false"
-  "templates/runners/generate_digests.py.template:.agents/scripts/generate_digests.py:true"
-  "templates/runners/audit_coverage.py.template:.agents/scripts/audit_coverage.py:true"
-  "templates/runners/transcribe_session.py.template:.agents/scripts/transcribe_session.py:true"
-  "templates/runners/art_filter.py.template:.agents/scripts/art_filter.py:true"
-  "templates/runners/lint_chapter.py.template:.agents/scripts/lint_chapter.py:true"
-  "templates/runners/harvest_archival.py.template:.agents/scripts/harvest_archival.py:true"
+# Legacy .agents/scripts/ runner mappings removed (ADR 002): downstream runners are
+# deleted by `oude doctor --fix`; vaults call the `oude` CLI directly.
   "templates/bin/setup.template:bin/setup:true"
 )
 

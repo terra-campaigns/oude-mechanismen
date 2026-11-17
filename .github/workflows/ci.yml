@@ -78,6 +78,7 @@ jobs:
               + ["README.md", "CHANGELOG.md", "AGENTS.md"]
               + glob.glob("templates/*.md.template")
               + glob.glob("templates/jekyll/*.md.template")
+              + glob.glob("docs/**/*.md", recursive=True)
           ))
           for path in paths:
               lines = open(path, encoding="utf-8").read().splitlines()

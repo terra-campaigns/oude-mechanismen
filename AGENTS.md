@@ -60,7 +60,6 @@ oude-mechanismen/
     ├── route_graph.json.template
     ├── badges/                 # Neutral geometric fallback PNG badges
     ├── bin/setup.template      # Idempotent campaign environment bootstrapper
-    ├── runners/                # Lightweight wrapper scripts delegating to engine
     └── jekyll/                 # Vanilla Just the Docs starter config & Gemfile
 ```
 
@@ -110,13 +109,15 @@ bundle exec jekyll build
 
 Verify that `.agents/context/catalog.json` compiled with zero errors.
 
+- **Guides**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) (Google Drive → `_gm-materials/` cutover) and [DYNAMIC_GEM.md](docs/DYNAMIC_GEM.md) (RubyGem operator guide).
+
 ---
 
 ## 4. Canon & Context Architecture
 
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
-- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed by `_plugins/data_extractor.rb` into `.agents/context/catalog.json`. This is hard canon.
+- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed in-memory by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into `.agents/context/catalog.json`. This is hard canon.
 - **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
@@ -132,7 +133,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ## 5. Synchronisation Engine Rules (`sync.sh`)
 
-- **Managed Files**: Engine updates to plugins, includes, git hooks, runners, and setup scripts are tracked in `sync.sh`'s `MANAGED_FILES` array.
+- **Managed Files**: Engine updates to plugins, includes, git hooks, and setup scripts are tracked in `sync.sh`'s `MANAGED_FILES` array. Legacy `.agents/scripts/` runner wrappers are no longer synced; `oude doctor --fix` deletes them in favour of the `oude` CLI (ADR 002).
 - **Drift Safety**: `sync.sh` never overwrites locally modified (dirty) files in a campaign vault unless `--force` is explicitly passed.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 

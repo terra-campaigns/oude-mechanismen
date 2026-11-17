@@ -2,6 +2,8 @@
 #
 # init_vault.sh — Idempotent one-time campaign vault bootstrapper.
 #
+# DEPRECATED: use `oude init <target>` (src/oude_mechanismen/cli.py) instead.
+# Retained only for CI compatibility; will be removed in a future release.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

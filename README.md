@@ -124,6 +124,11 @@ If you already have a Markdown-based Obsidian campaign vault:
 
 ---
 
+## Guides
+
+- [Vault Migration Guide](docs/MIGRATION_GUIDE.md) — move an existing vault off Google Drive onto `_gm-materials/` + Obsidian Sync (`drive_dir: .`), re-anchor `references.json`, and validate with `oude doctor` / `oude audit`.
+- [Dynamic Gem Operator Guide](docs/DYNAMIC_GEM.md) — install, configure, customise, and update the `oude-mechanismen` RubyGem that powers the Jekyll build in-memory.
+
 ## Updating the Engine
 
 To update downstream campaign vaults when a new release of `oude-mechanismen` is published:
