@@ -463,6 +463,20 @@ class TestExtractAndValidate(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             generate_digests.extract_pdf("nope.pdf", self.repo_root, out_dir=str(Path(self.temp_dir.name) / "out"))
 
+    def test_extract_covers_pages_before_first_outline_item(self):
+        pdf = Path(self.temp_dir.name) / "late_outline.pdf"
+        _make_pdf(pdf, [self.dense, self.dense, self.dense], outline=[("Chapter 1", 2)])
+        out_dir = Path(self.temp_dir.name) / "out"
+        manifest_path = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="text")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        spans = sorted((s["start_page"], s["end_page"]) for s in manifest["slices"])
+        covered = set()
+        for a, b in spans:
+            covered.update(range(a, b + 1))
+        self.assertEqual(covered, {1, 2, 3})
+        self.assertEqual(spans[0], (1, 2))
+        self.assertEqual(manifest["slices"][0]["title"], "Front Matter")
+
     def _write_valid_note(self, digest_dir, name="_index.md", folder="", with_link=False):
         target_dir = digest_dir / folder if folder else digest_dir
         target_dir.mkdir(parents=True, exist_ok=True)

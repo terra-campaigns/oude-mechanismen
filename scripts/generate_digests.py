@@ -496,6 +496,9 @@ def plan_extract_windows(
     """Flatten the outline into page-span windows sized below *max_bytes*; outline-less PDFs get one whole-book span."""
     total = len(reader.pages)
     spans = extract_pdf_outline(reader, max_depth=max_depth) or [("Whole Book", 1, total)]
+    if spans and spans[0][1] > 1:
+        # Pages before the first outline bookmark (cover, front matter) are still extracted.
+        spans = [("Front Matter", 1, spans[0][1] - 1)] + spans
     cache: Dict[int, Tuple[str, int]] = {}
     windows: List[Tuple[str, int, int]] = []
     for title, start, end in spans:
