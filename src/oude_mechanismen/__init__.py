@@ -22,7 +22,7 @@ def _get_version() -> str:
         from importlib.metadata import version
         return version("oude-mechanismen")
     except Exception:
-        return "0.5.0"
+        return "0.7.0"
 
 
 __version__: str = _get_version()
