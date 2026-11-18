@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# sync.sh — Synchronise the oude-mechanismen engine with downstream campaign repositories.
+# sync.sh — Legacy vault synchroniser (DEPRECATED).
+#
+# DEPRECATED: Superseded by the `oude-mechanismen` RubyGem (ADR 001), the
+# `oude` CLI via `uv` (ADR 002), and `oude doctor --fix`.
 #
 set -e
 
@@ -61,16 +64,8 @@ if [ ${#TARGET_REPOS[@]} -eq 0 ]; then
   fi
 fi
 
-# Manifest of engine-managed files:
-# Format: "source_in_engine:destination_in_vault:is_executable"
-# Jekyll plugins/includes/all-content.md are served in-memory by the RubyGem, and
-# legacy .agents/scripts/ runner wrappers are deleted by `oude doctor --fix`
-# (ADR 001/002), so neither is synced here anymore.
-MANAGED_FILES=(
-  "githooks/pre-commit:.githooks/pre-commit:true"
-  "requirements.txt:.agents/requirements.txt:false"
-  "templates/bin/setup.template:bin/setup:true"
-)
+# Manifest of engine-managed files (empty: all assets served via RubyGem or `oude` CLI).
+MANAGED_FILES=()
 
 TOTAL_OUTDATED=0
 
@@ -93,7 +88,8 @@ for REPO in "${TARGET_REPOS[@]}"; do
              "$ABS_REPO/imgs/gallery" \
              "$ABS_REPO/imgs/badges" \
              "$ABS_REPO/_sass/custom" \
-             "$ABS_REPO/.agents/context"
+             "$ABS_REPO/.agents/context" \
+             "$ABS_REPO/_gm-materials"
 
     scaffold_if_missing() {
       local src="$1"
@@ -118,26 +114,6 @@ for REPO in "${TARGET_REPOS[@]}"; do
     scaffold_if_missing "$SCRIPT_DIR/templates/jekyll/directory_index.md.template" "$ABS_REPO/directory/index.md"
     scaffold_if_missing "$SCRIPT_DIR/templates/jekyll/campaigns_index.md.template" "$ABS_REPO/campaigns/index.md"
     scaffold_if_missing "$SCRIPT_DIR/templates/jekyll/systems_index.md.template" "$ABS_REPO/systems/index.md"
-
-    # Configure skills discovery pointing to engine path
-    if [ ! -f "$ABS_REPO/.agents/skills.json" ]; then
-      cat << EOF > "$ABS_REPO/.agents/skills.json"
-{
-  "entries": [
-    {
-      "path": "$SCRIPT_DIR/skills"
-    },
-    {
-      "path": "../oude-mechanismen/skills"
-    },
-    {
-      "path": "~/Repos/oude-mechanismen/skills"
-    }
-  ]
-}
-EOF
-      echo "  + Scaffolded .agents/skills.json (pointing to $SCRIPT_DIR/skills)"
-    fi
 
     # Copy fallback badges if missing
     if [ -d "$SCRIPT_DIR/templates/badges" ]; then
@@ -188,119 +164,111 @@ EOF
   NEW_COUNT=0
   SYNCED_COUNT=0
 
-  for ITEM in "${MANAGED_FILES[@]}"; do
-    SRC_REL="${ITEM%%:*}"
-    REST="${ITEM#*:}"
-    DEST_REL="${REST%%:*}"
-    IS_EXEC="${REST#*:}"
+  if [ ${#MANAGED_FILES[@]} -gt 0 ]; then
+    for ITEM in "${MANAGED_FILES[@]}"; do
+      SRC_REL="${ITEM%%:*}"
+      REST="${ITEM#*:}"
+      DEST_REL="${REST%%:*}"
+      IS_EXEC="${REST#*:}"
 
-    SRC="$SCRIPT_DIR/$SRC_REL"
-    DEST="$ABS_REPO/$DEST_REL"
+      SRC="$SCRIPT_DIR/$SRC_REL"
+      DEST="$ABS_REPO/$DEST_REL"
 
-    if [ ! -f "$SRC" ]; then
-      echo "  [ERROR] Source file missing in engine: $SRC_REL"
-      continue
-    fi
+      if [ ! -f "$SRC" ]; then
+        echo "  [ERROR] Source file missing in engine: $SRC_REL"
+        continue
+      fi
 
-    if [ ! -f "$DEST" ]; then
-      NEW_COUNT=$((NEW_COUNT + 1))
-      STATUS="NEW"
-    elif cmp -s "$SRC" "$DEST"; then
-      SYNCED_COUNT=$((SYNCED_COUNT + 1))
-      STATUS="IN_SYNC"
-    else
-      # File exists and differs
-      # Check if destination has local unstaged or uncommitted changes in git
-      IS_DIRTY=false
-      if git -C "$ABS_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        if [ -n "$(git -C "$ABS_REPO" status --porcelain "$DEST_REL" 2>/dev/null)" ]; then
-          IS_DIRTY=true
+      if [ ! -f "$DEST" ]; then
+        NEW_COUNT=$((NEW_COUNT + 1))
+        STATUS="NEW"
+      elif cmp -s "$SRC" "$DEST"; then
+        SYNCED_COUNT=$((SYNCED_COUNT + 1))
+        STATUS="IN_SYNC"
+      else
+        # File exists and differs
+        # Check if destination has local unstaged or uncommitted changes in git
+        IS_DIRTY=false
+        if git -C "$ABS_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+          if [ -n "$(git -C "$ABS_REPO" status --porcelain "$DEST_REL" 2>/dev/null)" ]; then
+            IS_DIRTY=true
+          fi
+        fi
+
+        if [ "$IS_DIRTY" = true ]; then
+          DIRTY_COUNT=$((DIRTY_COUNT + 1))
+          STATUS="DIRTY"
+        else
+          OUTDATED_COUNT=$((OUTDATED_COUNT + 1))
+          STATUS="OUTDATED"
         fi
       fi
 
-      if [ "$IS_DIRTY" = true ]; then
-        DIRTY_COUNT=$((DIRTY_COUNT + 1))
-        STATUS="DIRTY"
-      else
-        OUTDATED_COUNT=$((OUTDATED_COUNT + 1))
-        STATUS="OUTDATED"
+      # Handle --diff output
+      if [ "$DIFF_MODE" = true ] && [ "$STATUS" != "IN_SYNC" ]; then
+        echo "--- Diff for $DEST_REL ($STATUS) ---"
+        if [ -f "$DEST" ]; then
+          diff -u "$DEST" "$SRC" || true
+        else
+          echo "(Destination file does not exist yet)"
+        fi
+        echo "-----------------------------------"
       fi
-    fi
 
-    # Handle --diff output
-    if [ "$DIFF_MODE" = true ] && [ "$STATUS" != "IN_SYNC" ]; then
-      echo "--- Diff for $DEST_REL ($STATUS) ---"
-      if [ -f "$DEST" ]; then
-        diff -u "$DEST" "$SRC" || true
+      # Handle reporting or execution
+      if [ "$CHECK_MODE" = true ]; then
+        case "$STATUS" in
+          IN_SYNC)
+            echo "  [IN SYNC]  $DEST_REL"
+            ;;
+          NEW)
+            echo "  [NEW]      $DEST_REL (missing in campaign vault)"
+            ;;
+          OUTDATED)
+            echo "  [OUTDATED] $DEST_REL (engine has updates)"
+            ;;
+          DIRTY)
+            echo "  [DIRTY]    $DEST_REL (target vault has local uncommitted modifications)"
+            ;;
+        esac
       else
-        echo "(Destination file does not exist yet)"
-      fi
-      echo "-----------------------------------"
-    fi
-
-    # Handle reporting or execution
-    if [ "$CHECK_MODE" = true ]; then
-      case "$STATUS" in
-        IN_SYNC)
-          echo "  [IN SYNC]  $DEST_REL"
-          ;;
-        NEW)
-          echo "  [NEW]      $DEST_REL (missing in campaign vault)"
-          ;;
-        OUTDATED)
-          echo "  [OUTDATED] $DEST_REL (engine has updates)"
-          ;;
-        DIRTY)
-          echo "  [DIRTY]    $DEST_REL (target vault has local uncommitted modifications)"
-          ;;
-      esac
-    else
-      # Real sync mode
-      case "$STATUS" in
-        IN_SYNC)
-          # Ensure executable bits are preserved even if content matches
-          if [ "$IS_EXEC" = "true" ] && [ ! -x "$DEST" ]; then
-            chmod +x "$DEST"
-          fi
-          ;;
-        NEW|OUTDATED)
-          mkdir -p "$(dirname "$DEST")"
-          cp "$SRC" "$DEST"
-          if [ "$IS_EXEC" = "true" ]; then
-            chmod +x "$DEST"
-          fi
-          echo "  ✓ Updated $DEST_REL"
-          ;;
-        DIRTY)
-          if [ "$FORCE_MODE" = true ]; then
+        # Real sync mode
+        case "$STATUS" in
+          IN_SYNC)
+            # Ensure executable bits are preserved even if content matches
+            if [ "$IS_EXEC" = "true" ] && [ ! -x "$DEST" ]; then
+              chmod +x "$DEST"
+            fi
+            ;;
+          NEW|OUTDATED)
             mkdir -p "$(dirname "$DEST")"
             cp "$SRC" "$DEST"
             if [ "$IS_EXEC" = "true" ]; then
               chmod +x "$DEST"
             fi
-            echo "  ✓ [FORCED] Overwrote $DEST_REL (was dirty)"
-          else
-            echo "  ⚠ [SKIPPED] $DEST_REL has local modifications in $ABS_REPO. Pass --force to overwrite."
-          fi
-          ;;
-      esac
-    fi
-  done
+            echo "  ✓ Updated $DEST_REL"
+            ;;
+          DIRTY)
+            if [ "$FORCE_MODE" = true ]; then
+              mkdir -p "$(dirname "$DEST")"
+              cp "$SRC" "$DEST"
+              if [ "$IS_EXEC" = "true" ]; then
+                chmod +x "$DEST"
+              fi
+              echo "  ✓ [FORCED] Overwrote $DEST_REL (was dirty)"
+            else
+              echo "  ⚠ [SKIPPED] $DEST_REL has local modifications in $ABS_REPO. Pass --force to overwrite."
+            fi
+            ;;
+        esac
+      fi
+    done
+  fi
 
   TOTAL_OUTDATED=$((TOTAL_OUTDATED + OUTDATED_COUNT + NEW_COUNT + DIRTY_COUNT))
 
   if [ "$CHECK_MODE" = false ]; then
-    # Configure git hooks in target repository
-    if git -C "$ABS_REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      git -C "$ABS_REPO" config core.hooksPath .githooks 2>/dev/null || true
-    fi
     echo "  ✓ Engine sync complete for $ABS_REPO ($((NEW_COUNT + OUTDATED_COUNT)) updated, $DIRTY_COUNT skipped)."
-
-    # Automatically run bin/setup if initialising
-    if [ "$INIT_MODE" = true ] && [ -x "$ABS_REPO/bin/setup" ]; then
-      echo "==> Running bin/setup in $ABS_REPO..."
-      (cd "$ABS_REPO" && ./bin/setup) || true
-    fi
   else
     echo "  Summary: $SYNCED_COUNT in-sync, $OUTDATED_COUNT outdated, $NEW_COUNT new, $DIRTY_COUNT dirty."
   fi

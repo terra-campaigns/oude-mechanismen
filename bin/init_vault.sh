@@ -3,7 +3,7 @@
 # init_vault.sh — Idempotent one-time campaign vault bootstrapper.
 #
 # DEPRECATED: use `oude init <target>` (src/oude_mechanismen/cli.py) instead.
-# Retained only for CI compatibility; will be removed in a future release.
+# Retained temporarily while legacy references and tests (tests/test_init_vault.py) remain.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +15,8 @@ echo "==> Initialising campaign vault at $ABS_REPO..."
 # 1. Directory topology
 mkdir -p "$ABS_REPO/campaigns" "$ABS_REPO/directory" "$ABS_REPO/systems" \
          "$ABS_REPO/imgs/gallery" "$ABS_REPO/imgs/badges" \
-         "$ABS_REPO/_sass/custom" "$ABS_REPO/.agents/context"
+         "$ABS_REPO/_sass/custom" "$ABS_REPO/.agents/context" \
+         "$ABS_REPO/_gm-materials"
 
 # 2. Starter template scaffolding (no-clobber)
 MAPPINGS=(
@@ -57,6 +58,8 @@ vendor/
 *_studio.html
 *_preview_*.png
 *_raw.*
+# Private GM materials (session summaries, session preps, digests)
+_gm-materials/
 EOF
   echo "  + Scaffolded .gitignore"
 fi

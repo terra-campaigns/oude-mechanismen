@@ -2,7 +2,7 @@
 
 Shared campaign engine, procedural agent skills, and Jekyll static site tooling for tabletop RPG campaign vaults.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](VERSION)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml/badge.svg)](https://github.com/terra-campaigns/oude-mechanismen/actions/workflows/ci.yml)
 
@@ -27,12 +27,12 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
 
 - **Tier 0 (Local Disk Air-Gap)**:
   Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
-1. **Tier 1 (Canonical Published Notes)**:
-   Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
-2. **Tier 2 (Active Table Decisions & Archival Notes)**:
-   Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in `_gm-materials/` (`session-summaries/`, `session-preps/`).
-3. **Tier 3 (External Reference Material & Sourcebooks)**:
-   Offline PDF rulebooks and setting digests in `_gm-materials/digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
+- **Tier 1 (Canonical Published Notes)**:
+  Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
+- **Tier 2 (Active Table Decisions & Archival Notes)**:
+  Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in `_gm-materials/` (`session-summaries/`, `session-preps/`).
+- **Tier 3 (External Reference Material & Sourcebooks)**:
+  Offline PDF rulebooks and setting digests in `_gm-materials/digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
 
 ---
 
@@ -62,7 +62,7 @@ When linked to your campaign vault, AI coding assistants (such as Antigravity, C
 - **macOS or Linux**
 - **Git**
 - **Ruby 3.1+** and **Bundler** (for local Jekyll preview)
-- **Python 3.10+** (for procedural runners)
+- **Python 3.11+** and **[`uv`](https://docs.astral.sh/uv/)** (for the `oude` CLI and procedural tooling)
 
 *(Optional for `/scribe-session` local air-gapped audio transcription & extraction)*:
 ```bash
@@ -77,14 +77,14 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
 
 ### Bootstrapping a New Campaign Vault
 
-1. Clone `oude-mechanismen`:
+1. Install the `oude` CLI and global skills (zero local engine clone required):
    ```bash
-   git clone https://github.com/terra-campaigns/oude-mechanismen.git ~/Repos/oude-mechanismen
+   uv tool install git+https://github.com/terra-campaigns/oude-mechanismen.git
+   oude install-skills
    ```
 
 2. Initialise your new campaign vault:
    ```bash
-   cd ~/Repos/oude-mechanismen
    oude init ~/Repos/my-new-campaign
    ```
 
@@ -92,12 +92,13 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
    Navigate to `~/Repos/my-new-campaign/.agents/AGENTS.md` and customise:
    - Setting Genre, Tone, and Cadence
    - Calibration Examples (Too flat vs In voice)
-   - Sourcebook PDF directory in `.agents/context/tier1_sources.yml`
+   - Sourcebook PDF path in `.agents/context/tier1_sources.yml` (defaults to `drive_dir: .` for in-vault `_gm-materials/`)
 
-4. Verify configuration, then launch the LAN preview:
+4. Install gems, compile the initial catalogue, verify health, and launch the LAN preview:
    ```bash
    cd ~/Repos/my-new-campaign
    bundle install
+   bundle exec jekyll build
    oude doctor
    bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
    ```
@@ -111,18 +112,17 @@ If you already have a Markdown-based Obsidian campaign vault:
 
 1. Run the initialiser against your existing vault folder:
    ```bash
-   cd ~/Repos/oude-mechanismen
    oude init /path/to/my-existing-vault
    ```
-   *`oude init` is non-destructive: it will never overwrite your existing notes or configuration files.*
+   *`oude init` is non-destructive: it will never overwrite your existing notes or configuration files, and registers global agent skills automatically.*
 
-2. Run the environment setup:
+2. Install gems, build the catalogue, and remediate legacy files:
    ```bash
    cd /path/to/my-existing-vault
-   ./bin/setup
+   bundle install
+   bundle exec jekyll build
+   oude doctor --fix
    ```
-
-3. Ensure `.agents/skills.json` points to your `oude-mechanismen/skills` folder.
 
 ---
 
@@ -133,25 +133,22 @@ If you already have a Markdown-based Obsidian campaign vault:
 
 ## Updating the Engine
 
-To update downstream campaign vaults when a new release of `oude-mechanismen` is published:
+To update the engine across downstream campaign vaults when a new release of `oude-mechanismen` is published:
 
-1. Pull the latest engine code:
+1. Update the RubyGem tag in the vault `Gemfile` and rebuild:
    ```bash
-   cd ~/Repos/oude-mechanismen
-   git pull origin main
+   cd ~/Repos/my-campaign
+   bundle update oude-mechanismen && bundle exec jekyll build
    ```
 
-2. Synchronise downstream vaults:
+2. Update the `oude` CLI, re-sync global skills, and audit the vault:
    ```bash
-   # Inspect what will change without modifying files:
-   ./sync.sh --check ~/Repos/my-campaign
-
-   # View unified diffs of updated engine templates:
-   ./sync.sh --check --diff ~/Repos/my-campaign
-
-   # Apply updates:
-   ./sync.sh ~/Repos/my-campaign
+   uv tool install --force git+https://github.com/terra-campaigns/oude-mechanismen.git
+   oude install-skills
+   oude doctor --fix
    ```
+
+See the [Dynamic Gem Operator Guide](docs/DYNAMIC_GEM.md) for tag-pinning details and troubleshooting.
 
 ---
 
