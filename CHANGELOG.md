@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **ADR 003 marked fully implemented** (Phases 1–3, v0.6.0–v0.7.0, PRs #38/#43/#47/#48/#51; operational acceptance in #55): status line and §5 roadmap checkboxes updated in `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md`.
+- **ADR 003 marked fully implemented** (Phases 1–3, v0.6.0–v0.7.0, PRs #38/#43/#47/#48/#51; operational acceptance in #55): status line and §5 Phase 3 roadmap checkbox updated in `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md`.
 
 ---
 

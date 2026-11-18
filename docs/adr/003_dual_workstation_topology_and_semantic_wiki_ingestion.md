@@ -441,7 +441,7 @@ Example entry in `.agents/context/references.json`:
 
 #### 3.5.5 Empirical Validation Plan
 
-`oude digest --extract` plus the `skills/digest-book/` skill are scoped for Phase 3 implementation. Before finalising the extraction prompts and tooling, empirical format and navigation experiments will be run against the following test cases, measuring note sizing adherence, link-graph navigability, and `references.json` index leanness:
+`oude digest --extract` plus the `skills/digest-book/` skill were delivered in Phase 3 (`v0.7.0`, PR #48). Extraction validation ran against the following test cases (measuring page coverage, slice byte caps, parser agreement, and `references.json` index leanness — see PR #48 comments), with full `/digest-book` operational runs tracked in [#55](https://github.com/terra-campaigns/oude-mechanismen/issues/55):
 
 - **Eclipse Phase (1st Edition)** ([PDFs](https://robboyle.wordpress.com/eclipse-phase-pdfs)) (dense core rulebook, lore, gear, and factions)
 - **BF1 Morgansfort** ([PDF](https://www.basicfantasy.org/downloads.html)) (classic settlement, wilderness, and multi-level dungeon module)
@@ -461,7 +461,7 @@ Example entry in `.agents/context/references.json`:
 ### Negative Consequences & Mitigations
 
 1. **Manual Ingestion Effort for Large Books**: Deep knowledge graph extraction from PDFs requires dedicated prompt execution.
-   - *Mitigation*: Automated via the forthcoming deterministic `oude digest --extract` helpers plus the harness-agnostic `skills/digest-book/` skill (Phase 3), following the Section 3.5 target format.
+   - *Mitigation*: Automated via the deterministic `oude digest --extract` / `--validate` helpers and the harness-agnostic `skills/digest-book/` skill (delivered in Phase 3, `v0.7.0`), following the Section 3.5 target format.
 2. **Obsidian Sync File Count**: Creating dozens of sub-notes for a single sourcebook increases vault note count.
    - *Mitigation*: Keep digests scoped within modular sub-folders (`_gm-materials/digests/<source>/`) with the Section 3.5 sizing rule (~30–120 lines per note), avoiding monolithic single-file dense matrices.
 
