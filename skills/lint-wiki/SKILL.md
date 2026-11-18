@@ -6,7 +6,7 @@ argument-hint: none (scans the full repo)
 
 # Lint Wiki
 
-Run the deterministic structural linter over the campaign repo, then interpret its findings into a diagnostic report artifact with actionable findings grouped by severity.
+Run the deterministic structural linter over the campaign repo, then interpret its findings into a diagnostic report artefact with actionable findings grouped by severity.
 
 ## Running the linter
 
@@ -32,7 +32,7 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 - **dead-link (FAIL):** resolve the path relative to the linking file; fix the target or the link.
 - **orphan (WARN):** no inbound links from `directory/`, `systems/`, or `statblocks/` notes (never `campaigns/` session logs). May be intentional; the GM decides.
 - **stub (WARN):** fewer than 3 prose lines after front matter. Flesh out or remove.
-- **unused-image (WARN):** file under `imgs/` (excluding `imgs/gallery/`) referenced nowhere.
+- **unused-image (WARN):** file under `imgs/` (excluding `imgs/gallery/` and the engine fallback badges in `imgs/badges/`, which are consumed dynamically) referenced nowhere.
 - **deprecated-hook (WARN):** migrate `hooks:` front matter to body prose or remove it.
 - **catalogue (FAIL/WARN):** missing/stale `catalog.json`, sha mismatches (recompile via the `data_extractor` plugin or `oude doctor --fix`), unindexed notes, null summaries.
 - **front-matter (FAIL/WARN):** missing `title`/`parent` in `campaigns/`, `directory/`, `systems/`; non-default `layout` outside the exempt pages.
@@ -40,7 +40,7 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 
 ## Output format
 
-Write the report as a markdown artifact. Use this structure:
+Write the report as a markdown artefact. Use this structure:
 
 ````markdown
 # Wiki Lint Report

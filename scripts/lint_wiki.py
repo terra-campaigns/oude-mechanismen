@@ -131,7 +131,7 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str, int]:
     if not match:
         return {}, text, 0
     fm_raw, body = match.group(1), match.group(2)
-    fm_line_count = fm_raw.count("\n") + 3  # opening fence, fields, closing fence
+    fm_line_count = text[: match.start(2)].count("\n")  # lines before the body
     try:
         fm = yaml.safe_load(fm_raw) or {}
     except yaml.YAMLError:
@@ -142,11 +142,28 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str, int]:
 
 
 def extract_links(text: str) -> List[Tuple[int, str, bool]]:
-    """Extract (line number, target, is_image) for every markdown link/image."""
+    """Extract (line number, target, is_image) for every markdown link/image.
+
+    Skips YAML front matter and fenced code blocks, and ignores Liquid
+    expressions (link text or target containing {{ }}), mirroring the link
+    scan in jekyll/_plugins/data_extractor.rb. Line numbers refer to the
+    original file, front matter included.
+    """
+    _, body, fm_lines = parse_front_matter(text)
     links: List[Tuple[int, str, bool]] = []
-    for line_no, line in enumerate(text.splitlines(), start=1):
+    in_fence = False
+    for line_no, line in enumerate(body.splitlines(), start=1):
+        stripped = line.strip()
+        if re.match(r"^(```|~~~)", stripped):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         for m in LINK_RE.finditer(line):
-            links.append((line_no, m.group(3), m.group(1) == "!"))
+            label, target = m.group(2), m.group(3)
+            if "{{" in label or "}}" in label or "{{" in target or "}}" in target:
+                continue
+            links.append((line_no + fm_lines, target, m.group(1) == "!"))
     return links
 
 
@@ -185,6 +202,15 @@ def prose_line_count(body: str) -> int:
 def content_sha(path: Path) -> str:
     """First 8 hex chars of the SHA-256 of the raw file, matching data_extractor.rb."""
     return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+
+
+def is_section_index(root: Path, path: Path) -> bool:
+    """True for top-level section index pages (e.g. directory/index.md)."""
+    try:
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    return path.name == "index.md" and len(rel.split("/")) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +281,8 @@ def check_stubs(
 ) -> None:
     """Check 3: flag files whose body carries fewer than 3 prose lines."""
     for path in files:
+        if is_section_index(root, path):
+            continue  # section index pages are Liquid/include scaffolds by design
         text = path.read_text(encoding="utf-8", errors="replace")
         _, body, _ = parse_front_matter(text)
         count = prose_line_count(body)
@@ -273,7 +301,7 @@ def check_stubs(
 def check_unused_images(
     root: Path, files: List[Path], findings: List[Finding]
 ) -> None:
-    """Check 4: every file under imgs/ (except imgs/gallery/) is referenced."""
+    """Check 4: every file under imgs/ (except gallery/ and badges/) is referenced."""
     imgs_root = root / "imgs"
     if not imgs_root.is_dir():
         return
@@ -307,8 +335,8 @@ def check_unused_images(
         if not image.is_file():
             continue
         rel = image.relative_to(root).as_posix()
-        if rel.startswith("imgs/gallery/"):
-            continue
+        if rel.startswith("imgs/gallery/") or rel.startswith("imgs/badges/"):
+            continue  # gallery images and engine fallback badges are consumed dynamically
         resolved = image.resolve()
         if resolved in referenced:
             continue
@@ -440,7 +468,10 @@ def check_front_matter(
         text = path.read_text(encoding="utf-8", errors="replace")
         fm, _, fm_lines = parse_front_matter(text)
         if in_canon_dir:
-            for key in ("title", "parent"):
+            required = ["title"]
+            if not (is_section_index(root, path) or fm.get("has_children")):
+                required.append("parent")
+            for key in required:
                 if not fm.get(key):
                     findings.append(
                         Finding(
@@ -507,14 +538,21 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                 candidate = root / p
                 p = candidate if candidate.exists() else Path(raw).resolve()
             if p.is_dir():
-                files.extend(sorted(p.rglob("*.md")))
+                for md in sorted(p.rglob("*.md")):
+                    try:
+                        md_rel = md.relative_to(root).as_posix()
+                    except ValueError:
+                        md_rel = None
+                    if md_rel and is_excluded(md_rel, exclude_paths):
+                        continue
+                    files.append(md)
             elif p.is_file():
                 files.append(p)
             else:
                 raise FileNotFoundError(f"path not found: {raw}")
         files = sorted(set(f.resolve() for f in files))
         report = WikiReport(root=str(root), mode="targeted", files_scanned=len(files))
-        report.checks_skipped = ["orphan", "unused-image", "catalogue"]
+        report.checks_skipped = ["orphan", "unused-image", "catalogue", "duplicate-title"]
     else:
         files = iter_content_files(root, include_paths, exclude_paths)
         report = WikiReport(root=str(root), mode="full", files_scanned=len(files))
@@ -528,7 +566,8 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     check_stubs(root, files, f)
     check_deprecated_hooks(root, files, f)
     check_front_matter(root, files, f)
-    check_duplicate_titles(root, files, f)
+    if report.mode == "full":
+        check_duplicate_titles(root, files, f)
     return report
 
 

@@ -202,18 +202,19 @@ class TestStubs(LintWikiTestCase):
 
 
 class TestUnusedImages(LintWikiTestCase):
-    def test_unused_badge_is_warn_and_gallery_exempt(self):
-        self._write("imgs/badges/unused.png", "PNG")
+    def test_unused_image_is_warn_but_gallery_and_badges_exempt(self):
+        self._write("imgs/extra/unused.png", "PNG")
         self._write("imgs/gallery/hero.png", "PNG")
-        self._write("imgs/badges/used.png", "PNG")
+        self._write("imgs/badges/fallback.png", "PNG")
         ep = (self.root / "campaigns/arc/ep001.md").read_text(encoding="utf-8")
         self._write(
             "campaigns/arc/ep001.md",
             ep.replace("Prose sentence number 4.", "Prose sentence number 4.\n![badge](../imgs/badges/used.png)"),
         )
+        self._write("imgs/badges/used.png", "PNG")
         report = lint_wiki.lint_wiki(self.root)
         unused = self._findings(report, "unused-image")
-        self.assertEqual([u.file for u in unused], ["imgs/badges/unused.png"])
+        self.assertEqual([u.file for u in unused], ["imgs/extra/unused.png"])
 
     def test_front_matter_image_reference_counts(self):
         self._write("imgs/badges/fm.png", "PNG")
@@ -354,6 +355,82 @@ class TestExitCodes(LintWikiTestCase):
     def test_bad_root_returns_two(self):
         rc, _ = self._run_main(["--root", str(self.root / "nope")])
         self.assertEqual(rc, 2)
+
+
+class TestPrReviewRegressions(LintWikiTestCase):
+    """Regression tests for the external PR #50 review findings."""
+
+    def test_section_index_pages_exempt_from_parent_and_stub(self):
+        """Section index.md (has_children, no parent, Liquid-only body) is clean."""
+        self._write(
+            "directory/index.md",
+            "---\nlayout: default\ntitle: Directory\nhas_children: true\n---\n\n{% include header_directories.md %}\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "front-matter"), [])
+        self.assertEqual(self._findings(report, "stub"), [])
+
+    def test_links_inside_code_fences_are_ignored(self):
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "Prose sentence number 2.\n```\nSee [example](missing.md).\n```",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
+    def test_liquid_link_targets_are_ignored(self):
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "Prose sentence number 2.\n![img]({{ '/imgs/a.png' | relative_url }}) and [x]({{ page.url }}).",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
+    def test_invalid_catalog_json_is_fail(self):
+        self._write(".agents/context/catalog.json", "{not valid json")
+        report = lint_wiki.lint_wiki(self.root)
+        cat = self._findings(report, "catalogue")
+        self.assertTrue(any(c.severity == "FAIL" and "not valid JSON" in c.message for c in cat))
+
+    def test_null_summary_for_non_stub_is_warn(self):
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps(
+                {
+                    "entries": [
+                        {
+                            "path": "campaigns/arc/ep001.md",
+                            "title": "Episode 001",
+                            "summary": "ok",
+                            "sha": lint_wiki.content_sha(self.root / "campaigns/arc/ep001.md"),
+                        },
+                        {
+                            "path": "directory/place.md",
+                            "title": "The Place",
+                            "summary": None,
+                            "sha": lint_wiki.content_sha(self.root / "directory/place.md"),
+                        },
+                    ]
+                }
+            ),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        cat = [c for c in self._findings(report, "catalogue") if "summary is null" in c.message]
+        self.assertEqual([c.file for c in cat], ["directory/place.md"])
+        self.assertEqual(cat[0].severity, "WARN")
+
+    def test_targeted_dir_scan_respects_exclude_paths(self):
+        self._write("_TODO.md", note_content("Scratch").replace("Prose sentence number 1.", "See [x](nope.md)."))
+        report = lint_wiki.lint_wiki(self.root, paths=["."])
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
+    def test_targeted_mode_skips_duplicate_title(self):
+        self._write("directory/place2.md", note_content("The Place"))
+        report = lint_wiki.lint_wiki(self.root, paths=["directory/place2.md"])
+        self.assertIn("duplicate-title", report.checks_skipped)
+        self.assertEqual(self._findings(report, "duplicate-title"), [])
 
 
 if __name__ == "__main__":
