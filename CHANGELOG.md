@@ -9,12 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Deterministic Wiki Linter (`scripts/lint_wiki.py`, `oude lint-wiki`, `#19`)**:
+  - New Gate 3 CLI offloading all structural wiki checks from the LLM-based `lint-wiki` skill: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, `catalog.json` catalogue health (sha drift, unindexed/stale notes, null summaries), missing `title`/`parent` front matter, and duplicate titles.
+  - Text and `--format json` machine-readable reports, targeted path scanning (file-level checks only), `--root`, and `--strict` (WARN becomes exit 1); exit 1 on FAIL findings, 2 on usage errors.
+  - Registered `lint-wiki` pass-through in `src/oude_mechanismen/cli.py`, added runner template `templates/runners/lint_wiki.py.template` to `sync.sh` `MANAGED_FILES` (pre-sync distribution), added a non-fatal Gate 3 smoke check to `bin/init_vault.sh`, rewrote `skills/lint-wiki/SKILL.md` to run and interpret the CLI, and added `tests/test_lint_wiki.py` (34 tests).
+
 ### Changed
 
 - **Phase 2 Zero-Wrapper LAN Preview & ADR 003 Amendment (Design 004 Stage B, `#44`)**:
   - Amended `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md` (§2 Layer 4, §3.4, §3.5, §4, §5): dropped the planned `oude serve` wrapper and `_config_dev.yml` overlay in favour of pre-flight `oude doctor` plus `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""` (`use_wsrv` stays disabled outside `JEKYLL_ENV=production`), and `oude digest` + `skills/digest-book/` replacing `oude digest-deep`.
   - Updated `README.md` quickstart: `oude init` instead of `./sync.sh --init`, `_gm-materials/` instead of `_sessions/` / `_digests/`, pre-serve `oude doctor`, and LAN preview at `http://artemis.local:4000` (avahi-daemon) with non-mDNS IP fallback.
   - Marked Design 004 status as Accepted.
+
+### Fixed
+
+- **`scripts/lint_wiki.py` (PR #50 external review)**: exempt top-level section `index.md` pages (`has_children`) from the `parent:` requirement and the stub check; skip fenced code blocks, front matter, and Liquid `{{ }}` targets when scanning links; exempt `imgs/badges/` fallback badges from the unused-image check; apply `exclude_paths` when expanding directories in targeted mode and list `duplicate-title` under `checks_skipped` there; register `lint_wiki.py` in `LEGACY_RUNNER_SCRIPTS` so `oude doctor --fix` prunes the runner; British spelling (`artefact`) in `skills/lint-wiki/SKILL.md`.
 
 ---
 

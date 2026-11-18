@@ -42,6 +42,7 @@ jobs:
           uv tool install --force .
           oude --version
           oude lint --help
+          oude lint-wiki --help
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
