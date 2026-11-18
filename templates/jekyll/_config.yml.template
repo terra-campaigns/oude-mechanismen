@@ -29,7 +29,6 @@ nav_sort: nav_order
 # Exclude repository and engine metadata from Jekyll static build
 exclude:
   - ".agents"
-  - ".githooks"
   - ".obsidian"
   - "_gm-materials"
   - "bin"
