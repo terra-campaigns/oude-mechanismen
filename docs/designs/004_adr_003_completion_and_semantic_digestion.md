@@ -1,7 +1,7 @@
 # ADR 003 Completion: Vault Migration, LAN Preview, and Semantic Wiki Digestion
 
 * **Author:** `efsalvarenga`
-* **Status:** Proposed
+* **Status:** Accepted (2026-11-17; Stage A implemented in v0.6.1 via PR #43)
 * **Date:** 2026-11-15
 
 ***
@@ -42,7 +42,7 @@ Campaign operators (`efsalvarenga`) still cannot move active campaign vaults (`h
 
 ## Open Questions
 
-*(Stage C empirical sweep (PR #48, closes #45) found the provisional `80` lets image-heavy pages through and that ~25% of dense two-column Eclipse Phase slices interleave in text mode — automatic interleave detection and threshold calibration are tracked in [#49](https://github.com/terra-campaigns/oude-mechanismen/issues/49).)*
+*(Adopted provisionally at `80`; the Stage C empirical sweep (PR #48, closes #45) found it lets image-heavy pages through and that ~25% of dense two-column Eclipse Phase slices interleave in text mode — automatic interleave detection and threshold calibration are tracked in [#49](https://github.com/terra-campaigns/oude-mechanismen/issues/49).)*
 
 * **Stage C scanned-page fallback threshold**: Exact minimum extractable-character-per-page threshold triggering automatic `.pdf` slice fallback under `--extract` (provisional default of `80` pending Stage C empirical calibration against *BF1 Morgansfort* and *Eclipse Phase 1st Edition*; setting this too high emits extra `.pdf` slices, while setting it too low yields sparse `.txt` slices mitigated via manual `--format pdf`).
 
