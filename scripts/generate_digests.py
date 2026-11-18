@@ -22,6 +22,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote
 import yaml
 
 try:
@@ -92,6 +93,27 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
     raise FileNotFoundError(f"Repository root '{repo_root}' does not exist or is not a directory.")
 
 
+def _parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, str, Optional[str]]:
+    """Split leading YAML frontmatter from *content*.
+
+    Returns (mapping_or_None, fm_prefix, body, error_or_None). Only YAML mapping
+    headers populate the dict; empty, scalar, or list headers return an error string
+    while preserving fm_prefix='' and body=content for callers that tolerate bare text.
+    """
+    if not content.startswith("---"):
+        return None, "", content, "missing YAML frontmatter block"
+    fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
+    if not fm_match:
+        return None, "", content, "malformed frontmatter delimiters"
+    try:
+        loaded = yaml.safe_load(fm_match.group(1))
+    except yaml.YAMLError as exc:
+        return None, "", content, f"malformed YAML frontmatter: {exc}"
+    if not isinstance(loaded, dict):
+        return None, "", content, f"frontmatter must be a YAML mapping, got {type(loaded).__name__}"
+    return loaded, content[: fm_match.end()], content[fm_match.end() :], None
+
+
 def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = False):
     digests_dir = drive_dir / "_gm-materials" / "digests"
     if not digests_dir.exists():
@@ -107,22 +129,10 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
-        frontmatter: Dict[str, Any] = {}
-        fm_prefix = ""
-        body = content
-        if content.startswith("---"):
-            fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
-            if fm_match:
-                # Only split frontmatter when the leading '---' block parses as a YAML mapping;
-                # Markdown thematic breaks and non-mapping YAML (lists, scalars) stay in the body.
-                try:
-                    loaded = yaml.safe_load(fm_match.group(1))
-                except yaml.YAMLError:
-                    loaded = None
-                if isinstance(loaded, dict):
-                    fm_prefix = content[: fm_match.end()]
-                    body = content[fm_match.end() :]
-                    frontmatter = loaded
+        # Only split frontmatter when the leading '---' block parses as a YAML mapping;
+        # Markdown thematic breaks and non-mapping YAML (lists, scalars) stay in the body.
+        loaded, fm_prefix, body, _ = _parse_frontmatter(content)
+        frontmatter: Dict[str, Any] = loaded if loaded is not None else {}
 
         if clean_headings:
             cleaned_body = ensure_heading_blank_lines(body)
@@ -146,10 +156,8 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
         # 2. Parse Source PDF
         raw_src = None
-        src_from_frontmatter = False
         if frontmatter.get("source_pdf") is not None and str(frontmatter.get("source_pdf")).strip():
             raw_src = str(frontmatter["source_pdf"]).strip()
-            src_from_frontmatter = True
         else:
             for line in body_lines[:10]:
                 m = re.search(r"(?:Source(?:\s+PDF)?):\s*(?:\*\*\s*)?(?:Google Drive\s*)?`([^`]+)`", line, flags=re.IGNORECASE)
@@ -335,14 +343,7 @@ def scaffold_digest(
     # Resolve the explicit PDF path; never scan drive_dir for candidates.
     resolved = _resolve_pdf_path(drive_dir, pdf_path)
 
-    # Portable identifier: explicit override, drive-relative POSIX path, or basename.
-    if source_pdf:
-        rel_path = source_pdf
-    else:
-        try:
-            rel_path = resolved.relative_to(drive_dir.resolve()).as_posix()
-        except ValueError:
-            rel_path = resolved.name
+    rel_path = _portable_source_pdf(resolved, drive_dir, source_pdf)
 
     if custom_slug:
         slug = slugify(custom_slug)
@@ -420,6 +421,16 @@ def scaffold_digest(
     return out_file
 
 
+def _portable_source_pdf(resolved: Path, drive_dir: Path, source_pdf: Optional[str] = None) -> str:
+    """Portable identifier: explicit override, drive-relative POSIX path, or basename."""
+    if source_pdf:
+        return source_pdf
+    try:
+        return resolved.relative_to(drive_dir.resolve()).as_posix()
+    except ValueError:
+        return resolved.name
+
+
 def _resolve_pdf_path(drive_dir: Path, pdf_path: str) -> Path:
     """Resolve an explicit PDF path (CWD-relative first, then drive_dir-relative); never scan for candidates."""
     raw = Path(pdf_path).expanduser()
@@ -493,7 +504,11 @@ def _split_window(
 
 
 def plan_extract_windows(
-    reader: Any, max_depth: int, chunk_pages: int, max_bytes: int
+    reader: Any,
+    max_depth: int,
+    chunk_pages: int,
+    max_bytes: int,
+    skip_text_sizing: bool = False,
 ) -> Tuple[List[Tuple[str, int, int]], Dict[int, Tuple[str, int]]]:
     """Flatten the outline into page-span windows sized below *max_bytes*; outline-less PDFs get one whole-book span."""
     total = len(reader.pages)
@@ -502,6 +517,8 @@ def plan_extract_windows(
         # Pages before the first outline bookmark (cover, front matter) are still extracted.
         spans = [("Front Matter", 1, spans[0][1] - 1)] + spans
     cache: Dict[int, Tuple[str, int]] = {}
+    if skip_text_sizing:
+        return spans, cache
     windows: List[Tuple[str, int, int]] = []
     for title, start, end in spans:
         windows.extend(_split_window(title, start, end, chunk_pages, max_bytes, reader, cache))
@@ -521,51 +538,65 @@ def _cut_prefix(text: str, max_bytes: int) -> int:
 
 
 def _split_single_page(body: str, page_no: int, max_bytes: int) -> List[str]:
-    """Line-split a single oversized page into <= *max_bytes* parts, each prefixed with a '--- Page N (part K) ---' marker."""
-    parts: List[str] = []
-    cur = ""
-    for line in body.splitlines(keepends=True):
-        candidate = cur + line
-        while candidate and len(candidate.encode("utf-8")) > max_bytes:
-            cut = _cut_prefix(candidate, max_bytes)
-            parts.append(candidate[:cut])
-            candidate = candidate[cut:]
-        cur = candidate
-    if cur:
-        parts.append(cur)
+    """Line-split a single oversized page into <= *max_bytes* parts, accounting upfront for '--- Page N (part K) ---' markers."""
     marked: List[str] = []
-    for k, part in enumerate(parts or [""], start=1):
-        marker = f"--- Page {page_no} (part {k}) ---\n"
-        room = max(1, max_bytes - len(marker.encode("utf-8")))
-        if len(part.encode("utf-8")) > room:
-            part = part[: _cut_prefix(part, room)]
-        marked.append(marker + part)
+    cur = ""
+    k = 1
+
+    def part_room(part_idx: int) -> Tuple[str, int]:
+        marker = f"--- Page {page_no} (part {part_idx}) ---\n"
+        room = max_bytes - len(marker.encode("utf-8"))
+        if room < 4:
+            raise ValueError(f"max_bytes ({max_bytes}) too small to fit page part marker and UTF-8 text")
+        return marker, room
+
+    for line in body.splitlines(keepends=True):
+        while line:
+            marker, room = part_room(k)
+            if len((cur + line).encode("utf-8")) <= room:
+                cur += line
+                line = ""
+            elif cur:
+                marked.append(marker + cur)
+                cur = ""
+                k += 1
+            else:
+                cut = _cut_prefix(line, room)
+                marked.append(marker + line[:cut])
+                line = line[cut:]
+                k += 1
+    if cur or not marked:
+        marker, _ = part_room(k)
+        marked.append(marker + cur)
     return marked
 
 
-def _consecutive_runs(pages: List[int]) -> List[Tuple[int, int]]:
-    """Group sorted page numbers into maximal consecutive (start, end) runs."""
-    runs: List[Tuple[int, int]] = []
-    for p in pages:
-        if runs and p == runs[-1][1] + 1:
-            runs[-1] = (runs[-1][0], p)
-        else:
-            runs.append((p, p))
-    return runs
-
-
-def _parse_page_ranges(spec: str) -> set:
-    """Parse a page-range spec like '2,5-8,12' into a set of 1-based page numbers."""
+def _parse_page_ranges(spec: str, total_pages: Optional[int] = None) -> set:
+    """Parse a page-range spec like '2,5-8,12' into a validated set of 1-based page numbers."""
     pages: set = set()
-    for part in spec.split(","):
-        part = part.strip()
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
         if not part:
             continue
+        if not re.match(r"^\d+(?:-\d+)?$", part):
+            raise ValueError(f"Invalid --pages token '{part}' in '{spec}'; expected 'N' or 'A-B'.")
         if "-" in part:
-            a, b = part.split("-", 1)
-            pages.update(range(int(a), int(b) + 1))
+            a_str, b_str = part.split("-", 1)
+            a, b = int(a_str), int(b_str)
+            if a < 1 or b < a:
+                raise ValueError(f"Invalid --pages range '{part}' in '{spec}'; expected 1 <= A <= B.")
+            if total_pages is not None and b > total_pages:
+                raise ValueError(f"Page range '{part}' exceeds PDF page count ({total_pages}).")
+            pages.update(range(a, b + 1))
         else:
-            pages.add(int(part))
+            p = int(part)
+            if p < 1:
+                raise ValueError(f"Invalid --pages number '{part}' in '{spec}'; expected >= 1.")
+            if total_pages is not None and p > total_pages:
+                raise ValueError(f"Page {p} exceeds PDF page count ({total_pages}).")
+            pages.add(p)
+    if not pages:
+        raise ValueError(f"Empty --pages specification '{spec}'.")
     return pages
 
 
@@ -580,6 +611,7 @@ def extract_pdf(
     max_bytes: int = 38000,
     min_chars_per_page: int = 80,
     page_spec: Optional[str] = None,
+    source_pdf: Optional[str] = None,
 ) -> Path:
     """Extract bounded page-tagged slices from an explicit PDF into *out_dir* plus a manifest.json.
 
@@ -587,17 +619,21 @@ def extract_pdf(
     emits PdfWriter page-range slices; format="auto" falls back to .pdf per page when the
     extracted character density drops below *min_chars_per_page*. With *page_spec* (e.g.
     "209-211,261"), those pages are forced to the requested format while all other pages keep
-    their auto decisions, and the manifest is rebuilt for the whole book — used to re-extract
-    interleaving-flagged pages as .pdf slices.
+    their prior (or auto) decisions, and the manifest is rebuilt in monotonic page order.
     """
     if pypdf is None:
         raise ImportError("pypdf is required for PDF extraction. Please install it using 'pip install pypdf'.")
     resolved = _resolve_pdf_path(drive_dir, pdf_path)
+    portable_src = _portable_source_pdf(resolved, drive_dir, source_pdf)
     slug = slugify(re.sub(r"[-_]v\d+.*$", "", resolved.stem, flags=re.IGNORECASE))
     target_dir = Path(out_dir) if out_dir else Path(tempfile.gettempdir()) / "oude-extract" / slug
-    target_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = target_dir / "manifest.json"
-    page_filter = _parse_page_ranges(page_spec) if page_spec else None
+
+    reader = pypdf.PdfReader(str(resolved))
+    total_pages = len(reader.pages)
+    page_filter = _parse_page_ranges(page_spec, total_pages=total_pages) if page_spec else None
+
+    target_dir.mkdir(parents=True, exist_ok=True)
     if page_filter is None:
         for old in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
             old.unlink()
@@ -607,123 +643,137 @@ def extract_pdf(
     # On --pages override runs, carry over per-page format decisions from the prior manifest
     # so earlier overrides are preserved instead of reverting to auto.
     prior: Dict[int, Tuple[str, Optional[str]]] = {}
+    prior_format_requested: Optional[str] = None
     if page_filter is not None and manifest_path.exists():
         old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        prior_format_requested = old_manifest.get("format_requested")
         for s in old_manifest.get("slices", []):
             for p in range(s["start_page"], s["end_page"] + 1):
                 prior[p] = (s["format"], s.get("auto_fallback_reason"))
 
-    reader = pypdf.PdfReader(str(resolved))
-    total_pages = len(reader.pages)
-    windows, cache = plan_extract_windows(reader, max_depth, chunk_pages, max_bytes)
-
+    skip_text_sizing = format == "pdf" and (
+        page_filter is None or (bool(prior) and not any(fmt == "text" for fmt, _ in prior.values()))
+    )
+    windows, cache = plan_extract_windows(
+        reader, max_depth, chunk_pages, max_bytes, skip_text_sizing=skip_text_sizing
+    )
     forced = set(page_filter) if page_filter is not None else set()
+
+    def resolve_page_format(p: int) -> Tuple[str, Optional[str]]:
+        if page_filter is not None and p not in forced:
+            if p in prior:
+                return prior[p]
+            # Unforced pages without a prior manifest default to auto density checks.
+            if len(_page_text(reader, p, cache)) < min_chars_per_page:
+                return "pdf", (
+                    f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
+                    f"below {min_chars_per_page} chars/page threshold"
+                )
+            return "text", None
+        if format == "auto":
+            if len(_page_text(reader, p, cache)) < min_chars_per_page:
+                return "pdf", (
+                    f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
+                    f"below {min_chars_per_page} chars/page threshold"
+                )
+            return "text", None
+        return format, None
 
     slices: List[Dict[str, Any]] = []
     index = 0
     for title, start, end in windows:
-        all_pages = list(range(start, end + 1))
+        runs: List[Tuple[str, int, int]] = []
+        reasons_by_page: Dict[int, str] = {}
+        for p in range(start, end + 1):
+            fmt, reason = resolve_page_format(p)
+            if reason:
+                reasons_by_page[p] = reason
+            if runs and runs[-1][0] == fmt and p == runs[-1][2] + 1:
+                runs[-1] = (fmt, runs[-1][1], p)
+            else:
+                runs.append((fmt, p, p))
 
-        def page_format(p: int) -> str:
-            if p in forced:
-                return format
-            if page_filter is not None and p in prior:
-                return prior[p][0]
-            if format == "auto":
-                return "pdf" if len(_page_text(reader, p, cache)) < min_chars_per_page else "text"
-            return format
-
-        sparse = [p for p in all_pages if page_format(p) == "pdf"]
-        dense = [p for p in all_pages if page_format(p) != "pdf"]
-        fallback_for: Dict[int, str] = {}
-        for p in sparse:
-            if p in forced:
-                continue  # explicit --pages override: no fallback reason
-            if page_filter is not None and p in prior and prior[p][1]:
-                fallback_for[p] = prior[p][1]
-            elif format == "auto":
-                fallback_for[p] = (f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
-                                   f"below {min_chars_per_page} chars/page threshold")
-        sparse_runs = _consecutive_runs(sparse)
-        dense_runs = _consecutive_runs(dense)
-
-        # Sparse pages (auto mode) become .pdf slices, grouped by pdf_slice_pages.
-        for run_start, run_end in sparse_runs:
-            p = run_start
-            while p <= run_end:
-                e = min(run_end, p + pdf_slice_pages - 1)
+        for fmt, run_start, run_end in runs:
+            if fmt == "pdf":
+                p = run_start
+                while p <= run_end:
+                    e = min(run_end, p + pdf_slice_pages - 1)
+                    index += 1
+                    fname = f"{index:03d}_{slugify(title)}_pp{p}-{e}.pdf"
+                    writer = pypdf.PdfWriter()
+                    for pg in range(p, e + 1):
+                        writer.add_page(reader.pages[pg - 1])
+                    with open(target_dir / fname, "wb") as fh:
+                        writer.write(fh)
+                    sub_chars = (
+                        sum(len(_page_text(reader, pg, cache)) for pg in range(p, e + 1))
+                        if not skip_text_sizing
+                        else 0
+                    )
+                    slice_reason = next(
+                        (reasons_by_page[pg] for pg in range(p, e + 1) if reasons_by_page.get(pg)),
+                        None,
+                    )
+                    slices.append({
+                        "index": index,
+                        "title": title,
+                        "start_page": p,
+                        "end_page": e,
+                        "format": "pdf",
+                        "path": fname,
+                        "byte_size": (target_dir / fname).stat().st_size,
+                        "char_count": sub_chars,
+                        "auto_fallback_reason": slice_reason,
+                    })
+                    p = e + 1
+            else:
+                run_text = "".join(
+                    f"--- Page {p} ---\n{_page_text(reader, p, cache)}\n"
+                    for p in range(run_start, run_end + 1)
+                )
+                byte_size = len(run_text.encode("utf-8"))
+                if byte_size > max_bytes and run_start == run_end:
+                    for part in _split_single_page(_page_text(reader, run_start, cache), run_start, max_bytes):
+                        index += 1
+                        fname = f"{index:03d}_{slugify(title)}_p{run_start}_part.txt"
+                        (target_dir / fname).write_text(part, encoding="utf-8")
+                        slices.append({
+                            "index": index,
+                            "title": f"{title} (part)",
+                            "start_page": run_start,
+                            "end_page": run_start,
+                            "format": "text",
+                            "path": fname,
+                            "byte_size": len(part.encode("utf-8")),
+                            "char_count": len(part),
+                            "auto_fallback_reason": None,
+                        })
+                    continue
                 index += 1
-                fname = f"{index:03d}_{slugify(title)}_pp{p}-{e}.pdf"
-                writer = pypdf.PdfWriter()
-                for pg in range(p, e + 1):
-                    writer.add_page(reader.pages[pg - 1])
-                with open(target_dir / fname, "wb") as fh:
-                    writer.write(fh)
-                sub_chars = sum(len(_page_text(reader, pg, cache)) for pg in range(p, e + 1))
+                fname = f"{index:03d}_{slugify(title)}.txt"
+                (target_dir / fname).write_text(run_text, encoding="utf-8")
                 slices.append({
                     "index": index,
                     "title": title,
-                    "start_page": p,
-                    "end_page": e,
-                    "format": "pdf",
+                    "start_page": run_start,
+                    "end_page": run_end,
+                    "format": "text",
                     "path": fname,
-                    "byte_size": (target_dir / fname).stat().st_size,
-                    "char_count": sub_chars,
-                    "auto_fallback_reason": fallback_for.get(p),
+                    "byte_size": byte_size,
+                    "char_count": len(run_text),
+                    "auto_fallback_reason": None,
                 })
-                p = e + 1
 
-        # Dense runs become text slices; _split_window already capped whole-span bytes at
-        # max_bytes, so only a single oversized page needs the newline line-split.
-        for run_start, run_end in dense_runs:
-            run_text = "".join(f"--- Page {p} ---\n{_page_text(reader, p, cache)}\n" for p in range(run_start, run_end + 1))
-            byte_size = len(run_text.encode("utf-8"))
-            if byte_size > max_bytes and run_start == run_end:
-                for part in _split_single_page(_page_text(reader, run_start, cache), run_start, max_bytes):
-                    index += 1
-                    fname = f"{index:03d}_{slugify(title)}_p{run_start}_part.txt"
-                    (target_dir / fname).write_text(part, encoding="utf-8")
-                    slices.append({
-                        "index": index,
-                        "title": f"{title} (part)",
-                        "start_page": run_start,
-                        "end_page": run_start,
-                        "format": "text",
-                        "path": fname,
-                        "byte_size": len(part.encode("utf-8")),
-                        "char_count": len(part),
-                        "auto_fallback_reason": None,
-                    })
-                continue
-            index += 1
-            fname = f"{index:03d}_{slugify(title)}.txt"
-            (target_dir / fname).write_text(run_text, encoding="utf-8")
-            slices.append({
-                "index": index,
-                "title": title,
-                "start_page": run_start,
-                "end_page": run_end,
-                "format": "text",
-                "path": fname,
-                "byte_size": byte_size,
-                "char_count": len(run_text),
-                "auto_fallback_reason": None,
-            })
-
-    # Rebuild the manifest deterministically in page order; drop stale slice files on --pages runs.
-    slices.sort(key=lambda s: (s["start_page"], s["end_page"]))
-    for i, s in enumerate(slices, start=1):
-        s["index"] = i
     if page_filter is not None:
         referenced = {s["path"] for s in slices}
         for stale in list(target_dir.glob("*.txt")) + list(target_dir.glob("*.pdf")):
             if stale.name not in referenced:
                 stale.unlink()
     manifest = {
-        "source_pdf": resolved.name,
+        "source_pdf": portable_src,
         "slug": slug,
         "total_pages": total_pages,
-        "format_requested": format,
+        "format_requested": (prior_format_requested or "auto") if page_filter is not None else format,
         "min_chars_per_page": min_chars_per_page,
         "slices": slices,
     }
@@ -738,6 +788,7 @@ def extract_pdf(
 
 VALID_ENTITY_TYPES = {"index", "faction", "location", "person", "creature", "artefact", "mechanic", "table", "other"}
 LINK_EXCLUDED_DIRS = {".git", "_site", "vendor"}
+DIGEST_LINK_RE = re.compile(r'(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 
 
 def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] = None) -> int:
@@ -746,7 +797,8 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
     Hard invariants: YAML-mapping frontmatter with non-empty 'source' and 'title', 'tier' == 3,
     'entity_type' in VALID_ENTITY_TYPES; a blank line immediately after every Markdown heading
     (outside fenced code blocks); every relative Markdown link resolves to an existing file inside
-    the repository root and outside LINK_EXCLUDED_DIRS. Soft sizing stays non-fatal [INFO] output.
+    the repository root (or *digest_dir* when validating external staging) and outside
+    LINK_EXCLUDED_DIRS. Soft sizing stays non-fatal [INFO] output.
     """
     repo_root = repo_root.resolve()
     digest_dir = digest_dir.resolve()
@@ -754,41 +806,34 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
         print(f"[FAIL] {digest_dir}: digest directory does not exist")
         return 1
     md_files = sorted(digest_dir.rglob("*.md"), key=lambda p: p.as_posix())
+    if not md_files:
+        print(f"[FAIL] {digest_dir}: no markdown digest files found")
+        return 1
     errors: List[str] = []
+    total_lines = 0
     for md_file in md_files:
         resolved_md = md_file.resolve()
         rel = resolved_md.relative_to(repo_root).as_posix() if repo_root in resolved_md.parents else str(md_file)
         content = md_file.read_text(encoding="utf-8")
         lines = content.splitlines()
-        fm_match = None
-        if not content.startswith("---"):
-            errors.append(f"{rel}:1: missing YAML frontmatter block")
-        else:
-            fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
-            if not fm_match:
-                errors.append(f"{rel}:1: malformed frontmatter delimiters")
-            else:
-                try:
-                    loaded = yaml.safe_load(fm_match.group(1))
-                except yaml.YAMLError as exc:
-                    errors.append(f"{rel}:1: malformed YAML frontmatter: {exc}")
-                    loaded = None
-                if loaded is not None and not isinstance(loaded, dict):
-                    errors.append(f"{rel}:1: frontmatter must be a YAML mapping, got {type(loaded).__name__}")
-                    loaded = None
-                if isinstance(loaded, dict):
-                    if not (isinstance(loaded.get("source"), str) and loaded["source"].strip()):
-                        errors.append(f"{rel}:1: frontmatter 'source' must be a non-empty string")
-                    if loaded.get("tier") != 3:
-                        errors.append(f"{rel}:1: frontmatter 'tier' must equal 3")
-                    if loaded.get("entity_type") not in VALID_ENTITY_TYPES:
-                        errors.append(f"{rel}:1: frontmatter 'entity_type' must be one of {sorted(VALID_ENTITY_TYPES)}")
-                    if not (isinstance(loaded.get("title"), str) and loaded["title"].strip()):
-                        errors.append(f"{rel}:1: frontmatter 'title' must be a non-empty string")
-        fm_end_line = content[: fm_match.end()].count("\n") if fm_match else 0
+        total_lines += len(lines)
+        loaded, fm_prefix, _, fm_err = _parse_frontmatter(content)
+        if fm_err:
+            errors.append(f"{rel}:1: {fm_err}")
+        elif loaded is not None:
+            if not (isinstance(loaded.get("source"), str) and loaded["source"].strip()):
+                errors.append(f"{rel}:1: frontmatter 'source' must be a non-empty string")
+            if loaded.get("tier") != 3:
+                errors.append(f"{rel}:1: frontmatter 'tier' must equal 3")
+            if loaded.get("entity_type") not in VALID_ENTITY_TYPES:
+                errors.append(f"{rel}:1: frontmatter 'entity_type' must be one of {sorted(VALID_ENTITY_TYPES)}")
+            if not (isinstance(loaded.get("title"), str) and loaded["title"].strip()):
+                errors.append(f"{rel}:1: frontmatter 'title' must be a non-empty string")
+
+        fm_end_line = fm_prefix.count("\n")
         in_fence = False
-        for i, line in enumerate(lines):
-            if i < fm_end_line:
+        for line_no, line in enumerate(lines, start=1):
+            if line_no <= fm_end_line:
                 continue
             stripped = line.lstrip()
             if stripped.startswith("```") or stripped.startswith("~~~"):
@@ -796,46 +841,35 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 continue
             if in_fence:
                 continue
-            if re.match(r"^#{1,6}\s+\S", line) and i + 1 < len(lines) and lines[i + 1].strip() != "":
-                errors.append(f"{rel}:{i + 1}: heading not followed by a blank line")
-        body = content[fm_match.end():] if fm_match else content
-        # Mask fenced code blocks (preserving offsets and newlines) so example links are not scanned.
-        masked_lines: List[str] = []
-        in_fence = False
-        for line in body.splitlines(keepends=True):
-            stripped = line.lstrip()
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                in_fence = not in_fence
-                masked_lines.append("\n" * line.count("\n"))
-                continue
-            if in_fence:
-                masked_lines.append(" " * len(line.rstrip("\n")) + "\n" * line.count("\n"))
-            else:
-                masked_lines.append(line)
-        masked = "".join(masked_lines)
-        for m in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", masked):
-            target = m.group(1).strip().strip("<>")
-            if not target or target.startswith(("http://", "https://", "mailto:")):
-                continue
-            target = target.split("#", 1)[0]
-            if not target:
-                continue
-            link_line = fm_end_line + masked[: m.start()].count("\n") + 1
-            link_resolved = (md_file.parent / target).resolve()
-            # Links may resolve inside the repository root or inside the digest directory
-            # itself (e.g. <out-dir>/staged/<source>/ validated outside the repo).
-            inside_repo = repo_root in link_resolved.parents or link_resolved == repo_root
-            inside_digest = digest_dir in link_resolved.parents or link_resolved == digest_dir
-            if not (inside_repo or inside_digest):
-                errors.append(f"{rel}:{link_line}: link '{target}' escapes the digest directory and repository root")
-                continue
-            base = repo_root if inside_repo else digest_dir
-            if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(base).parts):
-                errors.append(f"{rel}:{link_line}: link '{target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})")
-                continue
-            if not link_resolved.exists():
-                errors.append(f"{rel}:{link_line}: broken relative link '{target}'")
-    total_lines = sum(len(f.read_text(encoding="utf-8").splitlines()) for f in md_files)
+            if re.match(r"^#{1,6}\s+\S", line) and line_no < len(lines) and lines[line_no].strip() != "":
+                errors.append(f"{rel}:{line_no}: heading not followed by a blank line")
+            for m in DIGEST_LINK_RE.finditer(line):
+                raw_target = m.group(3)
+                if (
+                    not raw_target
+                    or raw_target.startswith(("http://", "https://", "mailto:", "#"))
+                    or "{{" in raw_target
+                    or "}}" in raw_target
+                ):
+                    continue
+                target = unquote(raw_target.split("#", 1)[0].split("?", 1)[0])
+                if not target:
+                    continue
+                link_resolved = (md_file.parent / target).resolve()
+                # Links may resolve inside the repository root or inside the digest directory
+                # itself (e.g. <out-dir>/staged/<source>/ validated outside the repo).
+                inside_repo = repo_root in link_resolved.parents or link_resolved == repo_root
+                inside_digest = digest_dir in link_resolved.parents or link_resolved == digest_dir
+                if not (inside_repo or inside_digest):
+                    errors.append(f"{rel}:{line_no}: link '{raw_target}' escapes the digest directory and repository root")
+                    continue
+                base = repo_root if inside_repo else digest_dir
+                if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(base).parts):
+                    errors.append(f"{rel}:{line_no}: link '{raw_target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})")
+                    continue
+                if not link_resolved.exists():
+                    errors.append(f"{rel}:{line_no}: broken relative link '{raw_target}'")
+
     print(f"[INFO] {len(md_files)} digest note(s), {total_lines} total line(s) in {digest_dir}")
     if manifest:
         mpath = Path(manifest)
@@ -845,7 +879,8 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
             for s in data.get("slices", []):
                 reason = s.get("auto_fallback_reason")
                 if reason:
-                    reasons[reason] = reasons.get(reason, 0) + 1
+                    key = reason.split(":", 1)[0].strip()
+                    reasons[key] = reasons.get(key, 0) + 1
             if reasons:
                 print(f"[INFO] auto-fallback slice counts: {json.dumps(reasons, ensure_ascii=False)}")
     for err in errors:
@@ -896,6 +931,7 @@ def main():
             max_bytes=args.max_bytes,
             min_chars_per_page=args.min_chars_per_page,
             page_spec=args.pages,
+            source_pdf=args.source_pdf,
         )
     elif args.validate is not None:
         digest_dir = Path(args.validate) if args.validate else drive_dir / "_gm-materials" / "digests"

@@ -433,10 +433,15 @@ class TestExtractAndValidate(unittest.TestCase):
         manifest_path = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="text", max_bytes=1000)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertGreater(len(manifest["slices"]), 1)
+        reconstructed = []
         for s in manifest["slices"]:
             self.assertLessEqual(s["byte_size"], 1000)
             content = (out_dir / s["path"]).read_text(encoding="utf-8")
             self.assertIn("--- Page 1 (part", content[:40])
+            reconstructed.append(content.split("\n", 1)[1])
+        self.assertEqual("".join(reconstructed).count("x"), 5000)
+        with self.assertRaises(ValueError):
+            generate_digests._split_single_page("abc", 1, 10)
 
     def test_extract_auto_fallback_to_pdf_on_sparse_page(self):
         pdf = Path(self.temp_dir.name) / "sparse.pdf"
@@ -627,6 +632,99 @@ class TestExtractAndValidate(unittest.TestCase):
             for p in range(s["start_page"], s["end_page"] + 1):
                 by_page2[p] = s["format"]
         self.assertEqual(by_page2, {1: "text", 2: "pdf", 3: "pdf", 4: "pdf"})
+
+    def test_validate_rejects_empty_and_comment_frontmatter(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        digest_dir.mkdir(parents=True)
+        for idx, header in enumerate(["---\n\n---\n", "---\n# only a comment\n---\n"], start=1):
+            (digest_dir / f"n{idx}.md").write_text(f"{header}\n# Empty\n\nBody.\n", encoding="utf-8")
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 1)
+        self.assertIn("frontmatter must be a YAML mapping, got NoneType", buf.getvalue())
+
+    def test_validate_empty_digest_dir_fails(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "empty"
+        digest_dir.mkdir(parents=True)
+        with patch("sys.stdout", new=io.StringIO()):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 1)
+
+    def test_validate_handles_link_titles_and_url_encoded_spaces(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        (digest_dir / "factions").mkdir(parents=True)
+        (digest_dir / "factions" / "guild hall.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Guild Hall\n---\n\n# Guild Hall\n\nText.\n",
+            encoding="utf-8",
+        )
+        (digest_dir / "_index.md").write_text(
+            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nSee [Guild](factions/guild%20hall.md "Guild Hall").\n',
+            encoding="utf-8",
+        )
+        with patch("sys.stdout", new=io.StringIO()):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 0)
+
+    def test_validate_manifest_telemetry_groups_reasons(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        self._write_valid_note(digest_dir)
+        manifest = Path(self.temp_dir.name) / "manifest.json"
+        manifest.write_text(
+            json.dumps({
+                "slices": [
+                    {"auto_fallback_reason": "low text density: page 1 has 3 chars below 80"},
+                    {"auto_fallback_reason": "low text density: page 4 has 12 chars below 80"},
+                    {"auto_fallback_reason": None},
+                ]
+            }),
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
+        self.assertEqual(rc, 0)
+        self.assertIn('{"low text density": 2}', buf.getvalue())
+
+    def test_extract_pages_auto_format_checks_density_and_defaults_rest_to_auto(self):
+        pdf = Path(self.temp_dir.name) / "mixed_pages.pdf"
+        _make_pdf(pdf, [self.dense, "x", self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        # Fresh --pages run with --format auto must check density on page 2 and default rest to auto.
+        m = generate_digests.extract_pdf(
+            str(pdf), self.repo_root, out_dir=str(out_dir), format="auto", page_spec="2", min_chars_per_page=80
+        )
+        manifest = json.loads(m.read_text(encoding="utf-8"))
+        by_page = {p: s["format"] for s in manifest["slices"] for p in range(s["start_page"], s["end_page"] + 1)}
+        self.assertEqual(by_page, {1: "text", 2: "pdf", 3: "text"})
+        # Monotonic emission: filenames 001, 002, 003 align with pages 1, 2, 3.
+        self.assertTrue(manifest["slices"][0]["path"].startswith("001_"))
+        self.assertTrue(manifest["slices"][1]["path"].startswith("002_"))
+        self.assertTrue(manifest["slices"][2]["path"].startswith("003_"))
+
+    def test_extract_invalid_pages_spec_raises_value_error(self):
+        pdf = Path(self.temp_dir.name) / "two.pdf"
+        _make_pdf(pdf, [self.dense, self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        for bad in ("5-2", "-1", "99", "abc", ","):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), page_spec=bad)
+
+    def test_extract_pdf_mode_skips_text_sizing_and_records_portable_source_pdf(self):
+        sub = self.repo_root / "books"
+        sub.mkdir()
+        pdf = sub / "module.pdf"
+        _make_pdf(pdf, [self.dense, self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        with patch.object(generate_digests, "_page_text", side_effect=AssertionError("should not extract text")) :
+            m = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="pdf")
+        manifest = json.loads(m.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source_pdf"], "books/module.pdf")
+        m_override = generate_digests.extract_pdf(
+            str(pdf), self.repo_root, out_dir=str(out_dir), format="pdf", source_pdf="custom/mod.pdf"
+        )
+        self.assertEqual(json.loads(m_override.read_text(encoding="utf-8"))["source_pdf"], "custom/mod.pdf")
 
     def test_compile_references_source_field_parity(self):
         digests_dir = self.repo_root / "_gm-materials" / "digests" / "book"

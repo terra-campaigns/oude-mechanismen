@@ -66,7 +66,7 @@ oude digest --validate <out-dir>/staged/<source> --manifest <out-dir>/manifest.j
 ```
 
 - Exit code must be `0`. Failures are reported as `file:line: <reason>` and must be fixed in staging, not after publishing. Non-fatal `[INFO]` stats (line counts, auto-fallback counts) never block.
-- On pass, replace `_gm-materials/digests/<source>/` atomically: copy the validated `<out-dir>/staged/<source>/` tree to a temporary sibling directory **on the same filesystem** as `_gm-materials/digests/` (e.g. `_gm-materials/digests/.staged-<source>.tmp` — an atomic rename/`os.replace` never works across filesystems, and `<out-dir>` defaults to the temp dir), then swap it into place, so an interrupted run never exposes a partial tree over peer-to-peer sync.
+- On pass, replace `_gm-materials/digests/<source>/` atomically: copy the validated `<out-dir>/staged/<source>/` tree to a temporary sibling directory **on the same filesystem outside `digests/`** (e.g. `_gm-materials/.staged-<source>.tmp` — keeping unfinished `.md` files out of `digests/` so `compile_references()` and sync do not index them prematurely, while staying on the same filesystem so an atomic swap works), then swap it into place.
 
 ### 4. Re-index and report
 
