@@ -60,6 +60,7 @@ TEMPLATE_MAPPINGS = [
 # Pass-through script mappings (command name : filename in scripts/)
 PASS_THROUGH_SCRIPTS = {
     "lint": "lint_chapter.py",
+    "lint-wiki": "lint_wiki.py",
     "audit": "audit_coverage.py",
     "digest": "generate_digests.py",
     "harvest": "harvest_archival.py",
@@ -72,6 +73,7 @@ PASS_THROUGH_SCRIPTS = {
 # Obsolete runner scripts in downstream .agents/scripts/ (ADR 002 migration)
 LEGACY_RUNNER_SCRIPTS = {
     "lint_chapter.py",
+    "lint_wiki.py",
     "harvest_archival.py",
     "scribe_session.py",
     "transcribe_session.py",

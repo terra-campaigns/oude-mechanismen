@@ -26,31 +26,32 @@ It solves the common problem of AI assistants hallucinating setting rules, forge
 To keep LLM token usage low, prevent hallucinations, and protect player privacy, `oude-mechanismen` separates raw table media from campaign canon:
 
 - **Tier 0 (Local Disk Air-Gap)**:
-  Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive.
+  Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
 1. **Tier 1 (Canonical Published Notes)**:
    Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
 2. **Tier 2 (Active Table Decisions & Archival Notes)**:
-   Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in Google Drive (`<drive_dir>/_sessions/`).
+   Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in `_gm-materials/` (`session-summaries/`, `session-preps/`).
 3. **Tier 3 (External Reference Material & Sourcebooks)**:
-   Offline PDF rulebooks and setting digests in `_digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
+   Offline PDF rulebooks and setting digests in `_gm-materials/digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
 
 ---
 
 ## Procedural Skill Catalogue
 
-When linked to your campaign vault, AI coding assistants (such as Antigravity, Claude Code, or Cursor) gain access to 9 specialised campaign skills:
+When linked to your campaign vault, AI coding assistants (such as Antigravity, Claude Code, or Cursor) gain access to 10 specialised campaign skills:
 
 | Skill | Trigger | Purpose | Key Deliverables |
 | :--- | :--- | :--- | :--- |
 | **`lookup-context`** | `/lookup-context` | Low-token progressive context retrieval across Tiers 1, 2, and 3 | Targeted file snippets & line ranges |
 | **`prep-session`** | `/prep-session` | Guided 8-step GM session prep from current situation to map hooks | Structured session briefing & spark tables |
-| **`scribe-session`** | `/scribe-session [file]` | Air-gapped Metal GPU transcription, two-pass local Ollama extraction, and Gemini synthesis | Tier 2 Google Drive 8-section GM notes + calibrated chapter log + dossier condition updates |
+| **`scribe-session`** | `/scribe-session [file]` | Air-gapped Metal GPU transcription, two-pass local Ollama extraction, and Gemini synthesis | Tier 2 `_gm-materials/session-summaries/` 8-section GM notes + calibrated chapter log + dossier condition updates |
 | **`illustrate-entry`** | `/illustrate-entry <note>` | Public-domain archival art curation and graphic-novel styling | Styled gallery artwork with archival attribution |
 | **`add-chapter`** | `/add-chapter` | Drafts a session chapter with canonical front matter and links | Setting-calibrated chapter in `campaigns/` |
 | **`add-character`** | `/add-character` | Dossier authoring for player characters or recurring NPCs | Linked dossier note in `directory/` |
 | **`weave-threads`** | `/weave-threads` | Cross-analyses open threads, faction moves, and economic anomalies | Up to 3 actionable plot tie-ins for future sessions |
 | **`review-style`** | `/review-style <note>` | Calibrates prose against setting voice, cadence, and vocabulary | Diff review with anchor-and-veil balance |
 | **`lint-wiki`** | `/lint-wiki` | Health-checks the campaign wiki for broken links, stubs, and orphans | Markdown audit report & suggested fixes |
+| **`digest-book`** | `/digest-book <pdf_path>` | Deterministic PDF slice extraction + synthesis into a validated `_gm-materials/digests/<source>/` wiki | Hyperlinked entity notes, `manifest.json`, clean `references.json` |
 
 ---
 
@@ -84,7 +85,7 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
 2. Initialise your new campaign vault:
    ```bash
    cd ~/Repos/oude-mechanismen
-   ./sync.sh --init ~/Repos/my-new-campaign
+   oude init ~/Repos/my-new-campaign
    ```
 
 3. Configure your campaign parameters:
@@ -93,13 +94,14 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
    - Calibration Examples (Too flat vs In voice)
    - Sourcebook PDF directory in `.agents/context/tier1_sources.yml`
 
-4. Launch Jekyll locally:
+4. Verify configuration, then launch the LAN preview:
    ```bash
    cd ~/Repos/my-new-campaign
    bundle install
-   bundle exec jekyll serve
+   oude doctor
+   bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
    ```
-   Open `http://localhost:4000` to browse your campaign site.
+   Open `http://localhost:4000` on the host, or `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000` via `avahi-daemon` mDNS) / `http://<host-ip>:4000` from other devices on the same LAN. Preview one vault at a time on port `4000`.
 
 ---
 
@@ -110,9 +112,9 @@ If you already have a Markdown-based Obsidian campaign vault:
 1. Run the initialiser against your existing vault folder:
    ```bash
    cd ~/Repos/oude-mechanismen
-   ./sync.sh --init /path/to/my-existing-vault
+   oude init /path/to/my-existing-vault
    ```
-   *`sync.sh` is non-destructive: it will never overwrite your existing notes or configuration files.*
+   *`oude init` is non-destructive: it will never overwrite your existing notes or configuration files.*
 
 2. Run the environment setup:
    ```bash

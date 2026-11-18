@@ -35,14 +35,16 @@ oude-mechanismen/
 │   ├── prep-session/           # 8-step structured GM session prep
 │   ├── weave-threads/          # Narrative thread & faction anomaly analysis
 │   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
-│   └── illustrate-entry/       # Archival art curation & graphic-novel styling
-│       └── scripts/            # Core art_filter.py graphic novel engine
+│   ├── illustrate-entry/       # Archival art curation & graphic-novel styling
+│   │   └── scripts/            # Core art_filter.py graphic novel engine
+│   └── digest-book/            # Sourcebook PDF → validated semantic digest wiki (Design 004 Stage C)
 ├── scripts/                    # Shared campaign tooling
 │   ├── generate_digests.py     # Tier 3 PDF digest generator & references.json compiler
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
 │   ├── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction (Tier 0 air-gap)
 │   ├── scribe_session.py       # Local Ollama two-pass de-personalised extractor (Pass 2A & 2B)
-│   └── benchmark_models.py     # Empirical local model extraction benchmark harness
+│   ├── benchmark_models.py     # Empirical local model extraction benchmark harness
+│   └── lint_wiki.py            # Deterministic structural wiki linter (Gate 3: dead links, orphans, stubs, catalogue)
 ├── tests/                      # Automated unit & integration test suite
 │   ├── test_transcribe_session.py
 │   └── test_scribe_session.py
@@ -147,7 +149,7 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 2. **Enforce British English**: All instructions, templates, prompts, and code comments must strictly use British English.
 3. **Follow Markdown Spacing Rule**: Always leave an empty blank line immediately following any Markdown heading (`#`, `##`, `###`).
 4. **Delegate Setting Flavour**: Never hardcode setting tropes. Query `AGENTS.md` for tone, calibration examples, and vocabulary.
-5. **Mandatory Pre-Publishing Audit Gate**: Any procedural skill creating or finalising session chronicles (`add-chapter`, `scribe-session`) must integrate the 3-Gate Pre-Publishing Protocol (Gate 1: `scripts/lint_chapter.py`; Gate 2: `review-style`; Gate 3: `lint-wiki`). To prevent unnecessary LLM token consumption, full 3-Gate execution is strictly reserved for pre-PR drafting and pre-final-review checkpoints, rather than routine intermediate commits. Deterministic Gate 1 (`scripts/lint_chapter.py`) executes locally with zero token burn.
+5. **Mandatory Pre-Publishing Audit Gate**: Any procedural skill creating or finalising session chronicles (`add-chapter`, `scribe-session`) must integrate the 3-Gate Pre-Publishing Protocol (Gate 1: `scripts/lint_chapter.py`; Gate 2: `review-style`; Gate 3: `scripts/lint_wiki.py` via `oude lint-wiki`, surfaced by the `lint-wiki` skill). To prevent unnecessary LLM token consumption, full 3-Gate execution is strictly reserved for pre-PR drafting and pre-final-review checkpoints, rather than routine intermediate commits. Deterministic Gates 1 and 3 (`scripts/lint_chapter.py`, `scripts/lint_wiki.py`) execute locally with zero token burn.
 
 ---
 

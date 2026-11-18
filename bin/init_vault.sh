@@ -69,4 +69,15 @@ if command -v gh >/dev/null 2>&1 && git -C "$ABS_REPO" config --get remote.origi
   fi
 fi
 
+# 5. Smoke-validate the deterministic wiki linter (Gate 3) if the oude CLI is installed
+if command -v oude >/dev/null 2>&1; then
+  if (cd "$ABS_REPO" && oude lint-wiki --format json >/dev/null 2>&1); then
+    echo "  ✓ Wiki lint clean (oude lint-wiki)"
+  else
+    echo "  ℹ 'oude lint-wiki' reports findings (e.g. missing catalog.json); run it before publishing (Gate 3)."
+  fi
+else
+  echo "  ℹ oude CLI not found; install it to run 'oude lint-wiki' (Gate 3) before publishing."
+fi
+
 echo "==> Campaign vault initialisation complete: $ABS_REPO"

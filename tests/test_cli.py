@@ -455,6 +455,11 @@ class TestOudeCLI(unittest.TestCase):
             self.assertIn("lint_chapter.py", called_cmd[1])
             self.assertIn("--help", called_cmd[2:])
 
+    def test_lint_wiki_passthrough_registered(self):
+        """Verify lint-wiki is a pass-through command and a prunable legacy runner."""
+        self.assertEqual(cli.PASS_THROUGH_SCRIPTS.get("lint-wiki"), "lint_wiki.py")
+        self.assertIn("lint_wiki.py", cli.LEGACY_RUNNER_SCRIPTS)
+
     def test_doctor_detects_legacy_runner_scripts(self):
         """Verify doctor detects legacy runner scripts in .agents/scripts/."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
