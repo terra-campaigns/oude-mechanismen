@@ -190,7 +190,7 @@ def _resolve_asset_dir(name: str) -> Path:
 
 ### 3.2 Unified Console Entrypoint (`oude` CLI)
 
-The `oude` CLI provides 3 built-in lifecycle commands and 8 pass-through procedural script commands:
+The `oude` CLI provides 3 built-in lifecycle commands and 9 pass-through procedural script commands:
 
 | Command | Implementation | Purpose |
 | :--- | :--- | :--- |
@@ -198,6 +198,7 @@ The `oude` CLI provides 3 built-in lifecycle commands and 8 pass-through procedu
 | `oude install-skills` | Built-in (`cli.py`) | Copies bundled `skills/` to `~/.local/share/oude-mechanismen/skills` and registers the path in `~/.gemini/config/skills.json`. |
 | `oude doctor` | Built-in (`cli.py`) | Audits campaign vault and workstation health (`Gemfile`, `_config.yml`, `catalog.json` engine version, `tier1_sources.yml` Drive path, `whisper-cli`, `ffmpeg`, `ollama`, and global skills registration). |
 | `oude lint [args...]` | `lint_chapter.py` | Gate 1: Static 2-4 prose framework & one-sentence-per-line cadence linter. |
+| `oude lint-wiki [args...]` | `lint_wiki.py` | Gate 3: Deterministic structural wiki linter (dead links, orphans, stubs, unused images, catalogue health). |
 | `oude audit [args...]` | `audit_coverage.py` | Multi-layered campaign coverage, route proximity, and `--unillustrated` gap analysis. |
 | `oude digest [args...]` | `generate_digests.py` | Tier 3 PDF digest compiler & `.agents/context/references.json` router. |
 | `oude harvest [args...]` | `harvest_archival.py` | Archival Scriptorium keyless public-domain artwork excavator & multi-preset renderer. |

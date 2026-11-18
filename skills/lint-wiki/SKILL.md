@@ -1,111 +1,52 @@
 ---
 name: lint-wiki
-description: Health-check the campaign wiki for structural issues — orphan pages, dead links, empty stubs, unused images, deprecated hooks, and catalogue health. Use periodically (e.g. every few sessions) or after a batch of edits to keep the repo clean. No arguments needed.
+description: Health-check the campaign wiki for structural issues — orphan pages, dead links, empty stubs, unused images, deprecated hooks, and catalogue health. Runs the deterministic `lint_wiki.py` CLI (Gate 3) and interprets its findings. Use periodically (e.g. every few sessions) or after a batch of edits to keep the repo clean. No arguments needed.
 argument-hint: none (scans the full repo)
 ---
 
 # Lint Wiki
 
-Scan the entire campaign repo for structural health issues. Produce a diagnostic report as an artifact with actionable findings grouped by severity.
+Run the deterministic structural linter over the campaign repo, then interpret its findings into a diagnostic report artefact with actionable findings grouped by severity.
 
-## Before starting: confirm with the user
+## Running the linter
 
-When invoked, briefly confirm:
+The structural checks are deterministic and execute locally with zero token burn. Prefer the unified CLI, falling back to the engine script directly:
 
-> I'll scan all markdown files, images, and links across the repo. This will take a moment. Proceed?
+```bash
+oude lint-wiki --format json          # full repo scan, machine-readable output
+python3 scripts/lint_wiki.py --format json
+python3 scripts/lint_wiki.py campaigns/ directory/foo.md   # targeted scan of specific paths
+python3 scripts/lint_wiki.py --strict  # treat WARN findings as failures (exit 1)
+```
 
-Then begin.
+- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), and duplicate titles.
+- Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (orphans, unused images, catalogue), which are reported under `checks_skipped`.
+- Exit code is 1 on any FAIL finding (or any finding under `--strict`), 0 when clean, 2 on usage errors.
 
-## Files to read
+Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, `.git/`, or `_gm-materials/`.
 
-- `.agents/AGENTS.md` — for conventions and front matter patterns.
-- `.agents/context/tier1_sources.yml` (if present) — to identify active content directories.
-- All markdown files in content folders (`campaigns/`, `directory/`, `systems/`, `statblocks/`, `trading/`, and `misc/`).
-- `index.md` at the repo root.
-- `all-content.md` — to understand what feeds the site build.
-- Image files in `imgs/` — list filenames (no need to open them).
+## Interpreting findings
 
-Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, or `.git/`.
+Parse the JSON `findings` array (or the text report tables). Group by `check` in the output. The CLI is the source of truth for what was found; your job is triage, not re-detection:
 
-## What to check
-
-Run through each check below. Group findings by category in the output.
-
-### 1. Dead internal links
-
-For every internal markdown link (`[text](path.md)`) in every content file:
-- Resolve the path relative to the linking file's directory.
-- Verify the target file exists on disk.
-- Report any link whose target does not exist, with the source file and line.
-
-### 2. Orphan pages
-
-A page is an orphan if:
-- It exists in `directory/`, `systems/`, or `statblocks/` (not in `campaigns/`).
-- No other markdown file in the repo links to it (no inbound links).
-- It is not an `index.md` file.
-
-List orphan pages. These may need incoming links from session logs or directory siblings.
-
-### 3. Empty stubs
-
-A content file is a stub if:
-- Its body (after YAML front matter) contains fewer than 3 non-empty, non-whitespace lines.
-- Or its body consists only of front matter and includes/liquid tags with no prose.
-
-List stubs. These are candidates to be fleshed out or removed.
-
-### 4. Unused images
-
-For every file in `imgs/` (recursively):
-- Check whether any markdown file references it (in front matter `image:`, `images:`, or inline `![]()`).
-- Report images that are never referenced. Exclude `imgs/gallery/` from this check (gallery images are surfaced by the gallery include).
-
-### 5. Deprecated hooks
-
-Scan all YAML front matter for the deprecated `hooks:` field.
-- Report any file that still declares `hooks:`. Note that `hooks` is deprecated and should be migrated to body prose or removed.
-
-### 6. Catalogue & Semantic Layer Health
-
-- Verify that `.agents/context/catalog.json` exists and matches the current note count in `.agents/context/tier1_sources.yml`.
-- Verify that `summary` is not null for non-stub files.
-- Report any file whose content hash (`sha`) differs from `catalog.json`.
-- Compare all content notes on disk in `directory/`, `campaigns/`, and `systems/` against the `entries` list in `catalog.json`. Flag any non-stub notes that exist on disk but are absent from `catalog.json` (unindexed notes caused by overly restrictive `include_paths` or accidental exclusion in `.agents/context/tier1_sources.yml`).
-
-### 7. Missing front matter
-
-Every content file in `campaigns/`, `directory/`, and `systems/` should have at minimum:
-- `title`
-- `parent`
-
-Report files missing either field. Also flag files with `layout:` set to something other than `default` (which is the Just the Docs default and normally omitted), unless the file is `all-content.md`, `index.md`, or a `404` page.
-
-### 8. Duplicate titles
-
-Scan all `title:` values in front matter across the repo. Report any exact duplicates — two files with the same title will cause navigation confusion in Just the Docs.
-
-## Procedure
-
-1. Read `.agents/AGENTS.md` to refresh conventions.
-2. Use `find` or `ls` to enumerate all markdown files in content folders and all files in `imgs/`.
-3. For each markdown file, extract:
-   - YAML front matter fields (`title`, `parent`, `image`, `images`). Check if `hooks` is present (flag as deprecated).
-   - All internal markdown links (outbound).
-   - All image references.
-   - Body line count (after front matter).
-4. Build the link graph (which files link to which) or inspect `.agents/context/catalog.json`.
-5. Run each check from the list above.
-6. Write the report as an artifact.
+- **dead-link (FAIL):** resolve the path relative to the linking file; fix the target or the link.
+- **orphan (WARN):** no inbound links from `directory/`, `systems/`, or `statblocks/` notes (never `campaigns/` session logs). May be intentional; the GM decides.
+- **stub (WARN):** fewer than 3 prose lines after front matter. Flesh out or remove.
+- **unused-image (WARN):** file under `imgs/` (excluding `imgs/gallery/` and the engine fallback badges in `imgs/badges/`, which are consumed dynamically) referenced nowhere.
+- **deprecated-hook (WARN):** migrate `hooks:` front matter to body prose or remove it.
+- **catalogue (FAIL/WARN):** missing/stale `catalog.json`, sha mismatches (recompile via the `data_extractor` plugin or `oude doctor --fix`), unindexed notes, null summaries.
+- **front-matter (FAIL/WARN):** missing `title`/`parent` in `campaigns/`, `directory/`, `systems/`; non-default `layout` outside the exempt pages.
+- **duplicate-title (FAIL):** identical `title:` values cause navigation confusion in Just the Docs.
 
 ## Output format
 
-Write the report as a markdown artifact. Use this structure:
+Write the report as a markdown artefact. Use this structure:
 
 ````markdown
 # Wiki Lint Report
 
 Generated: [date]
+Command: `oude lint-wiki --format json`
 
 ## Summary
 
@@ -115,48 +56,17 @@ Generated: [date]
 - X unused images
 - X deprecated hooks
 - X catalogue / front matter issues
-- X unindexed notes (allowlist exclusions)
 - X duplicate titles
 
-## Dead Links
+## Findings
 
-| Source file | Line | Broken link target |
-|---|---|---|
-| ... | ... | ... |
+| Check | Severity | File | Line | Detail |
+|---|---|---|---|---|
+| ... | ... | ... | ... | ... |
 
-## Orphan Pages
+## Recommended actions
 
-- `path/to/orphan.md` — no inbound links found.
-
-## Stubs
-
-- `path/to/stub.md` — N lines of content.
-
-## Unused Images
-
-- `imgs/unused-image.png`
-
-## Deprecated Hooks
-
-| Declared in | Hook text |
-|---|---|
-| ... | ... |
-
-## Front Matter Issues
-
-| File | Issue |
-|---|---|
-| ... | Missing `title` |
-
-## Unindexed Notes (Catalogue Exclusions)
-
-- `directory/Region/Note.md` — present on disk but missing from `catalog.json`. Verify `include_paths` in `.agents/context/tier1_sources.yml`.
-
-## Duplicate Titles
-
-| Title | Files |
-|---|---|
-| ... | file1.md, file2.md |
+- ...
 ````
 
 Omit any section where no issues were found. If the wiki is clean, say so.
