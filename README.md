@@ -26,7 +26,7 @@ It solves the common problem of AI assistants hallucinating setting rules, forge
 To keep LLM token usage low, prevent hallucinations, and protect player privacy, `oude-mechanismen` separates raw table media from campaign canon:
 
 - **Tier 0 (Local Disk Air-Gap)**:
-- Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
+  Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
 1. **Tier 1 (Canonical Published Notes)**:
    Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
 2. **Tier 2 (Active Table Decisions & Archival Notes)**:
@@ -100,7 +100,7 @@ curl -L -o ~/.whisper-models/ggml-large-v3-turbo.bin \
    oude doctor
    bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
    ```
-   Open `http://localhost:4000` on the host, or `http://artemis.local:4000` (via `avahi-daemon` mDNS) / `http://<host-ip>:4000` from other devices on the same LAN. Preview one vault at a time on port `4000`.
+   Open `http://localhost:4000` on the host, or `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000` via `avahi-daemon` mDNS) / `http://<host-ip>:4000` from other devices on the same LAN. Preview one vault at a time on port `4000`.
 
 ---
 
