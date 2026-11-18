@@ -11,7 +11,7 @@ This repository contains the shared procedural engine, agent skills library, and
 1. **Engine Agnosticism**: Never inject setting-specific lore, faction names, or custom house rules into `oude-mechanismen`. All procedural skills, Jekyll templates, and Python scripts must remain generic and parameterised.
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
 3. **Storage Separation & Privacy Air-Gap**:
-   - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
+   - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git, Obsidian Sync, and all networked storage for player privacy.
    - **Tier 2 Canon (`_gm-materials/session-summaries/` & `_gm-materials/session-preps/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`_gm-materials/session-preps/<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
    - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
 
@@ -21,11 +21,15 @@ This repository contains the shared procedural engine, agent skills library, and
 
 ```text
 oude-mechanismen/
-├── VERSION                     # Engine semver (e.g. 0.2.0)
+├── VERSION                     # Single-source engine semver (e.g. 0.6.1)
 ├── CHANGELOG.md                # Human & agent changelog following Keep a Changelog
 ├── LICENSE                     # MIT open-source licence
-├── requirements.txt            # Python dependencies (pyyaml, pypdf, numpy, Pillow)
-├── sync.sh                     # Vault synchronisation and bootstrapper script
+├── pyproject.toml              # Python package & `oude` CLI distribution (ADR 002)
+├── oude-mechanismen.gemspec    # Jekyll RubyGem specification (ADR 001)
+├── requirements.txt            # Python dependency pin for CI and legacy setups
+├── src/oude_mechanismen/       # Unified `oude` CLI dispatcher & package helpers
+├── lib/                        # RubyGem entrypoint (`oude_mechanismen.rb`, `version.rb`)
+├── docs/                       # ADRs, design specs, MIGRATION_GUIDE.md, DYNAMIC_GEM.md
 ├── skills/                     # Universal Antigravity / agent skills
 │   ├── lookup-context/         # Progressive multi-tier context retrieval
 │   ├── lint-wiki/              # Wiki structural linting & dead-link detection
@@ -38,31 +42,25 @@ oude-mechanismen/
 │   ├── illustrate-entry/       # Archival art curation & graphic-novel styling
 │   │   └── scripts/            # Core art_filter.py graphic novel engine
 │   └── digest-book/            # Sourcebook PDF → validated semantic digest wiki (Design 004 Stage C)
-├── scripts/                    # Shared campaign tooling
-│   ├── generate_digests.py     # Tier 3 PDF digest generator & references.json compiler
+├── scripts/                    # Shared campaign tooling (invoked via `oude <cmd>`)
+│   ├── generate_digests.py     # Tier 3 PDF digest extractor/validator & references.json compiler
 │   ├── audit_coverage.py       # Structural audit of campaign coverage and topology
 │   ├── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction (Tier 0 air-gap)
 │   ├── scribe_session.py       # Local Ollama two-pass de-personalised extractor (Pass 2A & 2B)
 │   ├── benchmark_models.py     # Empirical local model extraction benchmark harness
 │   └── lint_wiki.py            # Deterministic structural wiki linter (Gate 3: dead links, orphans, stubs, catalogue)
-├── tests/                      # Automated unit & integration test suite
-│   ├── test_transcribe_session.py
-│   └── test_scribe_session.py
+├── tests/                      # Automated unit & integration test suite (`test_*.py`)
 ├── jekyll/                     # Source-of-truth Jekyll engine
 │   ├── _plugins/               # In-memory catalogue & LLM dump generators
 │   ├── _includes/              # Reusable galleries, headers, and badge fallbacks
 │   └── all-content.md          # Headless LLM context endpoint
-├── githooks/                   # Pre-commit hook to recompile catalog.json
 └── templates/                  # Scaffolding templates for downstream campaign vaults
     ├── AGENTS.md.template      # Starter instructions for downstream vault agents
     ├── tier1_sources.yml.template
     ├── decisions.md.template   # Starter Tier 2 conversation canon file
     ├── aesthetics.yml.template # Starter art filter presets
-    ├── skills.json.template    # Skills discovery path configuration
     ├── route_graph.json.template
     ├── badges/                 # Neutral geometric fallback PNG badges
-    ├── bin/setup.template      # Idempotent campaign environment bootstrapper
-    ├── runners/                # Lightweight wrapper scripts delegating to engine
     └── jekyll/                 # Vanilla Just the Docs starter config & Gemfile
 ```
 
@@ -106,11 +104,14 @@ Run the vault verification from the target repository root:
 
 ```bash
 cd "/path/to/target/campaign-vault"
-./bin/setup
+bundle install
 bundle exec jekyll build
+oude doctor
 ```
 
 Verify that `.agents/context/catalog.json` compiled with zero errors.
+
+- **Guides**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) (Google Drive → `_gm-materials/` cutover) and [DYNAMIC_GEM.md](docs/DYNAMIC_GEM.md) (RubyGem operator guide).
 
 ---
 
@@ -118,7 +119,7 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
-- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed by `_plugins/data_extractor.rb` into `.agents/context/catalog.json`. This is hard canon.
+- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed in-memory by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into `.agents/context/catalog.json`. This is hard canon.
 - **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
@@ -132,10 +133,9 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ---
 
-## 5. Synchronisation Engine Rules (`sync.sh`)
+## 5. Legacy Synchronisation & Version Stamping
 
-- **Managed Files**: Engine updates to plugins, includes, git hooks, runners, and setup scripts are tracked in `sync.sh`'s `MANAGED_FILES` array.
-- **Drift Safety**: `sync.sh` never overwrites locally modified (dirty) files in a campaign vault unless `--force` is explicitly passed.
+- **Deprecated Template Sync (`sync.sh`)**: `sync.sh` is formally deprecated and its `MANAGED_FILES` list is empty. Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and unmodified `all-content.md` downstream.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
 ---
