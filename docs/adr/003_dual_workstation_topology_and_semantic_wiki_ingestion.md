@@ -1,6 +1,6 @@
 # ADR 003: Dual-Workstation Topology, Four-Pillar Storage, and Semantic Wiki Ingestion
 
-- **Status:** Accepted (Phase 1 Implemented in v0.6.0; Phases 2–3 Pending)
+- **Status:** Accepted (Phase 1 Implemented in v0.6.0; Phase 2 LAN preview documented zero-wrapper via Design 004 Stage B; Phase 3 Pending)
 - **Date:** 2026-11-10
 - **Author:** Antigravity (Pair Programming with Estevão Alvarenga)
 - **Component:** `scripts/generate_digests.py`, `scripts/transcribe_session.py`, `skills/lookup-context/`, `templates/`, `docs/`, `src/oude_mechanismen/cli.py`
@@ -195,12 +195,14 @@ Leveraging modern multimodal LLMs with 1M+ token context windows (Gemini Pro/Fla
 
 To test newly authored chapters across devices (MacBook Air, iPad, smartphone) before committing:
 
-1. **mDNS Resolution**: `artemis` runs `avahi-daemon.service`, broadcasting `artemis.local` across the local Wi-Fi subnet (`192.168.2.0/24`). Zero manual IP configuration is required on Apple or Linux client devices.
-2. **Server Binding**: Jekyll serves on all interfaces:
+1. **Pre-flight verification**: run `oude doctor` in the campaign vault to confirm `_config.yml` `exclude:` safety (notably `_gm-materials/`) before binding to the LAN.
+2. **mDNS Resolution**: `artemis` runs `avahi-daemon.service`, broadcasting `artemis.local` across the local Wi-Fi subnet (`192.168.2.0/24`). Zero manual IP configuration is required on Apple or Linux client devices.
+3. **Server Binding**: Jekyll serves on all interfaces with the production `_config.yml` untouched:
    ```bash
-   bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --config _config.yml,_config_dev.yml
+   bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
    ```
-3. **URL Decoupling**: A lightweight development overlay (`_config_dev.yml`) overrides production GitHub Pages URLs (`url: ""`, `baseurl: ""`), ensuring relative links and stylesheet assets resolve properly on local network browsers.
+4. **No dev overlay or wrapper subcommand**: `use_wsrv` (the external `https://wsrv.nl` image proxy and sole consumer of `site.url`) activates only when `jekyll.environment == "production"` and `site.url` is neither `localhost` nor `127.0.0.1` (`jekyll/_includes/image_gallery.html`, `jekyll/_includes/connected_to.html`), and internal links use `| relative_url`. Because `jekyll serve` runs in `development` mode, the production `url:` stays inert locally and the site renders correctly on LAN browsers with no `_config_dev.yml` overlay and no `oude serve` wrapper. Preview one vault at a time on port `4000`.
+5. **Client URLs**: open `http://artemis.local:4000` on mDNS-capable devices, or `http://<artemis-ip>:4000` on non-mDNS clients.
 
 ---
 
@@ -303,19 +305,19 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
     return repo_root
 ```
 
-### 3.4 Multi-Device Localhost Preview Overlay (`_config_dev.yml`)
+### 3.4 Multi-Device LAN Preview (Zero-Wrapper, No Dev Overlay)
 
-Provide a standard development configuration template in `templates/jekyll/_config_dev.yml.template`:
+LAN preview deliberately ships **no** `oude serve` subcommand and **no** tracked `templates/jekyll/_config_dev.yml.template`. Verified against `jekyll/_includes/image_gallery.html` and `jekyll/_includes/connected_to.html`: `use_wsrv` is enabled only when `jekyll.environment == "production"` and `site.url` is neither `localhost` nor `127.0.0.1`, and all internal links use `| relative_url`. `jekyll serve` runs in `development` mode, so the production `url:` in `_config.yml` is inert locally and no overlay is needed.
 
-```yaml
-# Development overlay for multi-device LAN testing (0.0.0.0 / artemis.local)
-url: ""
-baseurl: ""
-```
+The canonical operator workflow is:
+
+1. `oude doctor` — pre-flight check of `_config.yml` `exclude:` and `.gitignore` so `_gm-materials/` is never exposed on the LAN.
+2. `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""` — single active vault at a time on port `4000`.
+3. Browse from any LAN device at `http://artemis.local:4000` (Avahi mDNS) or `http://<artemis-ip>:4000` (non-mDNS fallback).
 
 ### 3.5 Target Digest Wiki Format (`_gm-materials/digests/<source_name>/`)
 
-`oude digest-deep <path/to/sourcebook.pdf>` (delivered in Phase 3) accepts an **explicit user-supplied PDF file path** and ingests **one book at a time** — there is no bulk archive scanning or multi-book batch ingestion, and `generate_digests.py` drops legacy `drive_dir.parents[1]` (`rpg_root`) PDF auto-discovery. It transforms that Tier 3 sourcebook PDF into a navigable knowledge wiki under `_gm-materials/digests/<source_name>/` (`source_pdf` in frontmatter records a portable relative reference or filename rather than an OS-specific absolute path). The format below is the target design: multi-file entity granularity, standard relative Markdown links, a canonical note schema, and a lean recursive index.
+`oude digest --extract <path/to/sourcebook.pdf>` (deterministic helpers delivered in Phase 3, with synthesis guided by the harness-agnostic `skills/digest-book/` skill) accepts an **explicit user-supplied PDF file path** and ingests **one book at a time** — there is no bulk archive scanning or multi-book batch ingestion, and `generate_digests.py` drops legacy `drive_dir.parents[1]` (`rpg_root`) PDF auto-discovery. It transforms that Tier 3 sourcebook PDF into a navigable knowledge wiki under `_gm-materials/digests/<source_name>/` (`source_pdf` in frontmatter records a portable relative reference or filename rather than an OS-specific absolute path). The format below is the target design: multi-file entity granularity, standard relative Markdown links, a canonical note schema, and a lean recursive index.
 
 #### 3.5.1 Multi-File Entity Granularity (No Monolithic Files)
 
@@ -439,7 +441,7 @@ Example entry in `.agents/context/references.json`:
 
 #### 3.5.5 Empirical Validation Plan
 
-`oude digest-deep` is scoped for Phase 3 implementation. Before finalising the extraction prompts and tooling, empirical format and navigation experiments will be run against the following test cases, measuring note sizing adherence, link-graph navigability, and `references.json` index leanness:
+`oude digest --extract` plus the `skills/digest-book/` skill are scoped for Phase 3 implementation. Before finalising the extraction prompts and tooling, empirical format and navigation experiments will be run against the following test cases, measuring note sizing adherence, link-graph navigability, and `references.json` index leanness:
 
 - **Eclipse Phase (1st Edition)** ([PDFs](https://robboyle.wordpress.com/eclipse-phase-pdfs)) (dense core rulebook, lore, gear, and factions)
 - **BF1 Morgansfort** ([PDF](https://www.basicfantasy.org/downloads.html)) (classic settlement, wilderness, and multi-level dungeon module)
@@ -459,7 +461,7 @@ Example entry in `.agents/context/references.json`:
 ### Negative Consequences & Mitigations
 
 1. **Manual Ingestion Effort for Large Books**: Deep knowledge graph extraction from PDFs requires dedicated prompt execution.
-   - *Mitigation*: Automated via the forthcoming `oude digest-deep` CLI command / Antigravity skill (Phase 3) using Gemini long-context ingestion, following the Section 3.5 target format.
+   - *Mitigation*: Automated via the forthcoming deterministic `oude digest --extract` helpers plus the harness-agnostic `skills/digest-book/` skill (Phase 3), following the Section 3.5 target format.
 2. **Obsidian Sync File Count**: Creating dozens of sub-notes for a single sourcebook increases vault note count.
    - *Mitigation*: Keep digests scoped within modular sub-folders (`_gm-materials/digests/<source>/`) with the Section 3.5 sizing rule (~30–120 lines per note), avoiding monolithic single-file dense matrices.
 
@@ -470,7 +472,7 @@ Example entry in `.agents/context/references.json`:
 - [x] **ADR 003 Formulation**: Codify dual-workstation topology, four-pillar storage, and semantic wiki digestion.
 - [x] **Phase 1: Path & Gitignore Normalisation** *(Implemented in PR #38 / v0.6.0; follow-up hardening tracked in [#39](https://github.com/terra-campaigns/oude-mechanismen/issues/39))*: Update `scripts/generate_digests.py`, `scripts/transcribe_session.py`, `scripts/audit_coverage.py`, `src/oude_mechanismen/cli.py` (`DEFAULT_GITIGNORE`, `_ensure_gitignore()`, `oude init` scaffolding only top-level `_gm-materials/`, `oude doctor` checks), `templates/AGENTS.md.template`, `AGENTS.md` (§1 & §4), and affected skills (`lookup-context`, `prep-session`, `scribe-session`, `add-chapter`) to anchor Pillar 2 at `_gm-materials/` and support relative `drive_dir: .`. Update `compile_references()` in `scripts/generate_digests.py` to recursive `rglob("*.md")` indexing with relative `slug` and `digest_path` values (preserving flat legacy `<slug>.md` compatibility). Coordinate overlapping edits with [#36](https://github.com/terra-campaigns/oude-mechanismen/issues/36) (`scripts/audit_coverage.py`), [#37](https://github.com/terra-campaigns/oude-mechanismen/issues/37) (`templates/AGENTS.md.template`), and [#22](https://github.com/terra-campaigns/oude-mechanismen/issues/22) (`MIGRATION_GUIDE.md`).
   - *Acceptance criteria*: Unit tests covering relative `drive_dir: .` resolution against `repo_root` and `FileNotFoundError` raised on missing explicit or configured paths; `oude init` tests confirming `_gm-materials/` (without pre-created subdirectories) and `DEFAULT_GITIGNORE` in `tests/test_cli.py`; `oude doctor` checks verifying `"_gm-materials"` in `_config.yml` `exclude:` and the `f.start_with?("_gm-materials/")` rejection in `jekyll/_plugins/data_extractor.rb`; recursive `_gm-materials/digests/**/*.md` indexing tests confirming nested semantic wiki notes appear in `.agents/context/references.json` with collision-free relative `slug`s and portable relative `digest_path`s.
-- [ ] **Phase 2: Localhost Development Tooling**: Add `_config_dev.yml.template` and an `oude serve` subcommand in `src/oude_mechanismen/cli.py` wrapping `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --config _config.yml,_config_dev.yml` with LAN binding (`0.0.0.0:4000`).
-  - *Acceptance criteria*: `oude serve` launches Jekyll bound to `0.0.0.0:4000` with livereload and the dev overlay config; the site is reachable at `http://artemis.local:4000` from another LAN device via Avahi mDNS.
-- [ ] **Phase 3: Book-to-Wiki Knowledge Synthesiser (`oude digest-deep`)**: Develop the `oude digest-deep <pdf_path>` CLI command (single-book explicit file path, no bulk archive scanning), prompt templates, and procedural skill (`skills/digest-book/`) to extract rich relational knowledge wikis from sourcebook PDFs into nested `_gm-materials/digests/<source>/**/*.md` following the Section 3.5 target format (multi-file entity granularity, `n = 20` subfolder subdivision, annotated relative Markdown links, canonical note schema), indexed recursively into `references.json` via the `rglob("*.md")` change from Phase 1.
+- [x] **Phase 2: Zero-Wrapper LAN Preview (documentation only, Design 004 Stage B)**: No `oude serve` subcommand and no `_config_dev.yml.template`; the documented workflow is pre-flight `oude doctor` followed by `bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""` (see §3.4 and §2 Layer 4).
+  - *Acceptance criteria*: ADR 003 §3.4 and `README.md` document the zero-wrapper command; a manual smoke check from `artemis` to `ryu` / mobile at `http://artemis.local:4000` passes with live rendering, `relative_url` links, and gallery images intact.
+- [ ] **Phase 3: Book-to-Wiki Knowledge Synthesiser (`oude digest --extract` + `skills/digest-book/`)**: Develop the deterministic `oude digest --extract <pdf_path>` / `--validate` helpers (single-book explicit file path, no bulk archive scanning) and the procedural skill `skills/digest-book/` to extract rich relational knowledge wikis from sourcebook PDFs into nested `_gm-materials/digests/<source>/**/*.md` following the Section 3.5 target format (multi-file entity granularity, `n = 20` subfolder subdivision, annotated relative Markdown links, canonical note schema), indexed recursively into `references.json` via the `rglob("*.md")` change from Phase 1.
   - *Acceptance criteria*: Empirical format and navigation experiments run against *Eclipse Phase (1st Edition)* ([PDFs](https://robboyle.wordpress.com/eclipse-phase-pdfs)) and *BF1 Morgansfort* ([PDF](https://www.basicfantasy.org/downloads.html)); a sample sourcebook produces a hyperlinked multi-file Markdown knowledge wiki under `_gm-materials/digests/<source>/` with an `_index.md` hub and ~30–120-line entity notes; `compile_references()` with `rglob("*.md")` indexes every nested note into `.agents/context/references.json` with collision-free relative `slug`s; `lookup-context` retrieves entities from the nested notes via the 3-hop workflow.
