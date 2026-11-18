@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.7.0] - 2026-11-18
+
 ### Added
 
 - **Stage C Hybrid PDF Extraction, Validation & `skills/digest-book/` (Design 004, `#45`)**:
@@ -35,12 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`scripts/lint_wiki.py` (PR #50 external review)**: exempt top-level section `index.md` pages (`has_children`) from the `parent:` requirement and the stub check; skip fenced code blocks, front matter, and Liquid `{{ }}` targets when scanning links; exempt `imgs/badges/` fallback badges from the unused-image check; apply `exclude_paths` when expanding directories in targeted mode and list `duplicate-title` under `checks_skipped` there; register `lint_wiki.py` in `LEGACY_RUNNER_SCRIPTS` so `oude doctor --fix` prunes the runner; British spelling (`artefact`) in `skills/lint-wiki/SKILL.md`.
 - **`scripts/generate_digests.py` (PR #48 Gatekeeper & Occam's razor reviews)**: `validate_digests()` accepts relative links inside external `<out-dir>/staged/<source>/` directories, reports accurate `file:line:` numbers, rejects empty/comment-only frontmatter and empty digest directories, runs in a single pass over Markdown lines (skipping fenced code blocks, supporting link titles and `%20` paths), and aggregates `auto-fallback` telemetry by reason prefix; `_split_single_page()` reserves part-marker bytes upfront so no characters are silently truncated; `extract_pdf()` preserves prior `--pages` overrides from `manifest.json`, evaluates density for `--pages --format auto`, emits slices monotonically in page order, validates `--pages` syntax/bounds, skips text sizing in pure `--format pdf` mode, and shares `_portable_source_pdf()` with `scaffold_digest()`; `_span_bytes()` includes `--- Page N ---` marker overhead; `skills/digest-book/SKILL.md` stages sibling temp copies directly under `_gm-materials/`. Regression tests added (192 tests OK).
-
----
-
-## [0.6.1] - 2026-11-17
-
-### Fixed
 
 - **Phase 1 Hygiene & Google Drive Decoupling (Design 004 Stage A, `#36`, `#37`, `#39`)**:
   - Updated `resolve_unindexed_file_action()` in `scripts/audit_coverage.py` to suggest `oude digest --scaffold "{rel}"` instead of the deleted `.agents/scripts/generate_digests.py`, aligned `resolve_drive_dir()` with `yaml.safe_load()` and loud error propagation, and removed obsolete Google Drive phrasing.
@@ -270,6 +268,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
 [0.2.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/terra-campaigns/oude-mechanismen/releases/tag/v0.1.0
