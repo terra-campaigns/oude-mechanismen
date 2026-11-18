@@ -453,7 +453,9 @@ def _span_bytes(reader: Any, cache: Dict[int, Tuple[str, int]], start: int, end:
     total = 0
     for p in range(start, end + 1):
         _page_text(reader, p, cache)
-        total += cache[p][1]
+        # Include the '--- Page N ---\n' marker plus trailing newline added at emit time,
+        # so planned windows never exceed max_bytes once markers are wrapped in.
+        total += cache[p][1] + len(f"--- Page {p} ---\n".encode("utf-8")) + 1
     return total
 
 
@@ -602,6 +604,15 @@ def extract_pdf(
         if manifest_path.exists():
             manifest_path.unlink()
 
+    # On --pages override runs, carry over per-page format decisions from the prior manifest
+    # so earlier overrides are preserved instead of reverting to auto.
+    prior: Dict[int, Tuple[str, Optional[str]]] = {}
+    if page_filter is not None and manifest_path.exists():
+        old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for s in old_manifest.get("slices", []):
+            for p in range(s["start_page"], s["end_page"] + 1):
+                prior[p] = (s["format"], s.get("auto_fallback_reason"))
+
     reader = pypdf.PdfReader(str(resolved))
     total_pages = len(reader.pages)
     windows, cache = plan_extract_windows(reader, max_depth, chunk_pages, max_bytes)
@@ -612,32 +623,27 @@ def extract_pdf(
     index = 0
     for title, start, end in windows:
         all_pages = list(range(start, end + 1))
-        forced_pages = [p for p in all_pages if p in forced]
-        rest = [p for p in all_pages if p not in forced]
-        override = page_filter is not None
-        # Density-based sparse detection applies to non-forced pages whenever auto logic governs them.
-        if format == "auto" or override:
-            sparse_rest = [p for p in rest if len(_page_text(reader, p, cache)) < min_chars_per_page]
-        else:
-            sparse_rest = []
-        dense_rest = [p for p in rest if p not in set(sparse_rest)]
-        fallback_for = {
-            p: f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
-               f"below {min_chars_per_page} chars/page threshold"
-            for p in sparse_rest
-        }
-        if override:
-            # --pages override: forced pages take the requested format; the rest keep auto decisions.
-            if format == "pdf":
-                sparse, dense = forced_pages + sparse_rest, dense_rest
-            else:
-                sparse, dense = sparse_rest, forced_pages + dense_rest
-        elif format == "pdf":
-            sparse, dense = rest, []
-        elif format == "auto":
-            sparse, dense = sparse_rest, dense_rest
-        else:
-            sparse, dense = [], rest
+
+        def page_format(p: int) -> str:
+            if p in forced:
+                return format
+            if page_filter is not None and p in prior:
+                return prior[p][0]
+            if format == "auto":
+                return "pdf" if len(_page_text(reader, p, cache)) < min_chars_per_page else "text"
+            return format
+
+        sparse = [p for p in all_pages if page_format(p) == "pdf"]
+        dense = [p for p in all_pages if page_format(p) != "pdf"]
+        fallback_for: Dict[int, str] = {}
+        for p in sparse:
+            if p in forced:
+                continue  # explicit --pages override: no fallback reason
+            if page_filter is not None and p in prior and prior[p][1]:
+                fallback_for[p] = prior[p][1]
+            elif format == "auto":
+                fallback_for[p] = (f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
+                                   f"below {min_chars_per_page} chars/page threshold")
         sparse_runs = _consecutive_runs(sparse)
         dense_runs = _consecutive_runs(dense)
 
@@ -793,19 +799,38 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
             if re.match(r"^#{1,6}\s+\S", line) and i + 1 < len(lines) and lines[i + 1].strip() != "":
                 errors.append(f"{rel}:{i + 1}: heading not followed by a blank line")
         body = content[fm_match.end():] if fm_match else content
-        for m in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", body):
+        # Mask fenced code blocks (preserving offsets and newlines) so example links are not scanned.
+        masked_lines: List[str] = []
+        in_fence = False
+        for line in body.splitlines(keepends=True):
+            stripped = line.lstrip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                masked_lines.append("\n" * line.count("\n"))
+                continue
+            if in_fence:
+                masked_lines.append(" " * len(line.rstrip("\n")) + "\n" * line.count("\n"))
+            else:
+                masked_lines.append(line)
+        masked = "".join(masked_lines)
+        for m in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", masked):
             target = m.group(1).strip().strip("<>")
             if not target or target.startswith(("http://", "https://", "mailto:")):
                 continue
             target = target.split("#", 1)[0]
             if not target:
                 continue
-            link_line = content[: m.start()].count("\n") + 1
+            link_line = fm_end_line + masked[: m.start()].count("\n") + 1
             link_resolved = (md_file.parent / target).resolve()
-            if repo_root not in link_resolved.parents and link_resolved != repo_root:
-                errors.append(f"{rel}:{link_line}: link '{target}' escapes the repository root")
+            # Links may resolve inside the repository root or inside the digest directory
+            # itself (e.g. <out-dir>/staged/<source>/ validated outside the repo).
+            inside_repo = repo_root in link_resolved.parents or link_resolved == repo_root
+            inside_digest = digest_dir in link_resolved.parents or link_resolved == digest_dir
+            if not (inside_repo or inside_digest):
+                errors.append(f"{rel}:{link_line}: link '{target}' escapes the digest directory and repository root")
                 continue
-            if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(repo_root).parts):
+            base = repo_root if inside_repo else digest_dir
+            if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(base).parts):
                 errors.append(f"{rel}:{link_line}: link '{target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})")
                 continue
             if not link_resolved.exists():

@@ -553,11 +553,11 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir)
         self.assertEqual(rc, 1)
         out = buf.getvalue()
-        self.assertIn("frontmatter 'tier' must equal 3", out)
-        self.assertIn("heading not followed by a blank line", out)
-        self.assertIn("broken relative link 'missing.md'", out)
-        self.assertIn("escapes the repository root", out)
-        self.assertRegex(out, r"guild\.md:\d+:")
+        self.assertIn("guild.md:1: frontmatter 'tier' must equal 3", out)
+        self.assertIn("guild.md:8: heading not followed by a blank line", out)
+        self.assertIn("guild.md:11: broken relative link 'missing.md'", out)
+        self.assertIn("guild.md:12:", out)
+        self.assertIn("escapes the digest directory and repository root", out)
 
     def test_validate_manifest_fallback_telemetry(self):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
@@ -569,6 +569,64 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
         self.assertEqual(rc, 0)
         self.assertIn("auto-fallback slice counts", buf.getvalue())
+
+    def test_validate_staged_dir_outside_repo_root(self):
+        # Simulates SKILL.md's <out-dir>/staged/<source> validation, which lives outside the repo.
+        staged = Path(self.temp_dir.name) / "extract" / "staged" / "mybook"
+        (staged / "factions").mkdir(parents=True)
+        (staged / "_index.md").write_text(
+            "---\nsource: mybook\ntier: 3\nentity_type: index\ntitle: Mybook\n---\n\n# Mybook\n\nSee [Guild](factions/guild.md).\n",
+            encoding="utf-8",
+        )
+        (staged / "factions" / "guild.md").write_text(
+            "---\nsource: mybook\ntier: 3\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
+            encoding="utf-8",
+        )
+        with patch("sys.stdout", new=io.StringIO()):
+            rc = generate_digests.validate_digests(self.repo_root, staged)
+        self.assertEqual(rc, 0)
+        # A link escaping the staged dir (and the repo) must still fail.
+        (staged / "_index.md").write_text(
+            "---\nsource: mybook\ntier: 3\nentity_type: index\ntitle: Mybook\n---\n\n# Mybook\n\n[esc](../../../../etc/hostname)\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, staged)
+        self.assertEqual(rc, 1)
+        self.assertIn("escapes the digest directory and repository root", buf.getvalue())
+
+    def test_validate_ignores_links_in_fenced_code_blocks(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nExample:\n\n```\n[bad](missing.md)\n```\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 0)
+        self.assertNotIn("broken relative link", buf.getvalue())
+
+    def test_extract_sequential_pages_overrides_are_preserved(self):
+        pdf = Path(self.temp_dir.name) / "four.pdf"
+        _make_pdf(pdf, [self.dense, self.dense, self.dense, self.dense])
+        out_dir = Path(self.temp_dir.name) / "out"
+        generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="text")
+        m = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="pdf", page_spec="2-3")
+        by_page = {}
+        for s in json.loads(m.read_text(encoding="utf-8"))["slices"]:
+            for p in range(s["start_page"], s["end_page"] + 1):
+                by_page[p] = s["format"]
+        self.assertEqual(by_page, {1: "text", 2: "pdf", 3: "pdf", 4: "text"})
+        # A second, disjoint --pages run must not revert the first override.
+        m2 = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="pdf", page_spec="4")
+        by_page2 = {}
+        for s in json.loads(m2.read_text(encoding="utf-8"))["slices"]:
+            for p in range(s["start_page"], s["end_page"] + 1):
+                by_page2[p] = s["format"]
+        self.assertEqual(by_page2, {1: "text", 2: "pdf", 3: "pdf", 4: "pdf"})
 
     def test_compile_references_source_field_parity(self):
         digests_dir = self.repo_root / "_gm-materials" / "digests" / "book"

@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`scripts/lint_wiki.py` (PR #50 external review)**: exempt top-level section `index.md` pages (`has_children`) from the `parent:` requirement and the stub check; skip fenced code blocks, front matter, and Liquid `{{ }}` targets when scanning links; exempt `imgs/badges/` fallback badges from the unused-image check; apply `exclude_paths` when expanding directories in targeted mode and list `duplicate-title` under `checks_skipped` there; register `lint_wiki.py` in `LEGACY_RUNNER_SCRIPTS` so `oude doctor --fix` prunes the runner; British spelling (`artefact`) in `skills/lint-wiki/SKILL.md`.
+- **`scripts/generate_digests.py` (PR #48 Gatekeeper review)**: `validate_digests()` now accepts relative links resolving inside the digest directory (so `<out-dir>/staged/<source>/` validation outside the repo works), reports correct `file:line:` numbers for link failures, and ignores links inside fenced code blocks; sequential `--pages` override runs now carry over prior per-page formats from `manifest.json` instead of reverting them; `_span_bytes()` counts per-page `--- Page N ---` marker overhead so text slices never exceed `--max-bytes`; `skills/digest-book/SKILL.md` clarifies the same-filesystem atomic swap. Regression tests added (185 tests OK).
 
 ---
 
