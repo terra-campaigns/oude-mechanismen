@@ -114,6 +114,66 @@ def _parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, str
     return loaded, content[: fm_match.end()], content[fm_match.end() :], None
 
 
+def _normalise_source_pdf(raw_src: Optional[str], drive_dir: Path) -> Optional[str]:
+    """Normalise a source PDF path into a drive_dir-relative POSIX path or basename."""
+    if not raw_src:
+        return None
+    if raw_src.startswith("/"):
+        # Normalise host-specific absolute paths: relative POSIX when inside
+        # drive_dir, otherwise the portable basename (zero host paths in references.json).
+        abs_src = Path(raw_src).resolve()
+        try:
+            return abs_src.relative_to(drive_dir.resolve()).as_posix()
+        except ValueError:
+            return abs_src.name
+    return Path(raw_src).as_posix()
+
+
+def _infer_digest_category(stem_hint: str, source_pdf: Optional[str]) -> str:
+    """Infer a book-level digest category from a source slug and PDF path."""
+    stem = stem_hint.lower()
+    src_lower = f"/{(source_pdf or '').lower().lstrip('/')}"
+
+    if "postcard" in stem or "/postcards/" in src_lower:
+        return "postcards"
+    if "map" in stem or "/maps/" in src_lower:
+        return "maps"
+    if "player_guide" in stem:
+        return "player_guide"
+    if any(k in stem for k in ["analysis", "research"]) or "/research/" in src_lower:
+        return "research_aesthetic"
+    if "/cores/" in src_lower or any(k in stem for k in ["core", "rules", "setting"]):
+        return "core_setting"
+    if any(k in src_lower for k in ["/supplements/", "/suplements/"]) or "supplement" in stem:
+        return "supplement"
+    if any(k in src_lower for k in ["/modules/", "/scenarios/"]) or any(k in stem for k in ["module", "scenario"]):
+        return "module"
+    return "module"
+
+
+def _load_book_index_meta(
+    digests_dir: Path, book_slug: str, drive_dir: Path
+) -> Tuple[Optional[str], Optional[str]]:
+    """Read optional book-level category and source_pdf from <book_slug>/_index.md."""
+    index_path = digests_dir / book_slug / "_index.md"
+    if not index_path.is_file():
+        return None, None
+    loaded, _, _, _ = _parse_frontmatter(index_path.read_text(encoding="utf-8"))
+    if not loaded:
+        return None, None
+    idx_cat = (
+        str(loaded["category"]).strip()
+        if loaded.get("category") is not None and str(loaded.get("category")).strip()
+        else None
+    )
+    raw_idx_src = (
+        str(loaded["source_pdf"]).strip()
+        if loaded.get("source_pdf") is not None and str(loaded.get("source_pdf")).strip()
+        else None
+    )
+    return idx_cat, _normalise_source_pdf(raw_idx_src, drive_dir)
+
+
 def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = False):
     digests_dir = drive_dir / "_gm-materials" / "digests"
     if not digests_dir.exists():
@@ -126,6 +186,7 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
         return
 
     sources = []
+    book_meta_cache: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
 
     for md_file in md_files:
         content = md_file.read_text(encoding="utf-8")
@@ -143,7 +204,6 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
 
         body_lines = body.splitlines()
         title = md_file.stem
-        source_pdf = None
 
         # 1. Parse Title
         for line in body_lines[:5]:
@@ -165,38 +225,30 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
                     raw_src = m.group(1).strip()
                     break
 
-        if raw_src:
-            if raw_src.startswith("/"):
-                # Normalise host-specific absolute paths: relative POSIX when inside
-                # drive_dir, otherwise the portable basename (zero host paths in references.json).
-                abs_src = Path(raw_src).resolve()
-                try:
-                    source_pdf = abs_src.relative_to(drive_dir.resolve()).as_posix()
-                except ValueError:
-                    source_pdf = abs_src.name
+        source_pdf = _normalise_source_pdf(raw_src, drive_dir)
+
+        # 3. Categorisation: honour explicit frontmatter first; for nested wikis,
+        # derive book-level category from _index.md / <source> folder slug (not leaf entity stems).
+        rel_digest = md_file.relative_to(digests_dir)
+        explicit_cat = (
+            str(frontmatter["category"]).strip()
+            if frontmatter.get("category") is not None and str(frontmatter.get("category")).strip()
+            else None
+        )
+        if explicit_cat:
+            category = explicit_cat
+        elif len(rel_digest.parts) >= 2:
+            book_slug = rel_digest.parts[0]
+            if book_slug not in book_meta_cache:
+                book_meta_cache[book_slug] = _load_book_index_meta(digests_dir, book_slug, drive_dir)
+            idx_cat, idx_src = book_meta_cache[book_slug]
+            if idx_cat:
+                category = idx_cat
             else:
-                source_pdf = Path(raw_src).as_posix()
-
-        # 3. Categorisation heuristic (derived from source folder and generic keywords)
-        stem = md_file.stem.lower()
-        src_lower = f"/{(source_pdf or '').lower().lstrip('/')}"
-
-        if "postcard" in stem or "/postcards/" in src_lower:
-            category = "postcards"
-        elif "map" in stem or "/maps/" in src_lower:
-            category = "maps"
-        elif "player_guide" in stem:
-            category = "player_guide"
-        elif any(k in stem for k in ["analysis", "research"]) or "/research/" in src_lower:
-            category = "research_aesthetic"
-        elif "/cores/" in src_lower or any(k in stem for k in ["core", "rules", "setting"]):
-            category = "core_setting"
-        elif any(k in src_lower for k in ["/supplements/", "/suplements/"]) or "supplement" in stem:
-            category = "supplement"
-        elif any(k in src_lower for k in ["/modules/", "/scenarios/"]) or any(k in stem for k in ["module", "scenario"]):
-            category = "module"
+                src_hint = idx_src if (idx_src and "/" in idx_src) or not source_pdf else source_pdf
+                category = _infer_digest_category(book_slug, src_hint)
         else:
-            category = "module"
+            category = _infer_digest_category(md_file.stem, source_pdf)
 
         # 4. Parse Headings & Sections
         sections = []
