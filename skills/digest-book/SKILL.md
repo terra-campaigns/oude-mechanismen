@@ -27,11 +27,14 @@ oude digest --extract <pdf_path> [--format auto|text|pdf] [--out-dir <DIR>] \
 
 - Default `--out-dir` is `<tempdir>/oude-extract/<slug>` (outside Git and sync); slices and `manifest.json` are cleared on each run.
 - Read `<out-dir>/manifest.json`: iterate `slices` in `index` order, each with `title`, `start_page`/`end_page`, `format`, `path`, and optional `auto_fallback_reason`.
-- Slices with `auto_fallback_reason` are low-text-density (scanned or image-heavy) pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader. Dense two-column tabular pages can still pass the density threshold with interleaved text, so spot-check rollable tables and statblocks. For every slice that looks interleaved or unreadable, re-extract exactly those pages as `.pdf` into the same output directory (the manifest merges and replaces those pages' slices):
-  ```bash
-  oude digest --extract <pdf_path> --pages 209-211,261-263 --format pdf --out-dir <out-dir>
-  ```
-  Empirical note: on a 402-page dense two-column core rulebook, ~25% of text slices showed column interleaving, so plan for this quality-gate pass on such books.
+- Slices with `auto_fallback_reason` are low-text-density (scanned or image-heavy) pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader.
+- **Visual & layout quality gate:** Dense two-column tabular pages can pass the density threshold with interleaved text, and prose-rich spreads can still conceal visual-only details that plain-text extraction drops without failing density checks or interleaving:
+  - Spot-check rollable tables, statblocks, and floor/dungeon spreads for **interleaved columns**, **rasterised/outlined mini-maps and per-floor encounter tables baked into artwork**, **icon-keyed maps**, and **colour-coded tables** (where background colours carry speaker, faction, or severity attribution that text extraction strips).
+  - For every slice or spread showing any of these defects, re-extract exactly those pages as `.pdf` into the same output directory (the manifest merges and replaces those pages' slices):
+    ```bash
+    oude digest --extract <pdf_path> --pages 209-211,261-263 --format pdf --out-dir <out-dir>
+    ```
+    Empirical note: on a 402-page dense two-column core rulebook, ~25% of text slices showed column interleaving; on a 64-page illustrated dungeon module, ~25% of pages had baked-in map artwork, encounter tables, or colour-coded attribution missing from clean text slices — plan for this quality-gate pass on both archetypes.
 
 ### 2. Synthesise the wiki into staging
 
@@ -67,8 +70,15 @@ oude digest --validate <out-dir>/staged/<source> --manifest <out-dir>/manifest.j
 
 - Exit code must be `0`. Failures are reported as `file:line: <reason>` and must be fixed in staging, not after publishing. Non-fatal `[INFO]` stats (line counts, auto-fallback counts) never block.
 - On pass, replace `_gm-materials/digests/<source>/` atomically: copy the validated `<out-dir>/staged/<source>/` tree to a temporary sibling directory **on the same filesystem outside `digests/`** (e.g. `_gm-materials/.staged-<source>.tmp` — keeping unfinished `.md` files out of `digests/` so `compile_references()` and sync do not index them prematurely, while staying on the same filesystem so an atomic swap works), then swap it into place.
+- **Legacy flat-digest cleanup:** If upgrading an older vault from a legacy flat summary (`_gm-materials/digests/<source>.md`), remove the stale `<source>.md` file during the swap so `oude digest` does not index both the flat summary and the new `<source>/` wiki as duplicate entries in `.agents/context/references.json`.
 
-### 4. Re-index and report
+### 4. Optional zero-context audit pass
+
+- Before or alongside final indexing, you may run a read-only zero-context review comparing the staged (or published) wiki against `<out-dir>/manifest.json` and the extracted `.txt`/`.pdf` slices.
+- Focus on non-structural fidelity defects that `oude digest --validate` cannot catch: misread map icons, omitted or compressed tactical rules, unattributed colour-coded tables, missing page citations, and British English consistency.
+- Fix any confirmed discrepancies in staging (re-validating with `oude digest --validate`) before final swap.
+
+### 5. Re-index and report
 
 - Recompile the routing index with `oude digest` (no flags) so `.agents/context/references.json` picks up every nested note with collision-free relative `slug`s, portable `digest_path`/`source_pdf`, and the `source` field.
-- Report: source book, slice counts by format, auto-fallback count, notes written per folder, validation result, and any spot-checked dense tables.
+- Report: source book, slice counts by format, auto-fallback and visual quality-gate re-extraction counts, notes written per folder, validation result, any spot-checked dense or colour-coded tables, and whether a legacy flat digest was retired.

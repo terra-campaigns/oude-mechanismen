@@ -745,5 +745,67 @@ class TestExtractAndValidate(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 generate_digests.main()
         self.assertEqual(ctx.exception.code, 0)
+
+    def test_compile_references_nested_leaf_stems_do_not_misclassify_category(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests" / "gradient_descent"
+        (digests_dir / "locations").mkdir(parents=True)
+        (digests_dir / "tables").mkdir(parents=True)
+        (digests_dir / "_index.md").write_text(
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: index\ntitle: Gradient Descent\n---\n\n# Gradient Descent\n\nIntro.\n",
+            encoding="utf-8",
+        )
+        (digests_dir / "locations" / "floor_5_ai_core.md").write_text(
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: location\ntitle: Floor 5 AI Core\n---\n\n# Floor 5 AI Core\n\nDetails.\n",
+            encoding="utf-8",
+        )
+        (digests_dir / "locations" / "station_map.md").write_text(
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: location\ntitle: Station Map\n---\n\n# Station Map\n\nDetails.\n",
+            encoding="utf-8",
+        )
+        (digests_dir / "tables" / "bell_rumours.md").write_text(
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ncategory: supplement\ntier: 3\nentity_type: table\ntitle: Bell Rumours\n---\n\n# Bell Rumours\n\nDetails.\n",
+            encoding="utf-8",
+        )
+
+        generate_digests.compile_references(self.repo_root, self.repo_root)
+        refs = json.loads((self.repo_root / ".agents" / "context" / "references.json").read_text(encoding="utf-8"))
+        by_slug = {s["slug"]: s for s in refs["sources"]}
+        self.assertEqual(by_slug["gradient_descent/_index"]["category"], "module")
+        self.assertEqual(by_slug["gradient_descent/locations/floor_5_ai_core"]["category"], "module")
+        self.assertEqual(by_slug["gradient_descent/locations/station_map"]["category"], "module")
+        self.assertEqual(by_slug["gradient_descent/tables/bell_rumours"]["category"], "supplement")
+
+    def test_compile_references_nested_book_inherits_index_category_and_slug(self):
+        ep_dir = self.repo_root / "_gm-materials" / "digests" / "eclipse_phase"
+        (ep_dir / "locations").mkdir(parents=True)
+        (ep_dir / "_index.md").write_text(
+            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ncategory: core_setting\ntier: 3\nentity_type: index\ntitle: Eclipse Phase\n---\n\n# Eclipse Phase\n\nIntro.\n",
+            encoding="utf-8",
+        )
+        (ep_dir / "locations" / "locus.md").write_text(
+            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ntier: 3\nentity_type: location\ntitle: Locus\n---\n\n# Locus\n\nIntro.\n",
+            encoding="utf-8",
+        )
+
+        core_dir = self.repo_root / "_gm-materials" / "digests" / "mothership_core"
+        (core_dir / "factions").mkdir(parents=True)
+        (core_dir / "_index.md").write_text(
+            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\nentity_type: index\ntitle: Mothership Core\n---\n\n# Mothership Core\n\nIntro.\n",
+            encoding="utf-8",
+        )
+        (core_dir / "factions" / "company.md").write_text(
+            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\nentity_type: faction\ntitle: Company\n---\n\n# Company\n\nIntro.\n",
+            encoding="utf-8",
+        )
+
+        generate_digests.compile_references(self.repo_root, self.repo_root)
+        refs = json.loads((self.repo_root / ".agents" / "context" / "references.json").read_text(encoding="utf-8"))
+        by_slug = {s["slug"]: s for s in refs["sources"]}
+        self.assertEqual(by_slug["eclipse_phase/_index"]["category"], "core_setting")
+        self.assertEqual(by_slug["eclipse_phase/locations/locus"]["category"], "core_setting")
+        self.assertEqual(by_slug["mothership_core/_index"]["category"], "core_setting")
+        self.assertEqual(by_slug["mothership_core/factions/company"]["category"], "core_setting")
+
+
 if __name__ == "__main__":
     unittest.main()
