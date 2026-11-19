@@ -287,6 +287,34 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertEqual(by_slug["abs_inside"]["source_pdf"], "books/Inside.pdf")
         self.assertEqual(by_slug["abs_outside"]["source_pdf"], "Outside.pdf")
 
+    def test_compile_references_warns_on_flat_stub_colliding_with_nested_wiki(self):
+        digests_dir = self.repo_root / "_gm-materials" / "digests"
+        nested = digests_dir / "hostile_synthetics"
+        nested.mkdir(parents=True)
+        flat = digests_dir / "hostile_synthetics.md"
+        flat.write_text(
+            "# Hostile Synthetics — Reference Digest\n\n## Placeholder\n\nStale stub.\n"
+        )
+        (nested / "_index.md").write_text("# Hostile Synthetics Overview\n\n## Overview\n\nIntro.\n")
+        (nested / "note.md").write_text("# Note\n\n## Section\n\nText.\n")
+
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            generate_digests.compile_references(self.repo_root, self.repo_root)
+
+        output = buf.getvalue()
+        self.assertIn("[WARN]", output)
+        self.assertIn(str(flat), output)
+        self.assertIn(str(nested), output)
+        self.assertIn("references.json", output)
+
+        refs = json.loads((self.context_dir / "references.json").read_text())
+        by_slug = {entry["slug"]: entry for entry in refs["sources"]}
+        self.assertEqual(
+            list(by_slug.keys()),
+            ["hostile_synthetics", "hostile_synthetics/_index", "hostile_synthetics/note"],
+        )
+
     def _make_two_page_pdf(self, path: Path) -> None:
         writer = pypdf.PdfWriter()
         writer.add_blank_page(width=612, height=792)
