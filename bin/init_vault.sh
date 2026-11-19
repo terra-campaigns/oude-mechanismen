@@ -16,7 +16,7 @@ echo "==> Initialising campaign vault at $ABS_REPO..."
 mkdir -p "$ABS_REPO/campaigns" "$ABS_REPO/directory" "$ABS_REPO/systems" \
          "$ABS_REPO/imgs/gallery" "$ABS_REPO/imgs/badges" \
          "$ABS_REPO/_sass/custom" "$ABS_REPO/.agents/context" \
-         "$ABS_REPO/_gm-materials"
+         "$ABS_REPO/.github" "$ABS_REPO/_gm-materials"
 
 # 2. Starter template scaffolding (no-clobber)
 MAPPINGS=(
@@ -27,6 +27,7 @@ MAPPINGS=(
   "templates/route_graph.json.template:.agents/context/route_graph.json"
   "templates/jekyll/_config.yml.template:_config.yml"
   "templates/jekyll/Gemfile.template:Gemfile"
+  "templates/github/dependabot.yml.template:.github/dependabot.yml"
   "templates/jekyll/_sass/custom/custom.scss.template:_sass/custom/custom.scss"
   "templates/jekyll/index.md.template:index.md"
   "templates/jekyll/directory_index.md.template:directory/index.md"

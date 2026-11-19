@@ -50,6 +50,7 @@ TEMPLATE_MAPPINGS = [
     ("templates/route_graph.json.template", ".agents/context/route_graph.json"),
     ("templates/jekyll/_config.yml.template", "_config.yml"),
     ("templates/jekyll/Gemfile.template", "Gemfile"),
+    ("templates/github/dependabot.yml.template", ".github/dependabot.yml"),
     ("templates/jekyll/_sass/custom/custom.scss.template", "_sass/custom/custom.scss"),
     ("templates/jekyll/index.md.template", "index.md"),
     ("templates/jekyll/directory_index.md.template", "directory/index.md"),
@@ -103,6 +104,29 @@ _gm-materials/
 .agents/context/catalog.json
 """
 
+# Standard .github/dependabot.yml updates block (keep in sync with templates/github/dependabot.yml.template)
+DEFAULT_DEPENDABOT_UPDATES = """updates:
+  - package-ecosystem: "bundler"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Engine bumps are managed explicitly via release tags + `oude doctor`;
+      # git-tag pinning makes Dependabot's git-ref updater emit inverted downgrade PRs.
+      - dependency-name: "oude-mechanismen"
+        versions: ["*"]
+"""
+
+# Standard .github/dependabot.yml content (git-pinned engine ignore guard; keep in sync with the template)
+DEFAULT_DEPENDABOT_YML = (
+    "# Dependabot configuration for campaign vaults.\n"
+    "#\n"
+    "# The oude-mechanismen engine is pinned in the Gemfile via a git tag; Dependabot's\n"
+    "# git-ref updater can mis-sort tags and emit inverted downgrade PRs, so the engine\n"
+    "# dependency is ignored here. Bump it explicitly via release tags and verify with\n"
+    "# `oude doctor` (see docs/DYNAMIC_GEM.md).\n"
+    "version: 2\n"
+) + DEFAULT_DEPENDABOT_UPDATES
 
 def _copy_if_missing(src: Path, dst: Path) -> bool:
     """Copy a file if the destination does not already exist (no-clobber)."""
@@ -406,6 +430,165 @@ def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -
     return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#[^\r\n]*)?\r?$", gitignore_content))
 
 
+def _gemfile_pins_engine_via_git(gemfile_content: str) -> bool:
+    """Return True if the Gemfile pins oude-mechanismen via a git source with a tag, ref, or branch."""
+    for line in gemfile_content.splitlines():
+        if (
+            re.search(r'\bgem\s+["\']oude-mechanismen["\']', line)
+            and "git:" in line
+            and re.search(r"\b(?:tag|ref|branch):", line)
+        ):
+            return True
+    return False
+
+
+def _dependabot_ignores_engine(dependabot_content: str) -> bool:
+    """Return True if .github/dependabot.yml carries an ignore rule for the oude-mechanismen dependency."""
+    lines = dependabot_content.splitlines()
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        # Flow style on a single line, e.g. ignore: [{dependency-name: oude-mechanismen}]
+        if stripped.startswith("ignore:") and "dependency-name" in stripped and "oude-mechanismen" in stripped:
+            return True
+        match = re.match(r"^(\s*)ignore:\s*(?:#.*)?$", line)
+        if not match:
+            continue
+        indent = len(match.group(1))
+        for follow in lines[idx + 1:]:
+            follow_stripped = follow.strip()
+            if not follow_stripped or follow_stripped.startswith("#"):
+                continue
+            if len(follow) - len(follow.lstrip()) <= indent:
+                break
+            if re.search(r"dependency-name:\s*[\"']?oude-mechanismen[\"']?", follow):
+                return True
+    return False
+
+
+def _default_dependabot_yml() -> str:
+    """Return the scaffolded .github/dependabot.yml content (template asset with inline fallback)."""
+    template = resolve_asset_dir("templates/github/dependabot.yml.template")
+    if template.is_file():
+        return template.read_text(encoding="utf-8")
+    return DEFAULT_DEPENDABOT_YML
+
+
+def _patch_dependabot_engine_ignore(dependabot_content: str) -> Optional[str]:
+    """Return *dependabot_content* with an ignore rule for oude-mechanismen added.
+
+    Idempotent: the input is returned unchanged when the rule already exists. Unrelated
+    entries are preserved; only the oude-mechanismen ignore is added to the bundler
+    update (or a managed bundler update is appended). Returns None when the file uses a
+    flow-style ``updates:`` list that cannot be patched line-wise.
+    """
+    if _dependabot_ignores_engine(dependabot_content):
+        return dependabot_content
+
+    lines = dependabot_content.splitlines()
+    trailing_newline = dependabot_content.endswith("\n")
+    comment = (
+        "# Engine bumps are managed explicitly via release tags + `oude doctor`;",
+        "# git-tag pinning makes Dependabot's git-ref updater emit inverted downgrade PRs.",
+    )
+
+    updates_idx = None
+    for idx, line in enumerate(lines):
+        if re.match(r"^updates:\s*(?:#.*)?$", line):
+            updates_idx = idx
+            break
+        if re.match(r"^updates:\s*\S", line):
+            return None  # flow-style updates list; patch manually
+    if updates_idx is None:
+        has_version = any(re.match(r"^version:\s*\S", line) for line in lines)
+        base = dependabot_content.rstrip("\n")
+        suffix = DEFAULT_DEPENDABOT_YML if not has_version else DEFAULT_DEPENDABOT_UPDATES
+        return f"{base}\n\n{suffix}" if base else suffix
+
+    # Block-style updates: the region spans until the next top-level key.
+    region_end = len(lines)
+    for idx in range(updates_idx + 1, len(lines)):
+        line = lines[idx]
+        if line.strip() and not line.lstrip().startswith("#") and not line.startswith((" ", "\t")):
+            region_end = idx
+            break
+
+    def entry_stop(start: int, dash_indent: int) -> int:
+        """Return the exclusive end of the list entry starting at *start*."""
+        for idx in range(start + 1, region_end):
+            if re.match(r"^\s*-\s", lines[idx]) and len(lines[idx]) - len(lines[idx].lstrip()) <= dash_indent:
+                return idx
+        return region_end
+
+    def trim_blanks(end: int) -> int:
+        """Walk *end* back over trailing blank lines inside the updates region."""
+        while end > updates_idx + 1 and not lines[end - 1].strip():
+            end -= 1
+        return end
+
+    bundler_idx = None
+    dash_indent = 2
+    for idx in range(updates_idx + 1, region_end):
+        if re.match(r'^\s*-\s*package-ecosystem:\s*["\']?bundler["\']?', lines[idx]):
+            bundler_idx = idx
+            dash_indent = len(lines[idx]) - len(lines[idx].lstrip())
+            break
+
+    if bundler_idx is None:
+        # No bundler update yet: append a managed one at the end of the updates list.
+        pad = " " * dash_indent
+        insert_at = trim_blanks(region_end)
+        lines[insert_at:insert_at] = [
+            f'{pad}- package-ecosystem: "bundler"',
+            f'{pad}  directory: "/"',
+            f"{pad}  schedule:",
+            f'{pad}    interval: "weekly"',
+            f"{pad}  ignore:",
+            *[f"{pad}    {c}" for c in comment],
+            f'{pad}    - dependency-name: "oude-mechanismen"',
+            f'{pad}      versions: ["*"]',
+        ]
+        return "\n".join(lines) + ("\n" if trailing_newline else "")
+
+    stop = entry_stop(bundler_idx, dash_indent)
+    key_indent = dash_indent + 2
+    ignore_idx = None
+    for idx in range(bundler_idx + 1, stop):
+        match = re.match(r"^(\s*)ignore:\s*(?:#.*)?$", lines[idx])
+        if match and len(match.group(1)) >= key_indent:
+            ignore_idx = idx
+            break
+
+    if ignore_idx is not None:
+        # Extend the existing ignore list with the engine entry.
+        ignore_indent = len(lines[ignore_idx]) - len(lines[ignore_idx].lstrip())
+        item_indent = ignore_indent + 2
+        insert_at = ignore_idx + 1
+        for idx in range(ignore_idx + 1, stop):
+            line = lines[idx]
+            if not line.strip():
+                continue
+            if line.lstrip().startswith("#") or len(line) - len(line.lstrip()) > ignore_indent:
+                insert_at = idx + 1
+            else:
+                break
+        lines[insert_at:insert_at] = [
+            *[f"{' ' * item_indent}{c}" for c in comment],
+            f"{' ' * item_indent}- dependency-name: \"oude-mechanismen\"",
+            f"{' ' * (item_indent + 2)}versions: [\"*\"]",
+        ]
+    else:
+        # Add an ignore key to the existing bundler entry.
+        pad = " " * key_indent
+        insert_at = trim_blanks(stop)
+        lines[insert_at:insert_at] = [
+            f"{pad}ignore:",
+            *[f"{pad}  {c}" for c in comment],
+            f"{pad}  - dependency-name: \"oude-mechanismen\"",
+            f"{pad}    versions: [\"*\"]",
+        ]
+    return "\n".join(lines) + ("\n" if trailing_newline else "")
+
+
 def _find_bundle_cmd() -> Optional[str]:
     """Resolve the Bundler command across macOS/Linux ('bundle') and Debian 13 ('bundle3.3')."""
     for candidate in ("bundle", "bundle3.3"):
@@ -524,6 +707,42 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         else:
             print(f"  ✗ Missing: {desc}")
             all_passed = False
+
+    # 1b. Dependabot guard: a git-tag-pinned engine must be ignored to prevent inverted downgrade PRs
+    gemfile_path = vault / "Gemfile"
+    dependabot_path = vault / ".github" / "dependabot.yml"
+    if gemfile_path.is_file():
+        try:
+            if not _gemfile_pins_engine_via_git(gemfile_path.read_text(encoding="utf-8")):
+                pass  # registry-pinned engine: Dependabot compares real semver, nothing to guard
+            elif dependabot_path.is_file() and _dependabot_ignores_engine(dependabot_path.read_text(encoding="utf-8")):
+                print("  ✓ Dependabot ignores git-pinned oude-mechanismen (.github/dependabot.yml)")
+            elif fix:
+                if dependabot_path.is_file():
+                    patched = _patch_dependabot_engine_ignore(dependabot_path.read_text(encoding="utf-8"))
+                    if patched is None:
+                        print(
+                            "  ⚠ .github/dependabot.yml uses a flow-style updates list; "
+                            "add an ignore rule for oude-mechanismen manually"
+                        )
+                        all_passed = False
+                    else:
+                        dependabot_path.write_text(patched, encoding="utf-8")
+                        print("  ✓ Added oude-mechanismen ignore rule to .github/dependabot.yml")
+                else:
+                    dependabot_path.parent.mkdir(parents=True, exist_ok=True)
+                    dependabot_path.write_text(_default_dependabot_yml(), encoding="utf-8")
+                    print("  ✓ Created .github/dependabot.yml with oude-mechanismen ignore rule")
+            else:
+                print(
+                    "  ⚠ Gemfile pins oude-mechanismen via git+tag but .github/dependabot.yml lacks an ignore rule "
+                    "for it (Dependabot's git-ref updater can emit inverted downgrade PRs; run `oude doctor --fix`)"
+                )
+                all_passed = False
+        except OSError as exc:
+            print(f"  ✗ Failed to inspect or update Gemfile/.github/dependabot.yml: {exc}")
+            all_passed = False
+
 
     # 2. Check for legacy files (collisions/shadowing)
     for rel_str in ("_plugins/data_extractor.rb", "_plugins/llm_content.rb", ".agents/venv"):
