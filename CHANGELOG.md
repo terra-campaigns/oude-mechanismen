@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Stage C PDF Extraction Calibration & Image XObject Telemetry (`#49`)**:
+  - Raised default `--min-chars-per-page` in `scripts/generate_digests.py` from `80` to `160` (`DEFAULT_MIN_CHARS_PER_PAGE`) and added `auto`-mode fallback for sparse image-heavy pages (`< 2 * min_chars_per_page` with large `/Image` XObjects).
+  - Added non-decoding `/Resources /XObject` inspection (`_count_xobject_images`, `_page_image_stats`) emitting `image_count`, `has_large_images`, and `large_image_pages` per slice in `manifest.json`, plus `[INFO] text slices with large images:` telemetry in `oude digest --validate --manifest`.
+  - Updated `skills/digest-book/SKILL.md` to prioritise text slices with `has_large_images: true` / `large_image_pages` during the visual quality-gate pass.
+
 ### Removed
 
 - **Legacy `/all-content.html` Monolithic LLM Dump Retired (`#25`, `#35`, refs `#32`, `#34`)**:

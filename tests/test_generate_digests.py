@@ -806,6 +806,129 @@ class TestExtractAndValidate(unittest.TestCase):
         self.assertEqual(by_slug["mothership_core/_index"]["category"], "core_setting")
         self.assertEqual(by_slug["mothership_core/factions/company"]["category"], "core_setting")
 
+    def test_extract_default_min_chars_per_page_is_160_and_catches_sparse_page(self):
+        pdf = Path(self.temp_dir.name) / "calibrated.pdf"
+        caption_only = "Figure 1.2: Cargo bay exterior schematic showing docking clamps and hull plating."  # 83 chars
+        _make_pdf(pdf, [self.dense, caption_only])
+        out_dir = Path(self.temp_dir.name) / "out"
+        manifest_path = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="auto")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["min_chars_per_page"], 160)
+        self.assertEqual(manifest["slices"][0]["format"], "text")
+        self.assertEqual(manifest["slices"][1]["format"], "pdf")
+        self.assertIn("low text density", manifest["slices"][1]["auto_fallback_reason"])
+
+    def test_extract_image_heavy_fallback_and_large_image_telemetry(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+
+        pdf = Path(self.temp_dir.name) / "illustrated.pdf"
+        _make_pdf(
+            pdf,
+            [
+                "Caption text for full-page station map showing docking ring, reactor spine, and airlocks. " * 2,  # ~180 chars
+                self.dense * 2,  # ~468 chars (>= 320)
+                "Tiny icon caption text repeated enough to exceed threshold cleanly without large artwork. " * 2,  # ~178 chars
+            ],
+        )
+
+        # Inject /Image XObjects onto pages 1, 2 (400x400 large) and page 3 (32x32 tiny icon)
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf))
+        writer = PdfWriter()
+        for idx, page in enumerate(reader.pages):
+            writer.add_page(page)
+            target_page = writer.pages[idx]
+            img = DecodedStreamObject()
+            img[NameObject("/Type")] = NameObject("/XObject")
+            img[NameObject("/Subtype")] = NameObject("/Image")
+            side = 32 if idx == 2 else 400
+            img[NameObject("/Width")] = NumberObject(side)
+            img[NameObject("/Height")] = NumberObject(side)
+            img.set_data(b"\x00")
+            img_ref = writer._add_object(img)
+            res = target_page["/Resources"].get_object()
+            xobj = DictionaryObject()
+            xobj[NameObject("/Im0")] = img_ref
+            res[NameObject("/XObject")] = xobj
+        with open(pdf, "wb") as fh:
+            writer.write(fh)
+
+        out_dir = Path(self.temp_dir.name) / "out"
+        manifest_path = generate_digests.extract_pdf(str(pdf), self.repo_root, out_dir=str(out_dir), format="auto")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        by_page = {p: s for s in manifest["slices"] for p in range(s["start_page"], s["end_page"] + 1)}
+
+        # Page 1: sparse caption + large image -> auto fallback to pdf
+        self.assertEqual(by_page[1]["format"], "pdf")
+        self.assertIn("image-heavy page", by_page[1]["auto_fallback_reason"])
+        self.assertEqual(by_page[1]["image_count"], 1)
+        self.assertTrue(by_page[1]["has_large_images"])
+        self.assertEqual(by_page[1]["large_image_pages"], [1])
+
+        # Pages 2-3 coalesce into one text slice: p.2 has 400x400 image, p.3 has 32x32 icon
+        self.assertEqual(by_page[2]["format"], "text")
+        self.assertIsNone(by_page[2]["auto_fallback_reason"])
+        self.assertEqual((by_page[2]["start_page"], by_page[2]["end_page"]), (2, 3))
+        self.assertEqual(by_page[2]["image_count"], 2)
+        self.assertTrue(by_page[2]["has_large_images"])
+        self.assertEqual(by_page[2]["large_image_pages"], [2])
+
+    def test_count_xobject_images_handles_forms_and_cycles(self):
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+
+        img = DecodedStreamObject()
+        img[NameObject("/Subtype")] = NameObject("/Image")
+        img[NameObject("/Width")] = NumberObject(600)
+        img[NameObject("/Height")] = NumberObject(150)
+
+        form = DictionaryObject()
+        form[NameObject("/Subtype")] = NameObject("/Form")
+        form_xobj = DictionaryObject()
+        form_xobj[NameObject("/Banner")] = img
+        form_xobj[NameObject("/SelfLoop")] = form  # cyclic /Form reference
+        form[NameObject("/Resources")] = DictionaryObject({NameObject("/XObject"): form_xobj})
+
+        page = DictionaryObject()
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/XObject"): DictionaryObject({NameObject("/Fm0"): form})}
+        )
+
+        total, large = generate_digests._count_xobject_images(page, set())
+        self.assertEqual(total, 1)
+        self.assertEqual(large, 1)
+
+        # Non-numeric /Width on an /Image XObject still counts the image as non-large
+        from pypdf.generic import TextStringObject
+        bad_img = DecodedStreamObject()
+        bad_img[NameObject("/Subtype")] = NameObject("/Image")
+        bad_img[NameObject("/Width")] = TextStringObject("unknown")
+        bad_img[NameObject("/Height")] = NumberObject(400)
+        bad_page = DictionaryObject(
+            {NameObject("/Resources"): DictionaryObject({NameObject("/XObject"): DictionaryObject({NameObject("/ImBad"): bad_img})})}
+        )
+        self.assertEqual(generate_digests._count_xobject_images(bad_page, set()), (1, 0))
+
+    def test_validate_manifest_telemetry_reports_large_image_pages(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        self._write_valid_note(digest_dir)
+        manifest = Path(self.temp_dir.name) / "manifest.json"
+        manifest.write_text(
+            json.dumps({
+                "slices": [
+                    {"format": "text", "has_large_images": True, "large_image_pages": [18, 23], "auto_fallback_reason": None},
+                    {"format": "text", "has_large_images": True, "large_image_pages": None, "auto_fallback_reason": None},
+                    {"format": "text", "has_large_images": False, "large_image_pages": [], "auto_fallback_reason": None},
+                ]
+            }),
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
+        self.assertEqual(rc, 0)
+        self.assertIn("text slices with large images: 2 slice(s) (pages: [18, 23])", buf.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -499,6 +499,11 @@ def _resolve_pdf_path(drive_dir: Path, pdf_path: str) -> Path:
     return resolved
 
 
+DEFAULT_MIN_CHARS_PER_PAGE = 160
+LARGE_IMAGE_MIN_PIXELS = 90_000
+LARGE_IMAGE_MIN_SIDE = 500
+
+
 def _page_text(reader: Any, page_no: int, cache: Dict[int, Tuple[str, int]]) -> str:
     """Return layout-mode UTF-8 text for a 1-based page number; cache maps page to (text, utf8_byte_len)."""
     if page_no not in cache:
@@ -510,6 +515,118 @@ def _page_text(reader: Any, page_no: int, cache: Dict[int, Tuple[str, int]]) -> 
             text = ""
         cache[page_no] = (text, len(text.encode("utf-8")))
     return cache[page_no][0]
+
+
+def _count_xobject_images(
+    container: Any,
+    seen: set,
+) -> Tuple[int, int]:
+    """Recursively count (/Image XObjects, large /Image XObjects) without decoding pixel streams."""
+    if not hasattr(container, "get"):
+        return 0, 0
+    ref = getattr(container, "indirect_reference", None)
+    token = ("ref", ref.idnum, ref.generation) if ref is not None else ("id", id(container))
+    if token in seen:
+        return 0, 0
+    seen.add(token)
+
+    try:
+        resources = container.get("/Resources")
+        if hasattr(resources, "get_object"):
+            resources = resources.get_object()
+        if not hasattr(resources, "get"):
+            return 0, 0
+        xobjects = resources.get("/XObject")
+        if hasattr(xobjects, "get_object"):
+            xobjects = xobjects.get_object()
+        if not hasattr(xobjects, "items"):
+            return 0, 0
+    except Exception:
+        return 0, 0
+
+    total = 0
+    large = 0
+    for _, raw_obj in xobjects.items():
+        try:
+            obj = raw_obj.get_object() if hasattr(raw_obj, "get_object") else raw_obj
+            if not hasattr(obj, "get"):
+                continue
+            subtype = str(obj.get("/Subtype", ""))
+            if subtype == "/Image":
+                total += 1
+                try:
+                    raw_w = obj.get("/Width", 0)
+                    raw_h = obj.get("/Height", 0)
+                    width = int((raw_w.get_object() if hasattr(raw_w, "get_object") else raw_w) or 0)
+                    height = int((raw_h.get_object() if hasattr(raw_h, "get_object") else raw_h) or 0)
+                except (TypeError, ValueError):
+                    width, height = 0, 0
+                if (width * height) >= LARGE_IMAGE_MIN_PIXELS or max(width, height) >= LARGE_IMAGE_MIN_SIDE:
+                    large += 1
+            elif subtype == "/Form":
+                sub_total, sub_large = _count_xobject_images(obj, seen)
+                total += sub_total
+                large += sub_large
+        except Exception:
+            continue
+    return total, large
+
+
+def _page_image_stats(
+    reader: Any, page_no: int, image_cache: Dict[int, Tuple[int, int]]
+) -> Tuple[int, int]:
+    """Return cached (image_count, large_image_count) for a 1-based PDF page number."""
+    if page_no not in image_cache:
+        try:
+            page = reader.pages[page_no - 1]
+            image_cache[page_no] = _count_xobject_images(page, set())
+        except Exception:
+            image_cache[page_no] = (0, 0)
+    return image_cache[page_no]
+
+
+def _auto_page_decision(
+    reader: Any,
+    page_no: int,
+    text_cache: Dict[int, Tuple[str, int]],
+    image_cache: Dict[int, Tuple[int, int]],
+    min_chars_per_page: int,
+) -> Tuple[str, Optional[str]]:
+    """Decide 'text' vs 'pdf' for a single page in auto mode using text density and large-image checks."""
+    char_count = len(_page_text(reader, page_no, text_cache))
+    if char_count < min_chars_per_page:
+        return "pdf", (
+            f"low text density: page {page_no} has {char_count} chars "
+            f"below {min_chars_per_page} chars/page threshold"
+        )
+    _, large_images = _page_image_stats(reader, page_no, image_cache)
+    if large_images > 0 and char_count < min_chars_per_page * 2:
+        return "pdf", (
+            f"image-heavy page: page {page_no} has {large_images} large image(s) "
+            f"and {char_count} chars (below {min_chars_per_page * 2} threshold)"
+        )
+    return "text", None
+
+
+def _slice_image_telemetry(
+    reader: Any,
+    start_page: int,
+    end_page: int,
+    image_cache: Dict[int, Tuple[int, int]],
+) -> Dict[str, Any]:
+    """Summarise per-slice image XObject telemetry for manifest.json."""
+    total_images = 0
+    large_pages: List[int] = []
+    for pg in range(start_page, end_page + 1):
+        count, large = _page_image_stats(reader, pg, image_cache)
+        total_images += count
+        if large > 0:
+            large_pages.append(pg)
+    return {
+        "image_count": total_images,
+        "has_large_images": bool(large_pages),
+        "large_image_pages": large_pages,
+    }
 
 
 def _span_bytes(reader: Any, cache: Dict[int, Tuple[str, int]], start: int, end: int) -> int:
@@ -661,7 +778,7 @@ def extract_pdf(
     chunk_pages: int = 10,
     pdf_slice_pages: int = 5,
     max_bytes: int = 38000,
-    min_chars_per_page: int = 80,
+    min_chars_per_page: int = DEFAULT_MIN_CHARS_PER_PAGE,
     page_spec: Optional[str] = None,
     source_pdf: Optional[str] = None,
 ) -> Path:
@@ -669,9 +786,12 @@ def extract_pdf(
 
     format="text" emits layout-mode UTF-8 slices with '--- Page N ---' markers; format="pdf"
     emits PdfWriter page-range slices; format="auto" falls back to .pdf per page when the
-    extracted character density drops below *min_chars_per_page*. With *page_spec* (e.g.
-    "209-211,261"), those pages are forced to the requested format while all other pages keep
-    their prior (or auto) decisions, and the manifest is rebuilt in monotonic page order.
+    extracted character density drops below *min_chars_per_page* or when an image-heavy page has
+    sparse caption text (< 2 * *min_chars_per_page*). Each slice also records image XObject
+    telemetry (image_count, has_large_images, large_image_pages) in manifest.json. With
+    *page_spec* (e.g. "209-211,261"), those pages are forced to the requested format while all
+    other pages keep their prior (or auto) decisions, and the manifest is rebuilt in monotonic
+    page order.
     """
     if pypdf is None:
         raise ImportError("pypdf is required for PDF extraction. Please install it using 'pip install pypdf'.")
@@ -709,26 +829,17 @@ def extract_pdf(
     windows, cache = plan_extract_windows(
         reader, max_depth, chunk_pages, max_bytes, skip_text_sizing=skip_text_sizing
     )
+    image_cache: Dict[int, Tuple[int, int]] = {}
     forced = set(page_filter) if page_filter is not None else set()
 
     def resolve_page_format(p: int) -> Tuple[str, Optional[str]]:
         if page_filter is not None and p not in forced:
             if p in prior:
                 return prior[p]
-            # Unforced pages without a prior manifest default to auto density checks.
-            if len(_page_text(reader, p, cache)) < min_chars_per_page:
-                return "pdf", (
-                    f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
-                    f"below {min_chars_per_page} chars/page threshold"
-                )
-            return "text", None
+            # Unforced pages without a prior manifest default to auto density/image checks.
+            return _auto_page_decision(reader, p, cache, image_cache, min_chars_per_page)
         if format == "auto":
-            if len(_page_text(reader, p, cache)) < min_chars_per_page:
-                return "pdf", (
-                    f"low text density: page {p} has {len(_page_text(reader, p, cache))} chars "
-                    f"below {min_chars_per_page} chars/page threshold"
-                )
-            return "text", None
+            return _auto_page_decision(reader, p, cache, image_cache, min_chars_per_page)
         return format, None
 
     slices: List[Dict[str, Any]] = []
@@ -776,6 +887,7 @@ def extract_pdf(
                         "byte_size": (target_dir / fname).stat().st_size,
                         "char_count": sub_chars,
                         "auto_fallback_reason": slice_reason,
+                        **_slice_image_telemetry(reader, p, e, image_cache),
                     })
                     p = e + 1
             else:
@@ -785,6 +897,7 @@ def extract_pdf(
                 )
                 byte_size = len(run_text.encode("utf-8"))
                 if byte_size > max_bytes and run_start == run_end:
+                    telemetry = _slice_image_telemetry(reader, run_start, run_start, image_cache)
                     for part in _split_single_page(_page_text(reader, run_start, cache), run_start, max_bytes):
                         index += 1
                         fname = f"{index:03d}_{slugify(title)}_p{run_start}_part.txt"
@@ -799,6 +912,7 @@ def extract_pdf(
                             "byte_size": len(part.encode("utf-8")),
                             "char_count": len(part),
                             "auto_fallback_reason": None,
+                            **telemetry,
                         })
                     continue
                 index += 1
@@ -814,6 +928,7 @@ def extract_pdf(
                     "byte_size": byte_size,
                     "char_count": len(run_text),
                     "auto_fallback_reason": None,
+                    **_slice_image_telemetry(reader, run_start, run_end, image_cache),
                 })
 
     if page_filter is not None:
@@ -935,6 +1050,17 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                     reasons[key] = reasons.get(key, 0) + 1
             if reasons:
                 print(f"[INFO] auto-fallback slice counts: {json.dumps(reasons, ensure_ascii=False)}")
+            large_img_pages = sorted({
+                pg
+                for s in data.get("slices", [])
+                if s.get("format") == "text" and s.get("has_large_images")
+                for pg in (s.get("large_image_pages") or [])
+            })
+            if large_img_pages:
+                text_with_images = sum(
+                    1 for s in data.get("slices", []) if s.get("format") == "text" and s.get("has_large_images")
+                )
+                print(f"[INFO] text slices with large images: {text_with_images} slice(s) (pages: {large_img_pages})")
     for err in errors:
         print(f"[FAIL] {err}")
     if errors:
@@ -962,7 +1088,7 @@ def main():
     parser.add_argument("--chunk-pages", type=int, default=10, help="Page window size for oversized outline spans under --extract (default: 10)")
     parser.add_argument("--pdf-slice-pages", type=int, default=5, help="Pages per emitted .pdf slice under --extract (default: 5)")
     parser.add_argument("--max-bytes", type=int, default=38000, help="Maximum bytes per text slice under --extract (default: 38000)")
-    parser.add_argument("--min-chars-per-page", type=int, default=80, help="Auto-fallback threshold for --extract --format auto (default: 80)")
+    parser.add_argument("--min-chars-per-page", type=int, default=DEFAULT_MIN_CHARS_PER_PAGE, help=f"Auto-fallback threshold for --extract --format auto (default: {DEFAULT_MIN_CHARS_PER_PAGE})")
     parser.add_argument("--pages", type=str, default=None, metavar="RANGES", help="Restrict --extract to page ranges (e.g. '209-211,261'); merges into an existing manifest, replacing those pages' slices")
     parser.add_argument("--validate", nargs="?", const="", default=None, metavar="DIGEST_DIR", help="Validate digest notes against hard invariants (default dir: <drive_dir>/_gm-materials/digests)")
     parser.add_argument("--manifest", type=str, default=None, help="manifest.json from --extract, used by --validate for auto-fallback telemetry")
