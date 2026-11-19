@@ -2,9 +2,9 @@ name: CI Health Check
 
 on:
   push:
-    branches: [ "main", "before-publish" ]
+    branches: [ "main", "develop", "before-publish" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 jobs:
   validate:
