@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.7.2] - 2026-11-19
 
 ### Changed
 
@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Legacy `/all-content.html` Monolithic LLM Dump Retired (`#25`, `#35`, refs `#32`, `#34`)**:
   - Removed `jekyll/all-content.md` and `jekyll/_plugins/llm_content.rb` (`raw_markdown` Liquid filter and `Jekyll::LlmContentGenerator`) in favour of progressive retrieval (`catalog.json`, `references.json`, and `lookup-context`), along with the `lib/oude_mechanismen.rb` require, `pyproject.toml` `force-include`, and `LAYOUT_EXEMPT` entry in `scripts/lint_wiki.py`.
   - Updated `oude doctor` (`--fix`) in `src/oude_mechanismen/cli.py` to unconditionally flag and remove deprecated root `all-content.md` files (alongside `_plugins/llm_content.rb`) in downstream vaults, and reconciled `AGENTS.md`, `docs/DYNAMIC_GEM.md`, `docs/MIGRATION_GUIDE.md`, and Design 002.
+
+### Fixed
+
+- **Book-Level Digest Category Inference & `digest-book` Skill Gates (`#66`, `#67`, PR `#71`)**:
+  - `scripts/generate_digests.py` honours an explicit `category:` YAML frontmatter field first, resolves book-level category for nested digest wikis from `_index.md` frontmatter (`category:`/`source_pdf:`) and the top-level `<source>` folder slug instead of keyword-matching leaf filenames (preventing misclassification of e.g. `locations/floor_5_ai_core.md` as `core_setting`), and retains the stem heuristic for legacy flat `<source>.md` digests (new helpers `_normalise_source_pdf()`, `_infer_digest_category()`, `_load_book_index_meta()`).
+  - `skills/digest-book/SKILL.md` expands the Step 1 visual quality gate (prose-concealed mini-maps, per-floor encounter tables, icon-keyed maps, colour-coded tables), documents retiring legacy flat `<source>.md` summaries during the Step 3 atomic swap, and adds an optional Step 4 zero-context audit against `manifest.json`.
 
 ---
 
@@ -311,7 +317,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
 [0.2.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.1.0...v0.2.0
