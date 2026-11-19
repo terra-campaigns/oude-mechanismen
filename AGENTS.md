@@ -119,7 +119,7 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 
 The engine operates on a strict **Three-Tier Canon Hierarchy**:
 
-- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed in-memory by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into `.agents/context/catalog.json`. This is hard canon.
+- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed on build by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into the gitignored local cache `.agents/context/catalog.json`. This is hard canon.
 - **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 

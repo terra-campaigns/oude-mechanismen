@@ -12,7 +12,7 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 
 ### 1. Consult Tier 1 & Tier 2 Indexes First
 
-- **Tier 1 (Catalogue):** Inspect `.agents/context/catalog.json`. Search the `entries` list for matches against `title`, `type`, `region`, or `parent`.
+- **Tier 1 (Catalogue):** Inspect the local `.agents/context/catalog.json` cache. Search the `entries` list for matches against `title`, `type`, `region`, or `parent`. If `catalog.json` is not yet generated (e.g. on a fresh clone), run `bundle exec jekyll build` (or `oude doctor --fix`) to build it, or fall back to targeted `rg` searches across `campaigns/`, `directory/`, and `systems/`.
 - **Tier 2 (Rulings Log & Session Records):**
   - Inspect `.agents/context/decisions.md` to check if a table ruling or conversational decision has already been agreed with the GM.
   - When querying recent table events, party conditions, inventory/debts, or unresolved plot hooks, inspect recent synthesised session notes in `_gm-materials/session-summaries/*_session_notes.md`.

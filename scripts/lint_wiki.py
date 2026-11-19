@@ -395,15 +395,15 @@ def check_deprecated_hooks(
 def check_catalogue(
     root: Path, files: List[Path], exclude_paths: List[str], findings: List[Finding]
 ) -> None:
-    """Check 6: .agents/context/catalog.json freshness against disk."""
+    """Check 6: .agents/context/catalog.json local cache freshness against disk."""
     catalog_path = root / ".agents" / "context" / "catalog.json"
     if not catalog_path.is_file():
         findings.append(
             Finding(
                 check="catalogue",
-                severity="FAIL",
+                severity="WARN",
                 file=".agents/context/catalog.json",
-                message="catalog.json missing; rebuild it with the data_extractor plugin or `oude doctor --fix`",
+                message="local catalog.json cache absent; run `bundle exec jekyll build` or `oude doctor --fix` to generate",
             )
         )
         return

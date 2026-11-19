@@ -28,7 +28,7 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
 - **Tier 0 (Local Disk Air-Gap)**:
   Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
 - **Tier 1 (Canonical Published Notes)**:
-  Published Markdown notes indexed automatically into `.agents/context/catalog.json`. This is hard campaign canon.
+  Published Markdown notes indexed locally on build into `.agents/context/catalog.json` (gitignored derived cache). This is hard campaign canon.
 - **Tier 2 (Active Table Decisions & Archival Notes)**:
   Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in `_gm-materials/` (`session-summaries/`, `session-preps/`).
 - **Tier 3 (External Reference Material & Sourcebooks)**:
