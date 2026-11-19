@@ -52,12 +52,16 @@ oude digest                 # recompiles .agents/context/references.json
 
 ## Step 5 — Ensure gem consumption, then validate exclusions and hygiene
 
-First ensure the vault consumes the `oude-mechanismen` RubyGem: `Gemfile` pins `oude-mechanismen` (see [DYNAMIC_GEM.md](DYNAMIC_GEM.md#installation)), `_config.yml` includes `plugins: [oude-mechanismen]`, and `bundle install` has succeeded. Then run:
+First ensure the vault consumes the `oude-mechanismen` RubyGem: `Gemfile` pins `oude-mechanismen` (see [DYNAMIC_GEM.md](DYNAMIC_GEM.md#installation)), `_config.yml` includes `plugins: [oude-mechanismen]`, and `bundle install` has succeeded.
+
+> **Linux / Debian 13 (`trixie`) note:** Debian 13 packages Bundler as `/usr/bin/bundle3.3` with no `/usr/bin/bundle` symlink; `oude doctor` resolves `bundle3.3` automatically, or you can invoke `bundle3.3` directly (or symlink `~/.local/bin/bundle -> /usr/bin/bundle3.3`). Always configure Bundler's local install path **outside** an Obsidian Sync vault (`bundle config set --local path ~/.local/share/bundle/<campaign>`) rather than `./vendor/bundle` so Ruby gems are never uploaded into Obsidian Sync.
+
+Then run:
 
 ```bash
-oude doctor --fix           # repairs .gitignore / _config.yml exclude:, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, unmodified all-content.md
+oude doctor --fix           # repairs .gitignore / _config.yml exclude:, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, unmodified all-content.md, and refreshes stale catalog.json
 oude audit                  # coverage & gap report
-bundle exec jekyll build    # Tier 1 catalogue compiles with zero errors
+bundle exec jekyll build    # Tier 1 catalogue compiles with zero errors (use bundle3.3 on Debian 13 if unlinked)
 ```
 
 Verify all four `_gm-materials/` exclusion layers from ADR 003 hold: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths (audited by `oude doctor --fix`).
@@ -69,6 +73,17 @@ git add -A && git commit -m "chore: migrate to _gm-materials/ + drive_dir: . (AD
 # on the secondary workstation (e.g. artemis):
 git clone <vault-url> ~/Repos/<campaign>
 ```
+
+Before running the first `ob sync` after `ob sync-setup`, configure exclusions and allowed file types so Obsidian Sync does **not** pull stale deleted files from remote history (`_includes/*.html`, `_data/*.json`, legacy `*.py` scripts that would shadow the RubyGem) or upload `vendor/` / build caches:
+
+```bash
+cd ~/Repos/<campaign>
+ob sync-setup --vault "<obsidian-vault-name>"
+ob sync-config --configs "" --file-types image,audio,video,pdf --excluded-folders "_site,vendor,.jekyll-cache,.sass-cache,.bundle,.githooks,.agents,bin,_data"
+ob sync
+```
+
+> **Why `--file-types` and `--excluded-folders` matter:** Leaving `unsupported` enabled lets Obsidian Sync restore old `.html`, `.json`, `.py`, and `.rb` ghost files from remote vault history, while omitting `vendor` causes `./vendor/bundle` (if ever created) to synchronise thousands of gem files across machines.
 
 Enable Obsidian Sync on both machines pointing at the vault; `_gm-materials/` syncs encrypted peer-to-peer and stays out of Git.
 
@@ -93,3 +108,5 @@ Open `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000`) from a se
 | `_gm-materials/` appears in the built site or Git | Ensure `Gemfile` + `_config.yml` use the gem, run `oude doctor --fix`, and verify all four exclusion layers (Step 5). |
 | `python3 .agents/scripts/...` no longer exists | Legacy runners are deleted by `oude doctor --fix`; use the `oude` CLI (`oude digest`, `oude audit`, `oude transcribe`, …) instead. |
 | Jekyll build fails after gem update | `bundle update oude-mechanismen`, then `bundle exec jekyll build`; see [DYNAMIC_GEM.md](DYNAMIC_GEM.md). |
+| `bundle: command not found` on Debian 13 (`trixie`) | Use `bundle3.3` or symlink `~/.local/bin/bundle -> /usr/bin/bundle3.3`; `oude doctor` detects `bundle3.3` automatically. |
+| Obsidian Sync restores deleted `_includes/`, `_data/`, or uploads `vendor/` | Apply `ob sync-config --configs "" --file-types image,audio,video,pdf --excluded-folders "_site,vendor,.jekyll-cache,.sass-cache,.bundle,.githooks,.agents,bin,_data"` (Step 6), run `bundle config set --local path ~/.local/share/bundle/<campaign>`, and clean up with `oude doctor --fix`. |

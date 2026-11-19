@@ -432,6 +432,46 @@ class TestPrReviewRegressions(LintWikiTestCase):
         self.assertIn("duplicate-title", report.checks_skipped)
         self.assertEqual(self._findings(report, "duplicate-title"), [])
 
+    def test_hidden_dotfiles_under_imgs_are_ignored(self):
+        self._write("imgs/.DS_Store", "junk")
+        self._write("imgs/extra/.DS_Store", "junk")
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "unused-image"), [])
+
+    def test_config_yml_logo_and_favicon_count_as_referenced(self):
+        self._write("imgs/favicon.ico", "ICO")
+        self._write("imgs/logo.png", "PNG")
+        self._write("imgs/extra/unused.png", "PNG")
+        self._write(
+            "_config.yml",
+            'title: Test\nfavicon_ico: "/imgs/favicon.ico"\nlogo: "imgs/logo.png"\n',
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        unused = self._findings(report, "unused-image")
+        self.assertEqual([u.file for u in unused], ["imgs/extra/unused.png"])
+
+    def test_nav_exclude_exempts_parent_requirement(self):
+        self._write(
+            "directory/hidden.md",
+            "---\ntitle: Hidden Note\nnav_exclude: true\n---\n\nOne.\nTwo.\nThree.\n",
+        )
+        self._write(
+            "directory/not_excluded.md",
+            "---\ntitle: Visible Note\nnav_exclude: false\n---\n\nOne.\nTwo.\nThree.\n",
+        )
+        self._write_catalog(
+            [
+                "campaigns/arc/ep001.md",
+                "directory/place.md",
+                "directory/hidden.md",
+                "directory/not_excluded.md",
+            ]
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        fm = self._findings(report, "front-matter")
+        self.assertEqual([f.file for f in fm], ["directory/not_excluded.md"])
+        self.assertIn("parent", fm[0].message)
+
 
 if __name__ == "__main__":
     unittest.main()

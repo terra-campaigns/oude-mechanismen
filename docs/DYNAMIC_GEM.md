@@ -26,6 +26,8 @@ bundle install
 bundle exec jekyll build   # writes .agents/context/catalog.json in memory during the build
 ```
 
+> **Debian 13 (`trixie`) & Obsidian Sync note:** Debian 13 packages Bundler for Ruby 3.3 as `bundle3.3` / `bundler3.3` without a `/usr/bin/bundle` symlink. Either invoke `bundle3.3` directly (supported by `oude doctor`), or symlink `~/.local/bin/bundle -> /usr/bin/bundle3.3`. When installing gems locally inside an Obsidian Sync-enabled vault, store them outside the repository (`bundle config set --local path ~/.local/share/bundle/<campaign>`) rather than `./vendor/bundle`.
+
 Verify the catalogue compiled with zero errors and carries the expected `engine_version`.
 
 ## Configuration & customisation
@@ -58,4 +60,5 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 | Catalogue is stale after editing notes | Rebuild (`bundle exec jekyll build`) or run `oude doctor --fix`; the catalogue is generated in-memory at build time. |
 | `engine_version` in `catalog.json` does not match the gem tag | Update the gem (`bundle update oude-mechanismen`) and rebuild. |
 | Private `_gm-materials/` leaks into the built site | Check all four ADR 003 exclusion layers — `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths — then run `oude doctor --fix`. |
+| `bundle: command not found` on Debian 13 (`trixie`) | Use `bundle3.3` (e.g. `bundle3.3 install && bundle3.3 exec jekyll build`), or create `~/.local/bin/bundle -> /usr/bin/bundle3.3`. |
 | Gem build fails locally | `gem build oude-mechanismen.gemspec` in the engine checkout; CI validates this on every PR. |
