@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Legacy `/all-content.html` Monolithic LLM Dump Retired (`#25`, `#35`, refs `#32`, `#34`)**:
+  - Removed `jekyll/all-content.md` and `jekyll/_plugins/llm_content.rb` (`raw_markdown` Liquid filter and `Jekyll::LlmContentGenerator`) in favour of progressive retrieval (`catalog.json`, `references.json`, and `lookup-context`), along with the `lib/oude_mechanismen.rb` require, `pyproject.toml` `force-include`, and `LAYOUT_EXEMPT` entry in `scripts/lint_wiki.py`.
+  - Updated `oude doctor` (`--fix`) in `src/oude_mechanismen/cli.py` to unconditionally flag and remove deprecated root `all-content.md` files (alongside `_plugins/llm_content.rb`) in downstream vaults, and reconciled `AGENTS.md`, `docs/DYNAMIC_GEM.md`, `docs/MIGRATION_GUIDE.md`, and Design 002.
+
 ---
 
 ## [0.7.1] - 2026-11-19

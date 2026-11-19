@@ -1,6 +1,6 @@
 # Architectural Design 002 — Doctor Remediation & Dynamic LLM Content
 
-Status: Implemented
+Status: Implemented (§5 dynamic /all-content.html superseded by #25/#35 — retired in favour of progressive retrieval)
 Addresses: GitHub Issues #13, #14, #15, #16
 Author: Principal Architect
 Language: British English throughout

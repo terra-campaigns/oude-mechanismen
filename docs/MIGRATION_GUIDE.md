@@ -59,7 +59,7 @@ First ensure the vault consumes the `oude-mechanismen` RubyGem: `Gemfile` pins `
 Then run:
 
 ```bash
-oude doctor --fix           # repairs .gitignore (_gm-materials/, .agents/context/catalog.json) / _config.yml exclude:, untracks catalog.json if committed, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, unmodified all-content.md, and refreshes local catalog.json
+oude doctor --fix           # repairs .gitignore (_gm-materials/, .agents/context/catalog.json) / _config.yml exclude:, untracks catalog.json if committed, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, deprecated all-content.md, and refreshes local catalog.json
 oude audit                  # coverage & gap report
 bundle exec jekyll build    # Tier 1 local catalogue cache compiles with zero errors (use bundle3.3 on Debian 13 if unlinked)
 ```

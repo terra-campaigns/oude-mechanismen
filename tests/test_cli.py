@@ -116,6 +116,9 @@ class TestOudeCLI(unittest.TestCase):
                 f"File {expected_file} was not scaffolded",
             )
 
+        self.assertFalse((self.target_dir / "all-content.md").exists())
+        self.assertFalse((self.target_dir / "_plugins" / "llm_content.rb").exists())
+
         # Check fallback badges
         badges = list((self.target_dir / "imgs" / "badges").glob("*.png"))
         self.assertGreaterEqual(len(badges), 1, "Fallback badges were not copied")
@@ -312,8 +315,8 @@ class TestOudeCLI(unittest.TestCase):
                     text=True,
                 )
 
-    def test_doctor_detects_redundant_all_content_md(self):
-        """Verify doctor detects redundant root all-content.md."""
+    def test_doctor_detects_deprecated_all_content_md_and_llm_content_plugin(self):
+        """Verify doctor detects deprecated root all-content.md and _plugins/llm_content.rb."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
              patch.object(cli, "_install_skills", return_value=0):
             cli._init_repository(self.target_dir)
@@ -324,16 +327,20 @@ class TestOudeCLI(unittest.TestCase):
             encoding="utf-8",
         )
 
-        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
-        (self.target_dir / "all-content.md").write_text(bundled_content, encoding="utf-8")
+        (self.target_dir / "all-content.md").write_text("# Legacy LLM dump", encoding="utf-8")
+        legacy_llm = self.target_dir / "_plugins" / "llm_content.rb"
+        legacy_llm.parent.mkdir(parents=True, exist_ok=True)
+        legacy_llm.write_text("# Legacy llm_content plugin", encoding="utf-8")
 
         with patch("sys.stdout", new=io.StringIO()) as fake_out:
             rc = cli._doctor(self.target_dir)
-            self.assertEqual(rc, 1, "Doctor should report failure when redundant all-content.md is detected")
-            self.assertIn("Redundant root all-content.md detected", fake_out.getvalue())
+            self.assertEqual(rc, 1, "Doctor should report failure when deprecated LLM dump artefacts exist")
+            out = fake_out.getvalue()
+            self.assertIn("Deprecated root all-content.md detected", out)
+            self.assertIn("Legacy file detected: _plugins/llm_content.rb", out)
 
-    def test_doctor_fix_removes_redundant_all_content_md(self):
-        """Verify doctor --fix removes redundant root all-content.md."""
+    def test_doctor_fix_removes_deprecated_all_content_md_and_llm_content_plugin(self):
+        """Verify doctor --fix removes deprecated root all-content.md and _plugins/llm_content.rb."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
              patch.object(cli, "_install_skills", return_value=0):
             cli._init_repository(self.target_dir)
@@ -344,18 +351,26 @@ class TestOudeCLI(unittest.TestCase):
             encoding="utf-8",
         )
 
-        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
-        (self.target_dir / "all-content.md").write_text(bundled_content, encoding="utf-8")
+        all_content_path = self.target_dir / "all-content.md"
+        all_content_path.write_text("# Legacy LLM dump", encoding="utf-8")
+        legacy_llm = self.target_dir / "_plugins" / "llm_content.rb"
+        legacy_llm.parent.mkdir(parents=True, exist_ok=True)
+        legacy_llm.write_text("# Legacy llm_content plugin", encoding="utf-8")
 
         with patch("sys.stdout", new=io.StringIO()) as fake_out:
             rc = cli._doctor(self.target_dir, fix=True)
             self.assertEqual(rc, 0, "Doctor --fix should succeed")
-            self.assertIn("Removed redundant root all-content.md", fake_out.getvalue())
+            out = fake_out.getvalue()
+            self.assertIn("Removed deprecated root all-content.md", out)
+            self.assertIn("Removed legacy file: _plugins/llm_content.rb", out)
 
-        self.assertFalse((self.target_dir / "all-content.md").exists(), "Redundant all-content.md was not removed")
+        self.assertFalse(all_content_path.exists(), "Deprecated all-content.md was not removed")
+        self.assertFalse(legacy_llm.exists(), "Legacy _plugins/llm_content.rb was not removed")
+        self.assertFalse((self.target_dir / "_plugins").exists(), "Empty _plugins directory was not pruned")
+        self.assertTrue(catalog_path.is_file(), "catalog.json should remain intact")
 
-    def test_doctor_preserves_custom_all_content_md(self):
-        """Verify doctor preserves custom root all-content.md."""
+    def test_doctor_ignores_nonfile_all_content_md(self):
+        """Verify doctor ignores a directory named all-content.md without crashing."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
              patch.object(cli, "_install_skills", return_value=0):
             cli._init_repository(self.target_dir)
@@ -366,13 +381,14 @@ class TestOudeCLI(unittest.TestCase):
             encoding="utf-8",
         )
 
-        custom_content = "# Custom LLM Context\n\nThis is a custom version of all-content.md."
-        (self.target_dir / "all-content.md").write_text(custom_content, encoding="utf-8")
+        all_content_dir = self.target_dir / "all-content.md"
+        all_content_dir.mkdir()
 
-        with patch("sys.stdout", new=io.StringIO()) as fake_out:
-            rc = cli._doctor(self.target_dir)
-            self.assertEqual(rc, 0, "Doctor should pass when custom all-content.md is detected")
-            self.assertIn("Custom root all-content.md override detected", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()):
+            rc = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc, 0)
+
+        self.assertTrue(all_content_dir.is_dir(), "Directory named all-content.md must remain untouched")
 
     def test_doctor_detects_shadowing_includes(self):
         """Verify doctor detects shadowing includes in _includes/."""
@@ -628,70 +644,13 @@ class TestOudeCLI(unittest.TestCase):
                 rc_check = cli._doctor(self.target_dir)
                 self.assertEqual(rc_check, 0, "Doctor should recognise inline oude-mechanismen plugin")
 
-    def test_doctor_preserves_empty_all_content_md_when_bundled_asset_missing(self):
-        """Verify doctor does not delete an empty all-content.md if the bundled template cannot be resolved."""
-        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
-             patch.object(cli, "_install_skills", return_value=0):
-            cli._init_repository(self.target_dir)
-
-        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
-        catalog_path.write_text(
-            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
-            encoding="utf-8",
-        )
-
-        all_content_path = self.target_dir / "all-content.md"
-        all_content_path.write_text("", encoding="utf-8")
-
-        real_resolve = cli.resolve_asset_dir
-
-        def fake_resolve(name):
-            if "all-content.md" in name or name == "jekyll":
-                return Path(self.temp_dir) / "missing_asset"
-            return real_resolve(name)
-
-        with patch.object(cli, "resolve_asset_dir", side_effect=fake_resolve), \
-             patch("sys.stdout", new=io.StringIO()) as fake_out:
-            rc = cli._doctor(self.target_dir, fix=True)
-            self.assertEqual(rc, 0)
-            self.assertIn("bundled template unavailable", fake_out.getvalue())
-
-        self.assertTrue(all_content_path.exists(), "Empty all-content.md should not be deleted when bundled asset is missing")
-
-    def test_doctor_detects_redundant_all_content_md_with_crlf(self):
-        """Verify doctor detects and removes unmodified all-content.md despite CRLF line endings."""
-        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
-             patch.object(cli, "_install_skills", return_value=0):
-            cli._init_repository(self.target_dir)
-
-        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
-        catalog_path.write_text(
-            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
-            encoding="utf-8",
-        )
-
-        bundled_content = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md").read_text(encoding="utf-8")
-        crlf_content = bundled_content.replace("\r\n", "\n").replace("\n", "\r\n")
-        all_content_path = self.target_dir / "all-content.md"
-        all_content_path.write_bytes(crlf_content.encode("utf-8"))
-
-        with patch("sys.stdout", new=io.StringIO()) as fake_out:
-            rc = cli._doctor(self.target_dir)
-            self.assertEqual(rc, 1)
-            self.assertIn("Redundant root all-content.md detected", fake_out.getvalue())
-
-        with patch("sys.stdout", new=io.StringIO()):
-            rc_fix = cli._doctor(self.target_dir, fix=True)
-            self.assertEqual(rc_fix, 0)
-
-        self.assertFalse(all_content_path.exists())
-
-    def test_resolve_asset_dir_includes_and_all_content(self):
-        """Verify bundled Jekyll includes directory and all-content.md resolve cleanly."""
+    def test_resolve_asset_dir_includes_and_removed_llm_assets(self):
+        """Verify bundled Jekyll includes directory resolves cleanly and legacy LLM dump files are removed."""
         includes_dir = oude_mechanismen.resolve_asset_dir("jekyll/_includes")
-        all_content_path = oude_mechanismen.resolve_asset_dir("jekyll/all-content.md")
         self.assertTrue(includes_dir.is_dir())
-        self.assertTrue(all_content_path.is_file())
+        self.assertFalse((REPO_ROOT / "jekyll" / "all-content.md").exists())
+        self.assertFalse((REPO_ROOT / "jekyll" / "_plugins" / "llm_content.rb").exists())
+        self.assertNotIn("llm_content", (REPO_ROOT / "lib" / "oude_mechanismen.rb").read_text(encoding="utf-8"))
 
     def test_doctor_fix_preserves_plugin_quotes_comments_and_boundaries(self):
         """Verify doctor handles quoted plugins, trailing comments, empty configs, and substring collisions."""

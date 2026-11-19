@@ -64,6 +64,9 @@ class TestInitVault(unittest.TestCase):
             for rel_file in expected_files:
                 self.assertTrue((target / rel_file).is_file(), f"Missing file: {rel_file}")
 
+            self.assertFalse((target / "all-content.md").exists())
+            self.assertFalse((target / "_plugins" / "llm_content.rb").exists())
+
             # Verify fallback badges were copied
             badges = list((target / "imgs/badges").glob("*.png"))
             self.assertGreater(len(badges), 0, "Fallback badges should be copied")
