@@ -788,6 +788,7 @@ class TestOudeCLI(unittest.TestCase):
 
         gitignore_text = (self.target_dir / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("_gm-materials/", gitignore_text)
+        self.assertIn(".agents/context/catalog.json", gitignore_text)
 
         tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
         self.assertIn("drive_dir: .", tier1_text)
@@ -810,13 +811,22 @@ class TestOudeCLI(unittest.TestCase):
         gitignore_path = self.target_dir / ".gitignore"
         config_path = self.target_dir / "_config.yml"
 
-        # Case 1: .gitignore missing _gm-materials/ (and no trailing newline)
+        # Case 1: .gitignore missing _gm-materials/ and .agents/context/catalog.json (and no trailing newline)
         gitignore_path.write_text("_site/", encoding="utf-8")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
-        self.assertEqual(gitignore_path.read_text(encoding="utf-8"), "_site/\n_gm-materials/\n")
+        self.assertEqual(
+            gitignore_path.read_text(encoding="utf-8"),
+            "_site/\n_gm-materials/\n.agents/context/catalog.json\n",
+        )
         self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "_site/\r\n.agents/context/catalog.json\r\n",
+                ".agents/context/catalog.json",
+            )
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
@@ -1115,6 +1125,8 @@ class TestOudeCLI(unittest.TestCase):
                 "r2 = OudeMechanismen::DataExtractor.extract(ARGV[1], write_catalog: true)\n"
                 "puts r1[:catalog]['generated']\n"
                 "puts r2[:catalog]['generated']\n"
+                "puts r1[:catalog]['entries'].any? { |e| e.key?('lastmod') }\n"
+                "puts r1[:lastmod].key?('campaigns/arc/ep001.md')\n"
             )
             res = subprocess.run(
                 ["ruby", "-I", str(REPO_ROOT / "lib"), "-e", ruby_script, str(REPO_ROOT), str(vault)],
@@ -1122,8 +1134,68 @@ class TestOudeCLI(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(res.returncode, 0, res.stderr)
-            ts1, ts2 = res.stdout.strip().splitlines()
+            ts1, ts2, has_entry_lastmod, has_site_lastmod = res.stdout.strip().splitlines()
             self.assertEqual(ts1, ts2, "catalog.json 'generated' timestamp should not change on identical rebuild")
+            self.assertEqual(has_entry_lastmod, "false", "catalog.json entries should not carry 'lastmod'")
+            self.assertEqual(has_site_lastmod, "true", "in-memory site.data.lastmod must remain populated")
+
+    def test_doctor_passes_with_advisory_when_catalog_missing_and_fails_when_corrupt(self):
+        """Verify doctor treats missing catalog.json as an advisory local cache but fails on corrupt JSON."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        self.assertFalse(catalog_path.exists())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("Tier 1 catalogue local cache not yet generated", fake_out.getvalue())
+
+        catalog_path.write_text("{corrupt", encoding="utf-8")
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_corrupt = cli._doctor(self.target_dir)
+            self.assertEqual(rc_corrupt, 1)
+            self.assertIn("Corrupted catalog.json", fake_out.getvalue())
+
+    def test_doctor_detects_and_untracks_git_tracked_catalog_json(self):
+        """Verify doctor detects git-tracked catalog.json and --fix untracks it cleanly."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", ".agents/context/catalog.json"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "commit", "-m", "track catalog"], check=True, capture_output=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(".agents/context/catalog.json is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Untracked derived .agents/context/catalog.json", fake_out.getvalue())
+
+        self.assertTrue(catalog_path.is_file(), "catalog.json should remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", ".agents/context/catalog.json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(ls_res.returncode, 0, "catalog.json should no longer be tracked in Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
 
 
 if __name__ == "__main__":

@@ -239,11 +239,12 @@ class TestDeprecatedHooks(LintWikiTestCase):
 
 
 class TestCatalogue(LintWikiTestCase):
-    def test_missing_catalog_is_fail(self):
+    def test_missing_catalog_is_warn(self):
         (self.root / ".agents/context/catalog.json").unlink()
         report = lint_wiki.lint_wiki(self.root)
         cat = self._findings(report, "catalogue")
-        self.assertTrue(any(c.severity == "FAIL" and "missing" in c.message for c in cat))
+        self.assertTrue(any(c.severity == "WARN" and "bundle exec jekyll build" in c.message for c in cat))
+        self.assertFalse(report.has_failures())
 
     def test_sha_mismatch_is_fail(self):
         self._write("directory/place.md", note_content("The Place") + "\nExtra prose line.\n")

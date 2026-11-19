@@ -250,7 +250,6 @@ module OudeMechanismen
             "summary" => summary,
             "links_out" => internal_outbound[file_path].sort,
             "links_in" => internal_inbound[file_path].sort,
-            "lastmod" => lastmod[file_path],
             "sha" => Digest::SHA256.hexdigest(content)[0..7],
             "tier" => 1
           }

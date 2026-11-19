@@ -34,7 +34,7 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 - **stub (WARN):** fewer than 3 prose lines after front matter. Flesh out or remove.
 - **unused-image (WARN):** file under `imgs/` (excluding `imgs/gallery/` and the engine fallback badges in `imgs/badges/`, which are consumed dynamically) referenced nowhere.
 - **deprecated-hook (WARN):** migrate `hooks:` front matter to body prose or remove it.
-- **catalogue (FAIL/WARN):** missing/stale `catalog.json`, sha mismatches (recompile via the `data_extractor` plugin or `oude doctor --fix`), unindexed notes, null summaries.
+- **catalogue (FAIL/WARN):** missing local `catalog.json` cache is `WARN` (run `bundle exec jekyll build` or `oude doctor --fix` to generate); invalid JSON or `sha` mismatches when present are `FAIL`; unindexed notes, stale entries, and null summaries are `WARN`.
 - **front-matter (FAIL/WARN):** missing `title`/`parent` in `campaigns/`, `directory/`, `systems/`; non-default `layout` outside the exempt pages.
 - **duplicate-title (FAIL):** identical `title:` values cause navigation confusion in Just the Docs.
 

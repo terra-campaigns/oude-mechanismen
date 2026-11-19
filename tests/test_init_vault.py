@@ -41,7 +41,9 @@ class TestInitVault(unittest.TestCase):
             for rel_dir in expected_dirs:
                 self.assertTrue((target / rel_dir).is_dir(), f"Missing directory: {rel_dir}")
 
-            self.assertIn("_gm-materials/", (target / ".gitignore").read_text(encoding="utf-8"))
+            gitignore_text = (target / ".gitignore").read_text(encoding="utf-8")
+            self.assertIn("_gm-materials/", gitignore_text)
+            self.assertIn(".agents/context/catalog.json", gitignore_text)
 
             # Verify starter template files
             expected_files = [
