@@ -827,6 +827,13 @@ class TestOudeCLI(unittest.TestCase):
                 ".agents/context/catalog.json",
             )
         )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\r\n_agents/context/catalogXjson\r\n",
+                ".agents/context/catalog.json",
+            ),
+            "dotted entries must be regex-escaped (no wildcard false positive)",
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
