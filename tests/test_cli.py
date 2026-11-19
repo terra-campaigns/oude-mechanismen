@@ -1019,6 +1019,112 @@ class TestOudeCLI(unittest.TestCase):
                     f"Heading at line {idx + 1} is not followed by a blank line: {line!r}",
                 )
 
+    def test_doctor_fix_rebuilds_catalogue_when_engine_version_stale(self):
+        """Verify doctor --fix triggers bundle exec jekyll build when engine_version is outdated."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": "0.5.3", "total_entries": 5}),
+            encoding="utf-8",
+        )
+
+        with patch("shutil.which", side_effect=lambda cmd: "/usr/bin/bundle" if cmd == "bundle" else None), \
+             patch("subprocess.run") as mock_sub:
+            mock_sub.return_value = MagicMock(returncode=0)
+            with patch("sys.stdout", new=io.StringIO()) as fake_out:
+                rc = cli._doctor(self.target_dir, fix=True)
+                self.assertEqual(rc, 0)
+                self.assertIn("Stale catalogue engine_version (0.5.3", fake_out.getvalue())
+                mock_sub.assert_called_with(
+                    ["bundle", "exec", "jekyll", "build"],
+                    cwd=str(self.target_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+    def test_doctor_fix_falls_back_to_bundle33(self):
+        """Verify doctor --fix resolves bundle3.3 on Debian 13 when bundle is absent."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(json.dumps({"engine_version": "0.5.3", "total_entries": 5}), encoding="utf-8")
+
+        def which_side_effect(cmd):
+            return "/usr/bin/bundle3.3" if cmd == "bundle3.3" else None
+
+        with patch("shutil.which", side_effect=which_side_effect), \
+             patch("subprocess.run") as mock_sub:
+            mock_sub.return_value = MagicMock(returncode=0)
+            with patch("sys.stdout", new=io.StringIO()) as fake_out:
+                rc = cli._doctor(self.target_dir, fix=True)
+                self.assertEqual(rc, 0)
+                self.assertIn("bundle3.3 exec jekyll build", fake_out.getvalue())
+                mock_sub.assert_called_with(
+                    ["bundle3.3", "exec", "jekyll", "build"],
+                    cwd=str(self.target_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+    def test_doctor_warns_when_vendor_dir_exists(self):
+        """Verify doctor emits an advisory warning when vendor/ exists inside the vault."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 10}),
+            encoding="utf-8",
+        )
+        (self.target_dir / "vendor" / "bundle").mkdir(parents=True, exist_ok=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("Local vendor/ directory detected", fake_out.getvalue())
+
+    def test_data_extractor_skips_rewriting_unchanged_catalog(self):
+        """Verify DataExtractor.extract does not churn catalog.json timestamp when content is unchanged."""
+        if not shutil.which("ruby"):
+            self.skipTest("ruby executable not found on host system")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir)
+            (vault / "campaigns" / "arc").mkdir(parents=True)
+            # Include an unquoted YAML Date title (parsed as Date by Ruby YAML.safe_load)
+            # and two misc notes sharing (type, title) to verify deterministic sorting.
+            (vault / "campaigns" / "arc" / "ep001.md").write_text(
+                "---\ntitle: 2026-11-12\ntype: chapter\n---\n\nFirst session prose.\n",
+                encoding="utf-8",
+            )
+            (vault / "directory").mkdir(parents=True)
+            (vault / "directory" / "a.md").write_text("---\ntitle: Shared\n---\n\nAlpha note.\n", encoding="utf-8")
+            (vault / "directory" / "b.md").write_text("---\ntitle: Shared\n---\n\nBeta note.\n", encoding="utf-8")
+
+            ruby_script = (
+                "require 'fileutils'\n"
+                "load File.join(ARGV[0], 'jekyll/_plugins/data_extractor.rb')\n"
+                "r1 = OudeMechanismen::DataExtractor.extract(ARGV[1], write_catalog: true)\n"
+                "sleep 1.1\n"
+                "r2 = OudeMechanismen::DataExtractor.extract(ARGV[1], write_catalog: true)\n"
+                "puts r1[:catalog]['generated']\n"
+                "puts r2[:catalog]['generated']\n"
+            )
+            res = subprocess.run(
+                ["ruby", "-I", str(REPO_ROOT / "lib"), "-e", ruby_script, str(REPO_ROOT), str(vault)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            ts1, ts2 = res.stdout.strip().splitlines()
+            self.assertEqual(ts1, ts2, "catalog.json 'generated' timestamp should not change on identical rebuild")
+
 
 if __name__ == "__main__":
     unittest.main()

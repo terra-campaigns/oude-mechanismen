@@ -331,8 +331,25 @@ def check_unused_images(
                 if resolved is not None:
                     referenced.add(resolved)
 
+    config_path = root / "_config.yml"
+    if config_path.is_file():
+        try:
+            site_cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            site_cfg = {}
+        if isinstance(site_cfg, dict):
+            for key in ("logo", "favicon_ico"):
+                val = site_cfg.get(key)
+                if isinstance(val, str) and is_internal_target(val):
+                    raw_targets.append(val)
+                    resolved = resolve_target(root, config_path, val)
+                    if resolved is not None:
+                        referenced.add(resolved)
+
     for image in sorted(imgs_root.rglob("*")):
         if not image.is_file():
+            continue
+        if any(part.startswith(".") for part in image.relative_to(imgs_root).parts):
             continue
         rel = image.relative_to(root).as_posix()
         if rel.startswith("imgs/gallery/") or rel.startswith("imgs/badges/"):
@@ -469,7 +486,7 @@ def check_front_matter(
         fm, _, fm_lines = parse_front_matter(text)
         if in_canon_dir:
             required = ["title"]
-            if not (is_section_index(root, path) or fm.get("has_children")):
+            if not (is_section_index(root, path) or fm.get("has_children") or fm.get("nav_exclude") is True):
                 required.append("parent")
             for key in required:
                 if not fm.get(key):

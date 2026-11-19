@@ -404,6 +404,14 @@ def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -
     return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#[^\r\n]*)?\r?$", gitignore_content))
 
 
+def _find_bundle_cmd() -> Optional[str]:
+    """Resolve the Bundler command across macOS/Linux ('bundle') and Debian 13 ('bundle3.3')."""
+    for candidate in ("bundle", "bundle3.3"):
+        if shutil.which(candidate):
+            return candidate
+    return None
+
+
 def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     """Audit campaign vault health, tool dependencies, and skills registration."""
     vault = (target_path or Path.cwd()).resolve()
@@ -574,26 +582,40 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         except Exception as e:
             print(f"  ✗ Corrupted catalog.json: {e}")
 
-    if engine_ver:
+    bundle_cmd = _find_bundle_cmd()
+    if engine_ver == __version__:
         print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
-        if engine_ver != __version__:
-            # Advisory only: stale catalogue metadata should not fail vault health checks.
+    elif fix and bundle_cmd:
+        if engine_ver:
             print(
-                f"  ⚠ Engine version mismatch: catalog.json ({engine_ver}) vs installed package ({__version__}). "
-                "Run `bundle exec jekyll build` to refresh."
+                f"  -> Stale catalogue engine_version ({engine_ver} vs {__version__}); "
+                f"regenerating via '{bundle_cmd} exec jekyll build'..."
             )
-    elif fix and shutil.which("bundle"):
-        print("  -> Regenerating catalogue with engine_version via 'bundle exec jekyll build'...")
-        res = subprocess.run(["bundle", "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
+        else:
+            print(f"  -> Regenerating catalogue with engine_version via '{bundle_cmd} exec jekyll build'...")
+        res = subprocess.run([bundle_cmd, "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
         if res.returncode == 0:
             print("  ✓ Recompiled Jekyll site and refreshed catalogue")
         else:
             print(f"  ✗ Rebuild failed: {res.stderr.strip() or res.stdout.strip()}")
             all_passed = False
+    elif engine_ver:
+        print(f"  ✓ Tier 1 catalogue compiled (engine_version: {engine_ver})")
+        # Advisory only: stale catalogue metadata should not fail vault health checks.
+        print(
+            f"  ⚠ Engine version mismatch: catalog.json ({engine_ver}) vs installed package ({__version__}). "
+            f"Run `{bundle_cmd or 'bundle'} exec jekyll build` to refresh."
+        )
     else:
         status = "compiled but lacks engine_version metadata" if catalog_path.is_file() else "not yet generated"
         print(f"  ⚠ Tier 1 catalogue {status}")
         all_passed = False
+
+    if (vault / "vendor").is_dir():
+        print(
+            "  ⚠ Local vendor/ directory detected; if using Obsidian Sync, configure Bundler outside the vault "
+            "(e.g. `bundle config set --local path ~/.local/share/bundle/<vault>`) or exclude `vendor` in `ob sync-config`."
+        )
 
     # 4. Check CLI tool dependencies
     print("\nChecking external tool dependencies:")

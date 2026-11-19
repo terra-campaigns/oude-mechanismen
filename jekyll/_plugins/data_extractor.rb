@@ -17,6 +17,7 @@ require version_file if File.exist?(version_file)
 module OudeMechanismen
   class DataExtractor
     def self.extract(base_dir = Dir.pwd, write_catalog: true)
+      base_dir = File.expand_path(base_dir)
       lastmod = {}
       markdown_links = Hash.new { |h, k| h[k] = [] }
       gallery_links = Hash.new { |h, k| h[k] = [] }
@@ -258,16 +259,25 @@ module OudeMechanismen
         out_dir = File.join(base_dir, ".agents/context")
         catalog_file = File.join(out_dir, "catalog.json")
 
-        sorted_entries = catalog_entries.sort_by { |e| [e["type"] || "", e["title"] || ""] }
+        sorted_entries = catalog_entries.sort_by { |e| [e["type"].to_s, e["title"].to_s, e["path"].to_s] }
 
         # Check existing catalog to avoid touching file when content has not changed
         should_write = true
         generated_time = Time.now.iso8601
         current_engine_version = (defined?(OudeMechanismen::VERSION) ? OudeMechanismen::VERSION : "unknown")
+        base_catalog_data = {
+          "engine_version" => current_engine_version,
+          "tier" => 1,
+          "total_entries" => sorted_entries.length,
+          "entries" => sorted_entries
+        }
+        comparable_catalog = JSON.parse(JSON.generate(base_catalog_data))
+
         if File.exist?(catalog_file)
           begin
             existing = JSON.parse(File.read(catalog_file, encoding: 'utf-8'))
-            if existing["entries"] == sorted_entries && existing["engine_version"] == current_engine_version
+            existing_without_generated = existing.reject { |k, _| k == "generated" }
+            if existing_without_generated == comparable_catalog
               should_write = false
               generated_time = existing["generated"] || generated_time
             end
@@ -277,12 +287,8 @@ module OudeMechanismen
         end
 
         catalog_data = {
-          "generated" => generated_time,
-          "engine_version" => current_engine_version,
-          "tier" => 1,
-          "total_entries" => sorted_entries.length,
-          "entries" => sorted_entries
-        }
+          "generated" => generated_time
+        }.merge(base_catalog_data)
 
         if write_catalog && should_write
           FileUtils.mkdir_p(out_dir) unless Dir.exist?(out_dir)
