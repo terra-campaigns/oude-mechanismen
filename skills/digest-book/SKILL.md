@@ -22,14 +22,14 @@ Convert a single external sourcebook PDF (Pillar 3: local disk outside Git and s
 
 ```bash
 oude digest --extract <pdf_path> [--format auto|text|pdf] [--out-dir <DIR>] \
-  [--max-depth 1] [--chunk-pages 10] [--pdf-slice-pages 5] [--max-bytes 38000] [--min-chars-per-page 80]
+  [--max-depth 1] [--chunk-pages 10] [--pdf-slice-pages 5] [--max-bytes 38000] [--min-chars-per-page 160]
 ```
 
 - Default `--out-dir` is `<tempdir>/oude-extract/<slug>` (outside Git and sync); slices and `manifest.json` are cleared on each run.
-- Read `<out-dir>/manifest.json`: iterate `slices` in `index` order, each with `title`, `start_page`/`end_page`, `format`, `path`, and optional `auto_fallback_reason`.
-- Slices with `auto_fallback_reason` are low-text-density (scanned or image-heavy) pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader.
+- Read `<out-dir>/manifest.json`: iterate `slices` in `index` order, each with `title`, `start_page`/`end_page`, `format`, `path`, `image_count`, `has_large_images`, `large_image_pages`, and optional `auto_fallback_reason`.
+- Slices with `auto_fallback_reason` are low-text-density or sparse image-heavy pages emitted as `.pdf` slices — read those with a vision/OCR-capable reader.
 - **Visual & layout quality gate:** Dense two-column tabular pages can pass the density threshold with interleaved text, and prose-rich spreads can still conceal visual-only details that plain-text extraction drops without failing density checks or interleaving:
-  - Spot-check rollable tables, statblocks, and floor/dungeon spreads for **interleaved columns**, **rasterised/outlined mini-maps and per-floor encounter tables baked into artwork**, **icon-keyed maps**, and **colour-coded tables** (where background colours carry speaker, faction, or severity attribution that text extraction strips).
+  - Prioritise any text slice where `has_large_images` is `true` (inspecting the listed `large_image_pages`), and spot-check rollable tables, statblocks, and floor/dungeon spreads for **interleaved columns**, **rasterised/outlined mini-maps and per-floor encounter tables baked into artwork**, **icon-keyed maps**, and **colour-coded tables** (where background colours carry speaker, faction, or severity attribution that text extraction strips).
   - For every slice or spread showing any of these defects, re-extract exactly those pages as `.pdf` into the same output directory (the manifest merges and replaces those pages' slices):
     ```bash
     oude digest --extract <pdf_path> --pages 209-211,261-263 --format pdf --out-dir <out-dir>
