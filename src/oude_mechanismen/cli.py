@@ -586,26 +586,15 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         if fix and vault_includes.is_dir() and not any(vault_includes.iterdir()):
             vault_includes.rmdir()
 
-    # 2d. Check for redundant root all-content.md
+    # 2d. Check for deprecated root all-content.md
     all_content_path = vault / "all-content.md"
     if all_content_path.is_file():
-        bundled_asset = resolve_asset_dir("jekyll/all-content.md")
-        if not bundled_asset.is_file():
-            bundled_asset = resolve_asset_dir("jekyll") / "all-content.md"
-        if not bundled_asset.is_file():
-            print("  ⚠ Cannot verify root all-content.md (bundled template unavailable)")
+        if fix:
+            all_content_path.unlink()
+            print("  ✓ Removed deprecated root all-content.md")
         else:
-            bundled_content = bundled_asset.read_text(encoding="utf-8").replace("\r\n", "\n")
-            vault_content = all_content_path.read_text(encoding="utf-8").replace("\r\n", "\n")
-            if vault_content == bundled_content:
-                if fix:
-                    all_content_path.unlink()
-                    print("  ✓ Removed redundant root all-content.md")
-                else:
-                    print("  ⚠ Redundant root all-content.md detected (synthesised dynamically via Jekyll::Generator)")
-                    all_passed = False
-            else:
-                print("  ✓ Custom root all-content.md override detected")
+            print("  ⚠ Deprecated root all-content.md detected (replaced by progressive retrieval via catalog.json)")
+            all_passed = False
 
     # 3. Check catalog.json local cache and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"

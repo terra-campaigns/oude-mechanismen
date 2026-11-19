@@ -52,4 +52,3 @@ packages = ["src/oude_mechanismen"]
 "scripts" = "oude_mechanismen/scripts"
 "skills" = "oude_mechanismen/skills"
 "templates" = "oude_mechanismen/templates"
-"jekyll/all-content.md" = "oude_mechanismen/jekyll/all-content.md"

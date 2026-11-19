@@ -38,7 +38,7 @@ DEFAULT_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
 FRONT_MATTER_DIRS = {"campaigns", "directory", "systems"}
 
 # Files exempt from the non-default layout rule.
-LAYOUT_EXEMPT = {"index.md", "all-content.md", "404.md", "404.html"}
+LAYOUT_EXEMPT = {"index.md", "404.md", "404.html"}
 
 # Markdown link/image reference: ![alt](target "title")
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")

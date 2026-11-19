@@ -51,9 +51,8 @@ oude-mechanismen/
 │   └── lint_wiki.py            # Deterministic structural wiki linter (Gate 3: dead links, orphans, stubs, catalogue)
 ├── tests/                      # Automated unit & integration test suite (`test_*.py`)
 ├── jekyll/                     # Source-of-truth Jekyll engine
-│   ├── _plugins/               # In-memory catalogue & LLM dump generators
-│   ├── _includes/              # Reusable galleries, headers, and badge fallbacks
-│   └── all-content.md          # Headless LLM context endpoint
+│   ├── _plugins/               # In-memory Tier 1 catalogue & backlink generator
+│   └── _includes/              # Reusable galleries, headers, and badge fallbacks
 └── templates/                  # Scaffolding templates for downstream campaign vaults
     ├── AGENTS.md.template      # Starter instructions for downstream vault agents
     ├── tier1_sources.yml.template
@@ -135,7 +134,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ## 5. Legacy Synchronisation & Version Stamping
 
-- **Deprecated Template Sync (`sync.sh`)**: `sync.sh` is formally deprecated and its `MANAGED_FILES` list is empty. Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and unmodified `all-content.md` downstream.
+- **Deprecated Template Sync (`sync.sh`)**: `sync.sh` is formally deprecated and its `MANAGED_FILES` list is empty. Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and deprecated `all-content.md` downstream.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
 ---

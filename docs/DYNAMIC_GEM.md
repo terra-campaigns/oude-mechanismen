@@ -4,7 +4,7 @@ How the `oude-mechanismen` RubyGem powers a campaign vault's Jekyll site, how to
 
 ## What the gem provides
 
-- **In-memory Jekyll plugins**: `lib/oude_mechanismen.rb` requires `jekyll/_plugins/data_extractor.rb` (Tier 1 catalogue compiler → local gitignored cache `.agents/context/catalog.json`, with `engine_version` stamping) and `jekyll/_plugins/llm_content.rb`. No `_plugins/` directory is ever copied into the vault.
+- **In-memory Jekyll plugins**: `lib/oude_mechanismen.rb` requires `jekyll/_plugins/data_extractor.rb` (Tier 1 catalogue compiler → local gitignored cache `.agents/context/catalog.json`, with `engine_version` stamping). No `_plugins/` directory is ever copied into the vault.
 - **Shared Liquid includes**: a `Jekyll::Hooks.register :site, :after_reset` hook appends the gem's `jekyll/_includes/` to `site.includes_load_paths`, so `connected_to.html`, `image_gallery.html`, and the header includes resolve from the gem. Vault-local `_includes/` still take precedence.
 - **Version stamping**: the gem reads the engine `VERSION` file at build time and records it as `engine_version` in the local `catalog.json` cache (not versioned in Git).
 
