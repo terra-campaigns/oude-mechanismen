@@ -898,6 +898,17 @@ class TestExtractAndValidate(unittest.TestCase):
         self.assertEqual(total, 1)
         self.assertEqual(large, 1)
 
+        # Non-numeric /Width on an /Image XObject still counts the image as non-large
+        from pypdf.generic import TextStringObject
+        bad_img = DecodedStreamObject()
+        bad_img[NameObject("/Subtype")] = NameObject("/Image")
+        bad_img[NameObject("/Width")] = TextStringObject("unknown")
+        bad_img[NameObject("/Height")] = NumberObject(400)
+        bad_page = DictionaryObject(
+            {NameObject("/Resources"): DictionaryObject({NameObject("/XObject"): DictionaryObject({NameObject("/ImBad"): bad_img})})}
+        )
+        self.assertEqual(generate_digests._count_xobject_images(bad_page, set()), (1, 0))
+
     def test_validate_manifest_telemetry_reports_large_image_pages(self):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         self._write_valid_note(digest_dir)
@@ -906,6 +917,7 @@ class TestExtractAndValidate(unittest.TestCase):
             json.dumps({
                 "slices": [
                     {"format": "text", "has_large_images": True, "large_image_pages": [18, 23], "auto_fallback_reason": None},
+                    {"format": "text", "has_large_images": True, "large_image_pages": None, "auto_fallback_reason": None},
                     {"format": "text", "has_large_images": False, "large_image_pages": [], "auto_fallback_reason": None},
                 ]
             }),
@@ -915,7 +927,7 @@ class TestExtractAndValidate(unittest.TestCase):
         with patch("sys.stdout", new=buf):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
         self.assertEqual(rc, 0)
-        self.assertIn("text slices with large images: 1 slice(s) (pages: [18, 23])", buf.getvalue())
+        self.assertIn("text slices with large images: 2 slice(s) (pages: [18, 23])", buf.getvalue())
 
 
 if __name__ == "__main__":

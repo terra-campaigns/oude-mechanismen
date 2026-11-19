@@ -554,8 +554,13 @@ def _count_xobject_images(
             subtype = str(obj.get("/Subtype", ""))
             if subtype == "/Image":
                 total += 1
-                width = int(obj.get("/Width", 0) or 0)
-                height = int(obj.get("/Height", 0) or 0)
+                try:
+                    raw_w = obj.get("/Width", 0)
+                    raw_h = obj.get("/Height", 0)
+                    width = int((raw_w.get_object() if hasattr(raw_w, "get_object") else raw_w) or 0)
+                    height = int((raw_h.get_object() if hasattr(raw_h, "get_object") else raw_h) or 0)
+                except (TypeError, ValueError):
+                    width, height = 0, 0
                 if (width * height) >= LARGE_IMAGE_MIN_PIXELS or max(width, height) >= LARGE_IMAGE_MIN_SIDE:
                     large += 1
             elif subtype == "/Form":
@@ -1049,7 +1054,7 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 pg
                 for s in data.get("slices", [])
                 if s.get("format") == "text" and s.get("has_large_images")
-                for pg in s.get("large_image_pages", [])
+                for pg in (s.get("large_image_pages") or [])
             })
             if large_img_pages:
                 text_with_images = sum(
