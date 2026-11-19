@@ -9,9 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.7.1] - 2026-11-19
+
 ### Changed
 
-- **ADR 003 marked fully implemented** (Phases 1–3, v0.6.0–v0.7.0, PRs #38/#43/#47/#48/#51; operational acceptance in #55): status line and §5 Phase 3 roadmap checkbox updated in `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md`.
+- **Stop Versioning Derived `.agents/context/catalog.json` (`#64`, PR `#68`)**:
+  - Added `.agents/context/catalog.json` to `DEFAULT_GITIGNORE` in `src/oude_mechanismen/cli.py` and `bin/init_vault.sh`; updated `oude doctor` (`--fix`) to audit and repair `.gitignore`, and to detect and untrack any git-tracked `catalog.json` via `git rm --cached` whilst preserving the local cache on disk.
+  - Updated `oude doctor` and `scripts/lint_wiki.py` (`check_catalogue`) to treat an absent `catalog.json` as an advisory local cache (`WARN` instead of `FAIL` in `lint_wiki.py`, retaining `FAIL` on invalid JSON or `sha` drift when present).
+  - Dropped `"lastmod"` from `catalog.json` entries in `jekyll/_plugins/data_extractor.rb` to prevent `git log -1` pre-commit/post-commit timing drift, whilst keeping in-memory `site.data['lastmod']` populated for `jekyll/_includes/image_gallery.html`.
+  - Updated `templates/AGENTS.md.template`, `skills/lookup-context/SKILL.md`, `skills/lint-wiki/SKILL.md`, `docs/MIGRATION_GUIDE.md`, `docs/DYNAMIC_GEM.md`, `AGENTS.md`, and `README.md` with local-cache and `git rm --cached` migration guidance.
+
+- **ADR 003 Marked Fully Implemented (`#53`, `#17`, PR `#58`)**:
+  - Updated status line, §3.5.5/§4 tense, and §5 Phase 3 roadmap checkbox in `docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md` (Phases 1–3, v0.6.0–v0.7.0, PRs `#38`/`#43`/`#47`/`#48`/`#51`; operational acceptance tracked in `#55`).
+
+### Removed
+
+- **Dead Legacy Scaffolding & CI Checks (`#56`, PR `#59`)**:
+  - Deleted obsolete `githooks/pre-commit`, `templates/bin/setup.template`, and `templates/skills.json.template`.
+  - Removed `.githooks` from `templates/jekyll/_config.yml.template` `exclude:` and dropped the deleted script checks from `.github/workflows/ci.yml`.
+
+### Fixed
+
+- **v0.7.0 Cross-OS Migration & Tooling Bugs (`#60`, PR `#65`)**:
+  - **Debian 13 (`bundle3.3`) compatibility**: Added `_find_bundle_cmd()` (`bundle` → `bundle3.3`) in `src/oude_mechanismen/cli.py` and documented `bundle3.3` in `docs/DYNAMIC_GEM.md` and `docs/MIGRATION_GUIDE.md`.
+  - **Stale `catalog.json` refresh under `oude doctor --fix`**: Triggered `bundle exec jekyll build` (or `bundle3.3`) whenever `engine_version != __version__`, rather than only when `engine_version` is absent.
+  - **`scripts/lint_wiki.py` image & `nav_exclude` handling**: `check_unused_images` skips hidden dotfiles/dot-directories under `imgs/` (such as `.DS_Store`) and counts `_config.yml` `logo` and `favicon_ico` paths as referenced; `check_front_matter` exempts `nav_exclude: true` pages from the `parent:` requirement.
+  - **`jekyll/_plugins/data_extractor.rb` timestamp churn**: Added a `path` tie-breaker to `sorted_entries` and compared the JSON-normalised catalogue payload (excluding `"generated"`) against existing `catalog.json` so YAML `Date`/`Time` values no longer trigger spurious rewrites.
+  - **Obsidian Sync & Bundler guidance**: Documented configuring Bundler outside Obsidian Sync vaults (`~/.local/share/bundle/<campaign>`) and applying `ob sync-config --configs "" --file-types image,audio,video,pdf --excluded-folders ...` before the first `ob sync` in `docs/MIGRATION_GUIDE.md` / `docs/DYNAMIC_GEM.md`, and added an advisory `vendor/` warning in `oude doctor`.
 
 ---
 
@@ -272,7 +298,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
 [0.2.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/terra-campaigns/oude-mechanismen/releases/tag/v0.1.0
