@@ -3,10 +3,12 @@
 # The oude-mechanismen engine is pinned in the Gemfile via a git tag
 # (`gem "oude-mechanismen", git: "...", tag: "vX.Y.Z"`). With no RubyGems or
 # GitHub Packages registry to compare versions against, Dependabot falls back
-# to its git-ref updater, which can mis-sort tags and open inverted "downgrade"
-# PRs falsely titled as bumps. The engine dependency is therefore ignored here:
-# bump it explicitly via release tags and verify with `oude doctor`
-# (see docs/DYNAMIC_GEM.md).
+# to its git-ref updater (its handler for git-sourced dependencies — see
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot),
+# which can mis-sort tags and open inverted "downgrade" PRs falsely titled as
+# bumps. The engine dependency is therefore ignored here (an ignore entry with
+# only a dependency-name ignores all versions): bump it explicitly via release
+# tags and verify with `oude doctor` (see docs/DYNAMIC_GEM.md).
 version: 2
 updates:
   - package-ecosystem: "bundler"
@@ -17,4 +19,3 @@ updates:
       # Engine bumps are managed explicitly via release tags + `oude doctor`;
       # git-tag pinning makes Dependabot's git-ref updater emit inverted downgrade PRs.
       - dependency-name: "oude-mechanismen"
-        versions: ["*"]
