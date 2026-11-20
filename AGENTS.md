@@ -154,7 +154,24 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 ## 7. Git Hygiene & Branch Lifecycle
 
+### Two-Branch Flow: `develop` (Integration) vs `main` (Release-Only)
+
+1. **`develop` is the integration branch**: Cut all feature and fix branches from `develop`, and target every day-to-day feature/fix Pull Request at `develop` (the default PR base). Unreleased work must never land directly on `main`.
+2. **`main` is release-only**: `main` receives ONLY release-cut Pull Requests (from `develop`) carrying the `VERSION` bump and the dated `CHANGELOG.md` section; merge via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
+3. **Transition note**: PRs #71, #72, and #75 were merged directly into `main` after v0.7.1 and shipped together as v0.7.2. From now on, all unreleased work goes to `develop`; `main` stays exactly at tagged releases.
+
+### Branch Protection (GitHub Rulesets)
+
+The two-branch flow is enforced by repository rulesets, whose definitions are committed in `.github/rulesets/` for audit and reproduction:
+
+- `main-release-only` (active, targets `refs/heads/main`): require pull request, non-fast-forward, required status check `validate`.
+- `protect-develop` (active, targets `refs/heads/develop`): same rules.
+
+On pushes, the `rulesets` CI job fails if any live repository ruleset is not `enforcement: active`, and verifies each committed `.github/rulesets/*.json` matches its live ruleset (target refs, rule types, required check `validate`). To change a ruleset, update the JSON in `.github/rulesets/` and apply it via the GitHub API or Settings UI, then verify with `gh api repos/terra-campaigns/oude-mechanismen/rulesets`.
+
+### Standing Hygiene Rules
+
 1. **Branch Deletion Invariant**: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches.
 2. **Automated Remote Deletion**: Campaign vaults with GitHub remotes must enable automatic branch deletion on merge (`gh repo edit --delete-branch-on-merge`).
-3. **Post-Merge Local Cleanup**: Once a Pull Request is merged, check out `main`, pull latest remote changes (`git checkout main && git pull`), delete the local branch (`git branch -d <branch>`), and prune remote tracking references (`git fetch --prune`).
-4. **Pull-Request-Only `main` Policy**: Never push commits directly to `main` or bypass branch protection rules—including for release bumps (`VERSION`, `CHANGELOG.md`). Always push to a branch, open a Pull Request, merge it into `main`, and only then tag and publish the release.
+3. **Post-Merge Local Cleanup**: Once a Pull Request is merged, check out its base branch (`develop` for feature/fix PRs, `main` for release-cut PRs), pull the latest remote changes (`git checkout <base> && git pull`), delete the local branch (`git branch -d <branch>`), and prune remote tracking references (`git fetch --prune`).
+4. **Pull-Request-Only Policy**: Never push commits directly to `main` or `develop`, and never bypass branch protection rules—including for release bumps (`VERSION`, `CHANGELOG.md`). Always push to a feature branch, open a Pull Request against the correct base (`develop` for features and fixes, `main` for release cuts only), merge it, and only then tag and publish a release.
