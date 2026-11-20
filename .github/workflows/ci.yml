@@ -91,3 +91,26 @@ jobs:
                           print(f"Error: Missing blank line after heading at line {i + 1} in {path}: {lines[i + 1]}", file=sys.stderr)
                           sys.exit(1)
           PY
+
+  rulesets:
+    runs-on: ubuntu-latest
+    permissions:
+      administration: read
+    steps:
+      - name: Assert branch-protection rulesets are active
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - << 'PY'
+          import json, os, sys, urllib.request
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/rulesets",
+              headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                       "Accept": "application/vnd.github+json"})
+          rulesets = json.load(urllib.request.urlopen(req))
+          inactive = [r["name"] for r in rulesets if r.get("enforcement") != "active"]
+          if inactive:
+              print(f"ERROR: rulesets not active: {inactive}", file=sys.stderr)
+              sys.exit(1)
+          print("OK: all repository rulesets active:", [r["name"] for r in rulesets])
+          PY

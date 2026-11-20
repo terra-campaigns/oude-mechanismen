@@ -160,6 +160,15 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 3. **Release-cut procedure**: To cut a release, open a Pull Request from `develop` into `main` carrying the `VERSION` bump and the dated `CHANGELOG.md` section, merge it via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
 4. **Transition note**: PRs #71, #72, and #75 were merged directly into `main` after v0.7.1 and shipped together as v0.7.2. From now on, all unreleased work goes to `develop`; `main` stays exactly at tagged releases.
 
+### Branch Protection (GitHub Rulesets)
+
+The two-branch flow is enforced by repository rulesets, whose definitions are committed in `.github/rulesets/` for audit and reproduction:
+
+- `main-release-only` (active, targets `refs/heads/main`): require pull request, non-fast-forward, required status check `validate`.
+- `protect-develop` (active, targets `refs/heads/develop`): same rules.
+
+The `rulesets` CI job fails if any repository ruleset is not `enforcement: active`. To change a ruleset, update the JSON in `.github/rulesets/` and apply it via the GitHub API or Settings UI, then verify with `gh api repos/terra-campaigns/oude-mechanismen/rulesets`.
+
 ### Standing Hygiene Rules
 
 1. **Branch Deletion Invariant**: Feature branches must be deleted immediately after their corresponding Pull Request is merged or closed. Never retain merged remote or local feature branches.
