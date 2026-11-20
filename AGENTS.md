@@ -153,7 +153,6 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 ---
 
----
 
 ## 7. Published-Canon Delivery Policy (Package C, #91)
 

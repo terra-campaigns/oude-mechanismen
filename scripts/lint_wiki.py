@@ -619,15 +619,40 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
 
 
 
-READ_ALOUD_LINE_RE = re.compile(r"^\s*>\s*\**\s*(?:Table\s+)?Read[- ]?Aloud\b", re.IGNORECASE)
-MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t]+[0-9a-zA-Z_\-]+\)", re.IGNORECASE)
+# Aligned with jekyll/_plugins/canon_filters.rb — keep both copies in sync so every
+# lint-flagged form is also stripped/rendered at build time.
+READ_ALOUD_LINE_RE = re.compile(r"^\s*(?:>\s*)+\**\s*(?:Table\s+)?Read[- ]?Aloud\b", re.IGNORECASE)
+MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)", re.IGNORECASE)
+
+
+def _body_lines_no_fences(text: str) -> List[Tuple[int, str]]:
+    """Yield (line_no, line) for body lines after front matter, skipping fenced code blocks."""
+    # Drop the leading front-matter block from the raw text, then track fences.
+    raw_lines = text.splitlines()
+    start = 0
+    if raw_lines and raw_lines[0].strip() == "---":
+        for i in range(1, len(raw_lines)):
+            if raw_lines[i].strip() == "---":
+                start = i + 1
+                break
+    out: List[Tuple[int, str]] = []
+    in_fence = False
+    for i in range(start, len(raw_lines)):
+        line = raw_lines[i]
+        if re.match(r"^\s*(```|~~~)", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        out.append((i + 1, line))
+    return out
 
 
 def check_read_aloud(root: Path, files: List[Path], findings: List[Finding]) -> None:
     """Canon policy (#20): boxed read-aloud text must never appear in published Tier 1 notes."""
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
-        for i, line in enumerate(text.splitlines(), 1):
+        for line_no, line in _body_lines_no_fences(text):
             if READ_ALOUD_LINE_RE.match(line):
                 rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
                 findings.append(
@@ -635,7 +660,7 @@ def check_read_aloud(root: Path, files: List[Path], findings: List[Finding]) -> 
                         check="read-aloud",
                         severity="FAIL",
                         file=rel,
-                        line=i,
+                        line=line_no,
                         message="boxed read-aloud text is prohibited in published canon; remove or move to GM notes",
                     )
                 )
@@ -645,7 +670,7 @@ def check_mechanical_parentheticals(root: Path, files: List[Path], findings: Lis
     """Narrative policy (#18): flag mechanical episode parentheticals and suggest narrative-anchored links."""
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
-        for i, line in enumerate(text.splitlines(), 1):
+        for line_no, line in _body_lines_no_fences(text):
             m = MECHANICAL_PAREN_RE.search(line)
             if m:
                 rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
@@ -654,10 +679,12 @@ def check_mechanical_parentheticals(root: Path, files: List[Path], findings: Lis
                         check="mechanical-parenthetical",
                         severity="WARN",
                         file=rel,
-                        line=i,
+                        line=line_no,
                         message=f"mechanical parenthetical '{m.group(0)}' breaks narrative flow; anchor the episode link in contextual prose instead",
                     )
                 )
+
+
 
 def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     """Run the full or targeted lint suite and return a WikiReport."""
@@ -728,6 +755,8 @@ def render_text_report(report: WikiReport) -> str:
         "catalogue",
         "front-matter",
         "duplicate-title",
+        "read-aloud",
+        "mechanical-parenthetical",
     ]
     for check in order:
         if summary.get(check):

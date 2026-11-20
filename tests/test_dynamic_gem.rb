@@ -104,13 +104,23 @@ class JekyllHeadlessTest < Minitest::Test
 
     catalog = JSON.parse(File.read(File.join(@vault, ".agents", "context", "catalog.json"), encoding: "utf-8"))
     assert_equal VERSION, catalog["engine_version"], "catalog.json missing the engine version stamp"
-    assert_equal 2, catalog["total_entries"], "catalog.json should index the two Tier 1 fixture notes"
+    assert_equal 3, catalog["total_entries"], "catalog.json should index the three Tier 1 fixture notes"
     paths = catalog["entries"].map { |e| e["path"] }
     assert_includes paths, "directory/alpha.md"
     assert_includes paths, "campaigns/ep_001.md"
+    assert_includes paths, "campaigns/ep_002.md"
+    ep2_entry = catalog["entries"].find { |e| e["path"] == "campaigns/ep_002.md" }
+    assert_includes ep2_entry["links_out"], "campaigns/ep_001.md",
+                    "narrative-anchored episode links must be indexed in catalog.json links_out (#18)"
     alpha_entry = catalog["entries"].find { |e| e["path"] == "directory/alpha.md" }
     assert_includes alpha_entry["links_out"], "campaigns/ep_001.md"
     assert_includes alpha_entry["links_in"], "index.md"
+
+    ep2 = File.read(File.join(site, "campaigns", "ep_002", "index.html"), encoding: "utf-8")
+    refute_includes ep2, "The door creaks open", "read_aloud_filter must strip boxed read-aloud text at render (#20)"
+    assert_includes ep2, %(class="episode-ref episode-ref-unresolved" data-episode="1"),
+                    "narrative_link_filter must render mechanical parentheticals as fallback badges (#18)"
+    refute_includes ep2, "(See Episode 1)", "raw mechanical parenthetical must not survive rendering"
     all_links = catalog["entries"].flat_map { |e| [e["links_out"], e["links_in"]].compact.flatten }
     refute all_links.any? { |l| l.include?("_gm-materials") },
            "catalog links leak a _gm-materials path: #{all_links.grep(/_gm-materials/).inspect}"

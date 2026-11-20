@@ -780,6 +780,13 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+    if args.notebook_only and input_file is None:
+        print(
+            "Error: --notebook-only requires an explicit .ipynb notebook argument; "
+            "air-gap auto-discovery of audio/transcript is disabled under the flag.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     start_time = time.time()
     print("=" * 70)

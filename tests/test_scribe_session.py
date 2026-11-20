@@ -366,7 +366,6 @@ class TestScribeSessionCluster(unittest.TestCase):
     def test_notebook_only_rejects_non_notebook_input(self):
         """#20: --notebook-only must reject non-.ipynb input with guidance and exit 1."""
         import io
-        from unittest.mock import patch
         (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
         txt = self.repo_root / "session.txt"
         txt.write_text("words", encoding="utf-8")
@@ -376,5 +375,27 @@ class TestScribeSessionCluster(unittest.TestCase):
                 scribe_session.main()
         self.assertEqual(cm.exception.code, 1)
         self.assertIn(".ipynb", err.getvalue())
+
+    def test_notebook_only_rejects_auto_discovery_and_accepts_ipynb(self):
+        """#20: --notebook-only with no input must not auto-discover audio; a .ipynb passes the gate."""
+        import io
+        (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
+        with patch("sys.argv", ["scribe_session.py", "--repo-root", str(self.repo_root), "--notebook-only"]), \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            with self.assertRaises(SystemExit) as cm:
+                scribe_session.main()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("auto-discovery", err.getvalue())
+        # A .ipynb input passes the notebook gate and proceeds to the Ollama check
+        nb = self.repo_root / "session.ipynb"
+        nb.write_text("{}", encoding="utf-8")
+        with patch("sys.argv", ["scribe_session.py", str(nb), "--repo-root", str(self.repo_root), "--notebook-only"]), \
+             patch("sys.stderr", new_callable=io.StringIO) as err2:
+            with self.assertRaises(SystemExit) as cm2:
+                scribe_session.main()
+        self.assertEqual(cm2.exception.code, 1)
+        self.assertIn("Ollama", err2.getvalue())  # reached the Ollama check, not the notebook gate
+
+
 if __name__ == "__main__":
     unittest.main()
