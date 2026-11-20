@@ -396,7 +396,6 @@ def lint_section(
 
 
 
-
 def load_glossary_terms(glossary_path: Path) -> List[str]:
     """Load canonical term names from a rolling/session glossary ('## Term' headings)."""
     if not glossary_path.exists():

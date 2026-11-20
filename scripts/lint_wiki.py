@@ -558,7 +558,6 @@ def check_duplicate_titles(
 
 
 
-
 def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
     """
     Validate .agents/context/rolling_glossary.md against published canon:
