@@ -10,9 +10,7 @@ Discovered and run with:
 python3 -m unittest discover -s tests -v
 ```
 
-`test_*.py` files cover the Python CLI (`oude init`, `oude doctor`, `oude install-skills`, pass-through script dispatch) and the bundled `scripts/` tooling. They run in the repository checkout and need `pip install -r requirements.txt`.
-
-The end-to-end suites for issue #34 live in `tests/test_e2e_jekyll.py` (real `bundle exec jekyll build` of a fixture vault) and `tests/test_e2e_wheel.py` (`uv build` + clean-venv install outside the checkout, `resolve_asset_dir` checks); they are part of `unittest discover` and skip automatically when `ruby`/`bundle`/`uv` are unavailable (PR #86).
+The end-to-end suites for issue #34 live in `tests/test_e2e_jekyll.py` (real `bundle exec jekyll build` of a fixture vault) and `tests/test_e2e_wheel.py` (`uv build` + clean-venv install outside the checkout, `resolve_asset_dir` checks); they are part of `unittest discover` and skip automatically when `ruby`/`bundle`/`uv` are unavailable (landed for #34 on `develop`).
 
 ## Headless dynamic-gem integration test (issue #23)
 

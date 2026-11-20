@@ -97,7 +97,7 @@ class JekyllHeadlessTest < Minitest::Test
 
     alpha = File.read(File.join(site, "directory", "alpha", "index.html"), encoding: "utf-8")
     assert_includes alpha, "campaigns/ep_001.md", "site.data.markdown_links was not rendered into the page"
-    assert_includes alpha, "Episode One", "gem-served include connected_to.html was not rendered"
+    assert_includes alpha, "Chapters", "gem-served include connected_to.html was not rendered"
 
     refute File.exist?(File.join(site, "all-content.html")),
            "engine synthesised _site/all-content.html; the generator was retired in #25/#35"
