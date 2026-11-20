@@ -60,6 +60,7 @@ oude-mechanismen/
     ├── aesthetics.yml.template # Starter art filter presets
     ├── route_graph.json.template
     ├── badges/                 # Neutral geometric fallback PNG badges
+    ├── github/                 # Vault .github/dependabot.yml (oude-mechanismen ignore guard)
     └── jekyll/                 # Vanilla Just the Docs starter config & Gemfile
 ```
 
