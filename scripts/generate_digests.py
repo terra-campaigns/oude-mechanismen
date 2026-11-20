@@ -11,6 +11,7 @@ Compile Tier 3 reference routing index (.agents/context/references.json) from
 Markdown digests in the campaign's _gm-materials/digests/ directory.
 
 Setting-agnostic: contains zero campaign lore. Discovers sources dynamically.
+`<slug>` here is the digest source's slug; `skills/digest-book/SKILL.md` calls the same value `<source>`.
 """
 
 import argparse
@@ -185,16 +186,22 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
         print(f"[WARN] No Markdown digest files found in {digests_dir}")
         return
 
-    # Warn on legacy flat stubs (<slug>.md) left alongside a nested wiki (<slug>/):
-    # the rglob above would silently index both into references.json.
-    for flat_md in sorted(digests_dir.glob("*.md"), key=lambda p: p.as_posix()):
+    # A legacy flat stub (<slug>.md) left alongside a nested wiki (<slug>/) at any
+    # depth collides: the nested wiki supersedes the stub, so warn and exclude the
+    # stub from indexing instead of silently co-indexing both into references.json.
+    colliding = {
+        p for p in md_files
+        if p.with_suffix("").is_dir() and any(p.with_suffix("").rglob("*.md"))
+    }
+    for flat_md in sorted(colliding, key=lambda p: p.as_posix()):
         nested_dir = flat_md.with_suffix("")
-        if nested_dir.is_dir() and any(nested_dir.rglob("*.md")):
-            print(
-                f"[WARN] Flat digest stub {flat_md} collides with nested digest directory {nested_dir}/ "
-                f"containing Markdown notes; references.json will index both "
-                f"('{flat_md.stem}' and '{flat_md.stem}/...'). Remove the legacy flat stub."
-            )
+        print(
+            f"[WARN] Flat digest stub {flat_md} collides with nested digest directory {nested_dir}/ "
+            f"containing Markdown notes; the nested wiki supersedes the stub, so the stub is "
+            f"excluded from references.json. Remove the legacy flat stub."
+        )
+    if colliding:
+        md_files = [p for p in md_files if p not in colliding]
 
     sources = []
     book_meta_cache: Dict[str, Tuple[Optional[str], Optional[str]]] = {}

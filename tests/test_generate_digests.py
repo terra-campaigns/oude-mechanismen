@@ -297,6 +297,14 @@ class TestGenerateDigests(unittest.TestCase):
         )
         (nested / "_index.md").write_text("# Hostile Synthetics Overview\n\n## Overview\n\nIntro.\n")
         (nested / "note.md").write_text("# Note\n\n## Section\n\nText.\n")
+        # Nested-level collision: a/b.md alongside a/b/
+        deep = digests_dir / "a"
+        deep.mkdir(parents=True)
+        nested_dir_level = deep / "b.md"
+        nested_dir_level.write_text("# Stale\n")
+        deep_nested = deep / "b"
+        deep_nested.mkdir(parents=True)
+        (deep_nested / "_index.md").write_text("# B\n")
 
         buf = io.StringIO()
         with patch("sys.stdout", new=buf):
@@ -306,13 +314,15 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertIn("[WARN]", output)
         self.assertIn(str(flat), output)
         self.assertIn(str(nested), output)
+        self.assertIn(str(nested_dir_level), output)
         self.assertIn("references.json", output)
 
         refs = json.loads((self.context_dir / "references.json").read_text())
         by_slug = {entry["slug"]: entry for entry in refs["sources"]}
+        # Colliding flat stubs are excluded; the nested wiki supersedes them.
         self.assertEqual(
-            list(by_slug.keys()),
-            ["hostile_synthetics", "hostile_synthetics/_index", "hostile_synthetics/note"],
+            sorted(by_slug.keys()),
+            ["a/b/_index", "hostile_synthetics/_index", "hostile_synthetics/note"],
         )
 
     def _make_two_page_pdf(self, path: Path) -> None:
