@@ -363,6 +363,5 @@ class TestScribeSessionCluster(unittest.TestCase):
         self.assertIn("Doc", out)
         self.assertEqual(mock_query.call_count, 1)
 
-
 if __name__ == "__main__":
     unittest.main()

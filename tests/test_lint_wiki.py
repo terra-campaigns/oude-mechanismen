@@ -565,6 +565,5 @@ class TestRollingGlossary(LintWikiTestCase):
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "rolling-glossary"), [])
 
-
 if __name__ == "__main__":
     unittest.main()

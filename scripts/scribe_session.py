@@ -773,7 +773,6 @@ def main() -> None:
     repo_root = find_campaign_root(args.repo_root)
     input_file = Path(args.input_file).expanduser().resolve() if args.input_file else None
 
-
     start_time = time.time()
     print("=" * 70)
     print("OUDE MECHANISMEN — AIR-GAPPED SESSION NOTES EXTRACTOR")

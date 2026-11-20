@@ -480,8 +480,7 @@ def validate_episode_parentheticals(file_path: str, masked_lines: List[Tuple[int
             continue
         if in_fence:
             continue
-        m = MECHANICAL_PAREN_RE.search(line)
-        if m:
+        for m in MECHANICAL_PAREN_RE.finditer(line):
             diagnostics.append(
                 Diagnostic(
                     file=file_path,
