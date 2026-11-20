@@ -43,6 +43,10 @@ module OudeMechanismen
             f.start_with?("_gm-materials/")
         end
 
+        # Index the rolling glossary (Tier 2 add-on indexed for progressive retrieval)
+        rolling_glossary = ".agents/context/rolling_glossary.md"
+        md_files << rolling_glossary if File.exist?(File.join(base_dir, rolling_glossary)) && !md_files.include?(rolling_glossary)
+
         # Track internal link connections for links_out and links_in
         internal_outbound = Hash.new { |h, k| h[k] = [] }
         internal_inbound = Hash.new { |h, k| h[k] = [] }
@@ -193,9 +197,9 @@ module OudeMechanismen
 
         catalog_entries = []
         md_files.each do |file_path|
-          # Match against tier1_sources.yml allowlist
-          included = include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") }
-          excluded = exclude_paths.any? { |exc| file_path == exc || file_path.start_with?("#{exc}/") }
+          # Match against tier1_sources.yml allowlist; the rolling glossary is always indexed
+          included = (file_path == rolling_glossary) || include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") }
+          excluded = file_path != rolling_glossary && exclude_paths.any? { |exc| file_path == exc || file_path.start_with?("#{exc}/") }
           next unless included && !excluded
 
           content = begin
@@ -247,7 +251,7 @@ module OudeMechanismen
           catalog_entries << {
             "path" => file_path,
             "title" => fm['title'] || File.basename(file_path, '.md'),
-            "type" => fm['type'] || "misc",
+            "type" => fm['type'] || (file_path == rolling_glossary ? "glossary" : "misc"),
             "parent" => fm['parent'],
             "role" => fm['role'],
             "status" => fm['status'],
@@ -257,7 +261,7 @@ module OudeMechanismen
             "links_out" => internal_outbound[file_path].sort,
             "links_in" => internal_inbound[file_path].sort,
             "sha" => Digest::SHA256.hexdigest(content)[0..7],
-            "tier" => 1
+            "tier" => (file_path == rolling_glossary ? 2 : 1)
           }
         end
 

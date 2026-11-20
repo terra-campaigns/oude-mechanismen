@@ -256,5 +256,112 @@ class TestScribeSession(unittest.TestCase):
         self.assertIn("| `broken-model:latest` | ERROR |", content)
 
 
+class TestScribeSessionCluster(unittest.TestCase):
+    """Tests for GM recap anchors, chunked extraction, and the rolling glossary (#26 #27 #28)."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="scribe_cluster_")
+        self.repo_root = Path(self.test_dir)
+        (self.repo_root / ".agents" / "context").mkdir(parents=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def _manifest(self):
+        return {
+            "session_slug": "2026-11-20_001",
+            "campaign": "Test Campaign",
+            "transcript_path": str(self.repo_root / "t.txt"),
+            "glossary_path": str(self.repo_root / "g.md"),
+            "tactical_facts_path": str(self.repo_root / "tf.md"),
+            "sensory_textures_path": str(self.repo_root / "st.md"),
+        }
+
+    def test_recap_anchor_schema_validation(self):
+        recap = self.repo_root / "2026-11-20_001_recap.md"
+        recap.write_text("# Recap of Episode 12\nThe party reached Fomalhaut.\n", encoding="utf-8")
+        anchor = scribe_session.load_recap_anchor(recap)
+        self.assertEqual(anchor["title"], "Recap of Episode 12")
+        self.assertEqual(anchor["body"], "The party reached Fomalhaut.")  # title stripped from body
+        bad = self.repo_root / "bad.md"
+        bad.write_text("No heading here.\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            scribe_session.load_recap_anchor(bad)
+
+    def test_prompts_include_recap_section_and_boundary_strips_it(self):
+        manifest = self._manifest()
+        context = {"transcript": "T", "glossary": "G", "decisions": "D", "recap": "RECAP BODY"}
+        prompt = scribe_session.build_tactical_prompt(manifest, context)
+        self.assertIn("### GM Recap Anchor", prompt)
+        self.assertIn("RECAP BODY", prompt)
+        leaked = scribe_session.strip_prompt_echo("# Doc\nText\n---\n### GM Recap Anchor:\nsecret")
+        self.assertNotIn("secret", leaked)
+
+    def test_chunk_transcript_respects_word_limit_and_sentence_boundaries(self):
+        text = "One two. Three four five. Six."
+        chunks = scribe_session.chunk_transcript(text, 3)
+        self.assertEqual(chunks, ["One two.", "Three four five.", "Six."])
+        self.assertEqual(scribe_session.chunk_transcript(text, 0), [text])
+
+    @patch("scribe_session.query_ollama_stream")
+    def test_chunked_extraction_merges_with_prioritised_terms(self, mock_query):
+        mock_query.side_effect = ["# Chunk A\nKael fought.", "# Chunk B\nMonarch spoke.", "# Merged\nAll beats."]
+        manifest = self._manifest()
+        context = {"transcript": "Kael fought the Monarch. The Monarch spoke.", "glossary": "", "decisions": "", "recap": ""}
+        out = scribe_session.extract_tactical_facts("http://x", "m", manifest, context, chunk_size=5)
+        self.assertIn("Merged", out)
+        self.assertEqual(mock_query.call_count, 3)  # two chunks + one merge
+        merge_prompt = mock_query.call_args_list[-1].args[2]
+        self.assertIn("link-graph prioritisation", merge_prompt)
+
+    def test_rolling_glossary_merge_dedupes_and_resolves_conflicts(self):
+        scribe_session.update_rolling_glossary(self.repo_root, "2026-11-20_001", [("Kael Vorn", "Protagonist"), ("Fomalhaut", "Station")])
+        path = scribe_session.update_rolling_glossary(self.repo_root, "2026-11-20_002", [("kael vorn", "Duplicate"), ("New Term", "Fresh")])
+        entries = scribe_session.parse_rolling_glossary(path.read_text(encoding="utf-8"))
+        self.assertEqual(entries["Kael Vorn"]["definition"], "Protagonist")  # existing wins
+        self.assertEqual(entries["Kael Vorn"]["sessions"], ["2026-11-20_001", "2026-11-20_002"])
+        self.assertIn("New Term", entries)
+        self.assertEqual(path, self.repo_root / ".agents" / "context" / "rolling_glossary.md")
+
+    def test_session_glossary_terms_sources_from_transcript_and_skips_canon(self):
+        transcript = "Kael Vorn met the Monarch at Fomalhaut Station. The Cat watched."
+        terms = dict(scribe_session.session_glossary_terms(transcript, skip_titles={"kael vorn"}))
+        self.assertNotIn("Kael Vorn", terms)  # canon title skipped
+        self.assertIn("Monarch", terms)  # session-new term kept with empty definition
+        self.assertEqual(terms["Monarch"], "")
+        self.assertIn("Fomalhaut Station", terms)
+        # (stopword-led multi-word candidates are acceptable; dedupe is what matters)
+        terms2 = scribe_session.session_glossary_terms("Monarch spoke. Monarch left.")
+        self.assertEqual(terms2.count(("Monarch", "")), 1)  # deduplicated
+
+    def test_rolling_glossary_skips_canon_titles_and_fills_empty_definitions(self):
+        scribe_session.update_rolling_glossary(self.repo_root, "2026-11-20_001", [("Kael Vorn", ""), ("New Term", "Fresh")])
+        path = scribe_session.update_rolling_glossary(
+            self.repo_root, "2026-11-20_002", [("Kael Vorn", "Now defined"), ("Other Canon", "x")],
+            skip_titles={"other canon"},
+        )
+        entries = scribe_session.parse_rolling_glossary(path.read_text(encoding="utf-8"))
+        self.assertEqual(entries["Kael Vorn"]["definition"], "Now defined")  # empty placeholder filled later
+        self.assertNotIn("Other Canon", entries)  # catalog title skipped
+
+    @patch("scribe_session.query_ollama_stream")
+    def test_chunked_pass_lints_each_chunk_before_merge(self, mock_query):
+        # Second chunk has no level-1 heading -> chunk validation FAIL -> RuntimeError, no merge call
+        mock_query.side_effect = ["# Chunk A\n\nKael fought.", "no heading here"]
+        manifest = self._manifest()
+        context = {"transcript": "Kael fought hard. No heading chunk follows.", "glossary": "", "decisions": "", "recap": ""}
+        with self.assertRaises(RuntimeError):
+            scribe_session.extract_tactical_facts("http://x", "m", manifest, context, chunk_size=4)
+        self.assertEqual(mock_query.call_count, 2)  # merge never fired
+
+    @patch("scribe_session.query_ollama_stream")
+    def test_chunked_pass_falls_back_to_single_pass_on_empty_transcript(self, mock_query):
+        mock_query.return_value = "# Doc\n\nBody."
+        manifest = self._manifest()
+        context = {"transcript": "", "glossary": "", "decisions": "", "recap": ""}
+        out = scribe_session.extract_sensory_textures("http://x", "m", manifest, context, chunk_size=5)
+        self.assertIn("Doc", out)
+        self.assertEqual(mock_query.call_count, 1)
+
 if __name__ == "__main__":
     unittest.main()

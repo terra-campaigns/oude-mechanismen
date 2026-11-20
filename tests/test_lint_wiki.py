@@ -524,5 +524,46 @@ class TestPrReviewRegressions(LintWikiTestCase):
         self.assertIn("parent", fm[0].message)
 
 
+class TestRollingGlossary(LintWikiTestCase):
+    """Tests for rolling glossary validation against published canon (#28)."""
+
+    def test_missing_glossary_is_silent(self):
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rolling-glossary"), [])
+
+    def test_entry_without_definition_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Kael Vorn\n\n- First seen: `2026-11-20_001`\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertTrue(any(f.severity == "FAIL" and "no definition" in f.message for f in rg))
+
+    def test_canon_title_casing_conflict_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## kael vorn\n\n- Definition: Protagonist.\n",
+        )
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({"entries": [{"title": "Kael Vorn", "path": "directory/kael.md", "type": "people"}]}),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertTrue(any("conflicts with published canon" in f.message for f in rg))
+
+    def test_matching_canon_title_passes(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Kael Vorn\n\n- Definition: Protagonist.\n- First seen: `2026-11-20_001`\n",
+        )
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({"entries": [{"title": "Kael Vorn", "path": "directory/kael.md", "type": "people"}]}),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rolling-glossary"), [])
+
 if __name__ == "__main__":
     unittest.main()

@@ -395,6 +395,132 @@ def lint_section(
     )
 
 
+def load_glossary_terms(glossary_path: Path) -> List[str]:
+    """Load canonical term names from a rolling/session glossary ('## Term' headings)."""
+    if not glossary_path.exists():
+        return []
+    terms: List[str] = []
+    for line in glossary_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            terms.append(m.group(1))
+    return terms
+
+
+def validate_names_and_ledger(
+    file_path: str,
+    masked_lines: List[Tuple[int, str]],
+    glossary_terms: Optional[List[str]] = None,
+) -> List[Diagnostic]:
+    """
+    Canon consistency checks:
+    1. Name validation: any occurrence of a glossary term whose casing differs from
+       the canonical form is flagged (WARN) to catch inconsistent NPC/faction names.
+    2. Ledger validation: bullet lines under a 'Ledger' heading must contain a
+       numeric value (WARN otherwise).
+    """
+    diagnostics: List[Diagnostic] = []
+    if glossary_terms:
+        full_text = "\n".join(line for _, line in masked_lines)
+        for term in glossary_terms:
+            if len(term) < 3:
+                continue
+            for m in re.finditer(r"(?<!\w)" + re.escape(term) + r"(?!\w)", full_text, re.IGNORECASE):
+                actual = m.group(0)
+                if actual != term:
+                    line_no = full_text[: m.start()].count("\n") + 1
+                    diagnostics.append(
+                        Diagnostic(
+                            file=file_path,
+                            line=line_no,
+                            rule="canon-name-casing",
+                            message=f"Name '{actual}' does not match canonical glossary form '{term}'.",
+                            expected=term,
+                            actual=actual,
+                            severity="WARN",
+                        )
+                    )
+
+    in_ledger = False
+    for line_no, line in masked_lines:
+        if re.match(r"^#{1,6}\s", line):
+            in_ledger = bool(re.search(r"ledger", line, re.IGNORECASE))
+            continue
+        if in_ledger and re.match(r"^\s*-\s+\S", line) and not re.search(r"\d", line):
+            diagnostics.append(
+                Diagnostic(
+                    file=file_path,
+                    line=line_no,
+                    rule="ledger-entry-numeric",
+                    message="Ledger bullet lacks a numeric value (credits, charges, quantities).",
+                    expected="bullet containing a digit",
+                    actual=line.strip()[:80],
+                    severity="WARN",
+                )
+            )
+    return diagnostics
+
+
+def lint_chunk_text(content: str, file_label: str) -> FileReport:
+    """
+    Validate a single extraction chunk (as text) independently of the 2-4 prose
+    framework: non-empty body, at least one level-1 heading, and a blank line
+    after every heading. Used both by the --chunk CLI mode and by
+    scribe_session's per-chunk validation between extraction chunks.
+    """
+    masked_lines = mask_markdown_noise(content)
+    diagnostics: List[Diagnostic] = []
+    body_lines = [l for _, l in masked_lines if l.strip()]
+    if not body_lines:
+        diagnostics.append(
+            Diagnostic(file=file_label, line=1, rule="chunk-empty",
+                       message="Chunk is empty.", expected="non-empty chunk", actual="empty",
+                       severity="FAIL")
+        )
+    if not any(re.match(r"^#\s", l) for _, l in masked_lines):
+        diagnostics.append(
+            Diagnostic(file=file_label, line=1, rule="chunk-heading",
+                       message="Chunk lacks a level-1 '# ' title heading.",
+                       expected="one '# ' heading", actual="none", severity="FAIL")
+        )
+    for i, (line_no, line) in enumerate(masked_lines):
+        if re.match(r"^#{1,6}\s", line):
+            nxt = masked_lines[i + 1][1] if i + 1 < len(masked_lines) else ""
+            if nxt.strip() != "":
+                diagnostics.append(
+                    Diagnostic(file=file_label, line=line_no, rule="heading-blank-line",
+                               message="Missing empty blank line after heading.",
+                               expected="blank line", actual=nxt.strip()[:60], severity="WARN")
+                )
+
+    status = "FAIL" if any(d.severity == "FAIL" for d in diagnostics) else "PASS"
+    return FileReport(
+        file=file_label, bilingual=False, status=status,
+        sections=[SectionResult(label="chunk", headings_count=sum(1 for _, l in masked_lines if re.match(r"^#{1,6}\s", l)), status=status)],
+        diagnostics=diagnostics,
+    )
+
+
+def lint_chunk_file(file_path: Path) -> FileReport:
+    """Validate a single extraction chunk file on disk (see lint_chunk_text)."""
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return FileReport(
+            file=str(file_path),
+            bilingual=False,
+            status="FAIL",
+            diagnostics=[
+                Diagnostic(
+                    file=str(file_path), line=1, rule="file-read",
+                    message=f"Failed to read file: {exc}",
+                    expected="readable UTF-8 file", actual="error",
+                )
+            ],
+        )
+    return lint_chunk_text(content, str(file_path))
+
+
 def lint_chapter_file(
     file_path: Path,
     force_bilingual: bool = False,
@@ -404,6 +530,7 @@ def lint_chapter_file(
     max_paragraphs: int = 4,
     min_sentences: int = 2,
     max_sentences: int = 4,
+    glossary_terms: Optional[List[str]] = None,
 ) -> FileReport:
     """Lints a markdown chapter file and returns a complete FileReport."""
     try:
@@ -446,6 +573,7 @@ def lint_chapter_file(
     all_diagnostics: List[Diagnostic] = []
     for sr in section_results:
         all_diagnostics.extend(sr.diagnostics)
+    all_diagnostics.extend(validate_names_and_ledger(str(file_path), masked_lines, glossary_terms))
 
     overall_status = "FAIL" if any(d.severity == "FAIL" for d in all_diagnostics) else "PASS"
 
@@ -496,6 +624,8 @@ def main() -> int:
     )
     parser.add_argument("--min", type=int, default=2, help="Minimum bound for 2-4 rule (default: 2).")
     parser.add_argument("--max", type=int, default=4, help="Maximum bound for 2-4 rule (default: 4).")
+    parser.add_argument("--chunk", action="store_true", help="Lint targets as extraction chunks (heading/cleanliness checks only, no 2-4 prose framework).")
+    parser.add_argument("--glossary", help="Path to a rolling/session glossary markdown for canon name validation (default: .agents/context/rolling_glossary.md at repo root).")
 
     args = parser.parse_args()
 
@@ -518,18 +648,31 @@ def main() -> int:
         print("Error: No markdown files found to lint.", file=sys.stderr)
         return 2
 
+    glossary_path = Path(args.glossary) if args.glossary else None
+    if glossary_path is None:
+        cwd = Path.cwd().resolve()
+        for candidate in [cwd, *cwd.parents]:
+            if (candidate / ".agents").is_dir() or (candidate / "_config.yml").is_file():
+                glossary_path = candidate / ".agents" / "context" / "rolling_glossary.md"
+                break
+    glossary_terms = [] if args.chunk else (load_glossary_terms(glossary_path) if glossary_path else [])
+
     reports: List[FileReport] = []
     for f in files_to_lint:
-        rep = lint_chapter_file(
-            file_path=f,
-            force_bilingual=args.bilingual,
-            min_headings=args.min,
-            max_headings=args.max,
-            min_paragraphs=args.min,
-            max_paragraphs=args.max,
-            min_sentences=args.min,
-            max_sentences=args.max,
-        )
+        if args.chunk:
+            rep = lint_chunk_file(f)
+        else:
+            rep = lint_chapter_file(
+                file_path=f,
+                force_bilingual=args.bilingual,
+                min_headings=args.min,
+                max_headings=args.max,
+                min_paragraphs=args.min,
+                max_paragraphs=args.max,
+                min_sentences=args.min,
+                max_sentences=args.max,
+                glossary_terms=glossary_terms,
+            )
         reports.append(rep)
 
     has_failures = any(r.status == "FAIL" for r in reports)
