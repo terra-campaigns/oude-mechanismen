@@ -2,9 +2,9 @@ name: CI Health Check
 
 on:
   push:
-    branches: [ "main", "before-publish" ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 jobs:
   validate:
@@ -90,4 +90,71 @@ jobs:
                       if i + 1 < len(lines) and lines[i + 1] != "":
                           print(f"Error: Missing blank line after heading at line {i + 1} in {path}: {lines[i + 1]}", file=sys.stderr)
                           sys.exit(1)
+          PY
+
+  rulesets:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Validate committed rulesets and match live state when permitted
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - << 'PY'
+          import glob, json, os, sys, urllib.error, urllib.request
+          def api(path):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}{path}",
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              return json.load(urllib.request.urlopen(req))
+          committed = sorted(glob.glob(".github/rulesets/*.json"))
+          for path in committed:
+              r = json.load(open(path, encoding="utf-8"))
+              assert r.get("enforcement") == "active", f"{path}: enforcement must be active"
+              assert r.get("name") and r.get("target") and r.get("rules"), f"{path}: missing fields"
+          print(f"OK: {len(committed)} committed ruleset definitions valid")
+          try:
+              live_list = api("/rulesets?per_page=100")
+          except urllib.error.HTTPError as e:
+              print(f"NOTE: cannot read live rulesets with GITHUB_TOKEN (HTTP {e.code}); "
+                    "verify live state manually per AGENTS.md section 7")
+              sys.exit(0)
+          failures = [f"{r['name']}: enforcement={r.get('enforcement')} (live ruleset not active)"
+                      for r in live_list if r.get("enforcement") != "active"]
+          checked = []
+          for path in sorted(glob.glob(".github/rulesets/*.json")):
+              want = json.load(open(path, encoding="utf-8"))
+              checked.append(want["name"])
+              match = next((r for r in live_list if r["name"] == want["name"]), None)
+              if match is None:
+                  failures.append(f"{want['name']}: not found live")
+                  continue
+              detail = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/rulesets/{match['id']}",
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              got = json.load(urllib.request.urlopen(detail))
+              if got.get("enforcement") != "active":
+                  failures.append(f"{want['name']}: enforcement={got.get('enforcement')}")
+              want_inc = want["conditions"]["ref_name"]["include"]
+              got_inc = got["conditions"]["ref_name"]["include"]
+              if want_inc != got_inc:
+                  failures.append(f"{want['name']}: targets {got_inc} != {want_inc}")
+              want_rules = sorted(r["type"] for r in want["rules"])
+              got_rules = sorted(r["type"] for r in got["rules"])
+              if want_rules != got_rules:
+                  failures.append(f"{want['name']}: rules {got_rules} != {want_rules}")
+              contexts = [c["context"] for r in got["rules"]
+                          if r["type"] == "required_status_checks"
+                          for c in r["parameters"]["required_status_checks"]]
+              if "validate" not in contexts:
+                  failures.append(f"{want['name']}: missing required check 'validate' (has {contexts})")
+          if failures:
+              for f in failures:
+                  print("ERROR:", f, file=sys.stderr)
+              sys.exit(1)
+          print("OK: live rulesets match .github/rulesets/:", checked)
           PY

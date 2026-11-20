@@ -38,12 +38,26 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 - **Art filter presets**: `.agents/context/aesthetics.yml`.
 - **Agent skills & procedural tooling**: the Python CLI and global skills (`oude init`, `oude install-skills`, `oude doctor`, `oude digest`, `oude audit`, …) are distributed separately via `uv` (ADR 002) and registered in `~/.gemini/config/skills.json` — the gem covers only the Jekyll build.
 
+## Engine branches: `main` vs `develop`
+
+The engine repository uses a two-branch flow. `main` is release-only and always sits exactly on the latest `vX.Y.Z` tag, so vaults pin the gem `tag:` (and the `uv tool install …@<tag>` CLI) to a release tag on `main`. All unreleased feature and fix work integrates on `develop`, the default base for pull requests; CI runs on both branches. `develop` is promoted to `main` only via a release-cut PR (`VERSION` bump plus a dated `CHANGELOG.md` section), after which the `vX.Y.Z` tag is created.
+
 ## Updating the engine
 
 1. Bump the `tag:` in the vault `Gemfile` to the new release.
 2. Run `bundle update oude-mechanismen && bundle exec jekyll build`.
 3. Update the Python CLI and global skills (if needed): `uv tool install --force git+https://github.com/terra-campaigns/oude-mechanismen.git@<tag>` followed by `oude install-skills`.
 4. Run `oude doctor --fix` inside the vault to verify configuration and prune any legacy files (such as `.agents/scripts/` runners, shadowing `_plugins/`, or `.agents/.engine-version`).
+
+## Dependabot and git-tag pinning
+
+Campaign vaults pin the engine with a git tag in the `Gemfile` (see `templates/jekyll/Gemfile.template`: `gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanismen.git", tag: "vX.Y.Z"`). Because the gem is not published to RubyGems or GitHub Packages, Dependabot has no registry to compare versions against and falls back to its git-ref updater, which resolves the "latest" ref using git heuristics (tag ordering, annotated vs lightweight tag metadata, commit timestamps) rather than semver. When those heuristics mis-sort tags, Dependabot opens inverted PRs titled as bumps but pointing at older releases (e.g. "Bump oude-mechanismen from v0.5.3 to v0.4.1").
+
+Until the gem is published to a registry — the future alternative, which makes Dependabot compare real semver — vaults must exclude the engine from Dependabot:
+
+- `oude init` (and `bin/init_vault.sh`) scaffold `.github/dependabot.yml` from `templates/github/dependabot.yml.template`, whose bundler update carries an `ignore` rule for all `oude-mechanismen` versions. Existing files are never clobbered.
+- `oude doctor` warns when a git-pinned `Gemfile` lacks that ignore rule, and `oude doctor --fix` creates or patches `.github/dependabot.yml` idempotently, preserving unrelated entries.
+- Bump the engine manually by editing the `tag:` in the `Gemfile` (see [Updating the engine](#updating-the-engine)) and re-run `oude doctor`.
 
 ## Deprecations
 
@@ -62,3 +76,4 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 | Private `_gm-materials/` leaks into the built site | Check all four ADR 003 exclusion layers — `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths — then run `oude doctor --fix`. |
 | `bundle: command not found` on Debian 13 (`trixie`) | Use `bundle3.3` (e.g. `bundle3.3 install && bundle3.3 exec jekyll build`), or create `~/.local/bin/bundle -> /usr/bin/bundle3.3`. |
 | Gem build fails locally | `gem build oude-mechanismen.gemspec` in the engine checkout; CI validates this on every PR. |
+| Dependabot opens an inverted "downgrade" PR for `oude-mechanismen` (e.g. v0.5.3 → v0.4.1) | The gem is git-tag pinned, so Dependabot's git-ref updater mis-sorts tags without a registry. Ensure `.github/dependabot.yml` ignores `oude-mechanismen` (`oude doctor --fix` adds the rule) and bump the `tag:` in the `Gemfile` manually. |

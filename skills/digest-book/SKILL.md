@@ -70,7 +70,7 @@ oude digest --validate <out-dir>/staged/<source> --manifest <out-dir>/manifest.j
 
 - Exit code must be `0`. Failures are reported as `file:line: <reason>` and must be fixed in staging, not after publishing. Non-fatal `[INFO]` stats (line counts, auto-fallback counts) never block.
 - On pass, replace `_gm-materials/digests/<source>/` atomically: copy the validated `<out-dir>/staged/<source>/` tree to a temporary sibling directory **on the same filesystem outside `digests/`** (e.g. `_gm-materials/.staged-<source>.tmp` — keeping unfinished `.md` files out of `digests/` so `compile_references()` and sync do not index them prematurely, while staying on the same filesystem so an atomic swap works), then swap it into place.
-- **Legacy flat-digest cleanup:** If upgrading an older vault from a legacy flat summary (`_gm-materials/digests/<source>.md`), remove the stale `<source>.md` file during the swap so `oude digest` does not index both the flat summary and the new `<source>/` wiki as duplicate entries in `.agents/context/references.json`.
+- **Legacy flat-digest cleanup:** If upgrading an older vault from a legacy flat summary (`_gm-materials/digests/<source>.md`), remove the stale `<source>.md` file during the swap. `compile_references()` warns about and excludes such a stub (the nested `<source>/` wiki supersedes it in `.agents/context/references.json`), but `oude digest --validate` still checks every `*.md` under `digests/`, so the stale file must go.
 
 ### 4. Optional zero-context audit pass
 

@@ -89,6 +89,7 @@ class TestOudeCLI(unittest.TestCase):
             "imgs/badges",
             "_sass/custom",
             ".agents/context",
+            ".github",
         ]:
             self.assertTrue(
                 (self.target_dir / expected_dir).is_dir(),
@@ -110,6 +111,7 @@ class TestOudeCLI(unittest.TestCase):
             "campaigns/index.md",
             "systems/index.md",
             ".gitignore",
+            ".github/dependabot.yml",
         ]:
             self.assertTrue(
                 (self.target_dir / expected_file).is_file(),
@@ -1163,6 +1165,70 @@ class TestOudeCLI(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
+
+
+class TestDependabotGuard(unittest.TestCase):
+    """Regression tests for the vault Dependabot ignore guard (issue #76)."""
+
+    def test_gemfile_matcher_single_line_git_tag(self):
+        gemfile = 'gem "oude-mechanismen", git: "https://example.com/x.git", tag: "v0.7.2"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(gemfile))
+
+    def test_gemfile_matcher_multiline_and_shorthands(self):
+        multiline = 'gem "oude-mechanismen",\n  github: "terra-campaigns/oude-mechanismen",\n  tag: "v0.7.2"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(multiline))
+        gitlab = 'gem "oude-mechanismen", gitlab: "group/oude-mechanismen", ref: "main"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(gitlab))
+        bitbucket = 'gem "oude-mechanismen", bitbucket: "team/oude-mechanismen", branch: "develop"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(bitbucket))
+
+    def test_gemfile_matcher_registry_pinned_is_not_git(self):
+        self.assertFalse(cli._gemfile_pins_engine_via_git('gem "oude-mechanismen", "~> 0.7"\n'))
+        self.assertFalse(cli._gemfile_pins_engine_via_git('gem "jekyll", "~> 4.3"\n'))
+        # A registry-pinned engine must not match a later, unrelated git-sourced gem.
+        mixed = 'gem "oude-mechanismen", "~> 0.7"\ngem "jekyll-theme", git: "https://x.git", tag: "v1.0"\n'
+        self.assertFalse(cli._gemfile_pins_engine_via_git(mixed))
+        # Commented-out pins and bare git sources (no tag/ref/branch).
+        commented = '# gem "oude-mechanismen", git: "https://x.git", tag: "v1"\n'
+        self.assertFalse(cli._gemfile_pins_engine_via_git(commented))
+        bare_git = 'gem "oude-mechanismen", git: "https://x.git"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(bare_git))
+
+    def test_ignores_engine_scoped_to_bundler_update(self):
+        bundler_ignore = (
+            "version: 2\nupdates:\n  - package-ecosystem: \"bundler\"\n"
+            "    directory: \"/\"\n    ignore:\n      - dependency-name: \"oude-mechanismen\"\n"
+        )
+        self.assertTrue(cli._dependabot_ignores_engine(bundler_ignore))
+        flow_style = "version: 2\nupdates: [{package-ecosystem: bundler, ignore: [{dependency-name: oude-mechanismen}]}]\n"
+        self.assertTrue(cli._dependabot_ignores_engine(flow_style))
+        # Same-named ignore under a different ecosystem must NOT count.
+        other_ecosystem = (
+            "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n"
+            "    directory: \"/\"\n    ignore:\n      - dependency-name: \"oude-mechanismen\"\n"
+        )
+        self.assertFalse(cli._dependabot_ignores_engine(other_ecosystem))
+        self.assertFalse(cli._dependabot_ignores_engine("version: 2\nupdates: []\n"))
+        self.assertFalse(cli._dependabot_ignores_engine("not: [valid, yaml: {"))
+
+    def test_append_managed_block_when_no_updates_key(self):
+        import yaml as _yaml
+        result = cli._append_managed_updates_block("version: 2\n")
+        self.assertIsNotNone(result)
+        _yaml.safe_load(result)  # must stay valid YAML
+        self.assertTrue(cli._dependabot_ignores_engine(result))
+
+    def test_append_managed_block_refuses_existing_updates_key(self):
+        # Block or flow style: caller must instruct a manual edit instead.
+        self.assertIsNone(cli._append_managed_updates_block("version: 2\nupdates: []\n"))
+        self.assertIsNone(cli._append_managed_updates_block('version: 2\n"updates": []\n'))
+        block = "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n"
+        self.assertIsNone(cli._append_managed_updates_block(block))
+
+    def test_template_itself_carries_the_ignore_rule(self):
+        template = cli.resolve_asset_dir("templates/github/dependabot.yml.template").read_text(encoding="utf-8")
+        self.assertTrue(cli._dependabot_ignores_engine(template))
+        self.assertNotIn("versions:", template)
 
 if __name__ == "__main__":
     unittest.main()

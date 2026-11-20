@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.3] - 2026-11-20
+
+### Fixed
+
+- **Flat digest stubs no longer co-indexed with nested wikis (`#74`, PR `#79`)**: `compile_references()` in `scripts/generate_digests.py` detects a legacy flat `<slug>.md` left alongside a nested `<slug>/` wiki at any depth, emits `[WARN]` naming both paths, and excludes the stub from `.agents/context/references.json` (the nested wiki supersedes it).
+- **Dependabot no longer opens inverted downgrade PRs for the git-pinned engine in campaign vaults (`#76`, PR `#81`)**: vaults scaffold `.github/dependabot.yml` (via `oude init` / `bin/init_vault.sh`) with a bundler `ignore` rule for `oude-mechanismen`; `oude doctor` warns when a git-sourced Gemfile pin lacks the rule and `--fix` adds it idempotently with duplicate-key-safe YAML validation.
+
+### Changed
+
+- **Two-branch release flow (`#77`, PR `#80`, follow-up `#82`)**: `develop` is the integration branch and default PR base for feature/fix work; `main` is release-only (release-cut PRs with `VERSION` bump + dated changelog + `vX.Y.Z` tag after merge). Enforced by active GitHub rulesets (`main-release-only`, `protect-develop`) committed in `.github/rulesets/` and verified by a push-only `rulesets` CI job; CI runs on both branches.
+
 ## [0.7.2] - 2026-11-19
 
 ### Changed
@@ -317,7 +328,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0

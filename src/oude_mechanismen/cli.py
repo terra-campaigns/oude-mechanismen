@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import yaml
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -39,6 +40,7 @@ REPO_DIRECTORIES = [
     "_sass/custom",
     ".agents/context",
     "_gm-materials",
+    ".github",
 ]
 
 # Standard template mappings (source relative to engine : target relative to vault)
@@ -50,6 +52,7 @@ TEMPLATE_MAPPINGS = [
     ("templates/route_graph.json.template", ".agents/context/route_graph.json"),
     ("templates/jekyll/_config.yml.template", "_config.yml"),
     ("templates/jekyll/Gemfile.template", "Gemfile"),
+    ("templates/github/dependabot.yml.template", ".github/dependabot.yml"),
     ("templates/jekyll/_sass/custom/custom.scss.template", "_sass/custom/custom.scss"),
     ("templates/jekyll/index.md.template", "index.md"),
     ("templates/jekyll/directory_index.md.template", "directory/index.md"),
@@ -406,6 +409,65 @@ def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -
     return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#[^\r\n]*)?\r?$", gitignore_content))
 
 
+def _gemfile_pins_engine_via_git(gemfile_content: str) -> bool:
+    """Return True if the Gemfile pins oude-mechanismen via a git source.
+
+    Matches the whole gem statement (single- or multi-line, comments stripped)
+    and accepts the git:, github:, gitlab:, and bitbucket: source shorthands,
+    with or without an explicit tag/ref/branch.
+    """
+    stripped = re.sub(r"(?m)(^\s*#.*$)|(\s#.*$)", "", gemfile_content)
+    return bool(re.search(
+        r'\bgem\s+["\']oude-mechanismen["\'](?s:(?!\bgem\b).)*?\b(?:git|github|gitlab|bitbucket)\s*:',
+        stripped,
+    ))
+
+
+def _dependabot_ignores_engine(dependabot_content: str) -> bool:
+    """Return True if the bundler update in .github/dependabot.yml ignores oude-mechanismen."""
+    try:
+        data = yaml.safe_load(dependabot_content)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    for update in data.get("updates") or []:
+        if isinstance(update, dict) and update.get("package-ecosystem") == "bundler":
+            for rule in update.get("ignore") or []:
+                if isinstance(rule, dict) and rule.get("dependency-name") == "oude-mechanismen":
+                    return True
+    return False
+
+
+def _dependabot_template() -> str:
+    """Return the committed vault dependabot template (sole source of the ignore rule)."""
+    template = resolve_asset_dir("templates/github/dependabot.yml.template")
+    if not template.is_file():
+        raise RuntimeError(f"dependabot template missing: {template}")
+    return template.read_text(encoding="utf-8")
+
+
+def _append_managed_updates_block(dependabot_content: str) -> Optional[str]:
+    """Append the managed `updates:` block from the dependabot template to *dependabot_content*.
+
+    Only safe when the file has no top-level `updates:` key at all; returns None when one
+    exists (block or flow style), in which case the caller instructs a manual edit. The
+    result is validated with `yaml.safe_load` before being returned.
+    """
+    if any(re.match(r'^["\']?updates["\']?\s*:', line)
+           for line in dependabot_content.splitlines()):
+        return None
+    template = _dependabot_template()
+    block = template[template.index("updates:"):]
+    base = dependabot_content.rstrip("\n")
+    result = f"{base}\n\n{block}" if base else block
+    try:
+        yaml.safe_load(result)
+    except yaml.YAMLError:
+        return None
+    return result
+
+
 def _find_bundle_cmd() -> Optional[str]:
     """Resolve the Bundler command across macOS/Linux ('bundle') and Debian 13 ('bundle3.3')."""
     for candidate in ("bundle", "bundle3.3"):
@@ -524,6 +586,45 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         else:
             print(f"  ✗ Missing: {desc}")
             all_passed = False
+
+    # 1b. Dependabot guard: a git-tag-pinned engine must be ignored to prevent inverted downgrade PRs
+    gemfile_path = vault / "Gemfile"
+    dependabot_path = vault / ".github" / "dependabot.yml"
+    if gemfile_path.is_file():
+        try:
+            gemfile_text = gemfile_path.read_text(encoding="utf-8")
+            pins_via_git = _gemfile_pins_engine_via_git(gemfile_text)
+            if pins_via_git and dependabot_path.is_file() and _dependabot_ignores_engine(dependabot_path.read_text(encoding="utf-8")):
+                print("  ✓ Dependabot ignores git-pinned oude-mechanismen (.github/dependabot.yml)")
+            elif pins_via_git and fix:
+                if not dependabot_path.is_file():
+                    dependabot_path.parent.mkdir(parents=True, exist_ok=True)
+                    dependabot_path.write_text(_dependabot_template(), encoding="utf-8")
+                    print("  ✓ Created .github/dependabot.yml with oude-mechanismen ignore rule")
+                else:
+                    patched = _append_managed_updates_block(dependabot_path.read_text(encoding="utf-8"))
+                    if patched is None:
+                        print(
+                            "  ⚠ .github/dependabot.yml already has an updates list; add this ignore rule "
+                            "to its bundler update manually:\n"
+                            "      ignore:\n"
+                            "        - dependency-name: \"oude-mechanismen\""
+                        )
+                        all_passed = False
+                    else:
+                        dependabot_path.write_text(patched, encoding="utf-8")
+                        print("  ✓ Appended managed bundler update with oude-mechanismen ignore rule to .github/dependabot.yml")
+            elif pins_via_git:
+                print(
+                    "  ⚠ Gemfile pins oude-mechanismen via a git source (tag/ref/branch) but .github/dependabot.yml "
+                    "lacks an ignore rule for it (Dependabot's git-ref updater can emit inverted downgrade PRs; "
+                    "run `oude doctor --fix`)"
+                )
+                all_passed = False
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"  ✗ Failed to inspect or update Gemfile/.github/dependabot.yml: {exc}")
+            all_passed = False
+
 
     # 2. Check for legacy files (collisions/shadowing)
     for rel_str in ("_plugins/data_extractor.rb", "_plugins/llm_content.rb", ".agents/venv"):

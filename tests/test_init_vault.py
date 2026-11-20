@@ -37,6 +37,7 @@ class TestInitVault(unittest.TestCase):
                 "_sass/custom",
                 ".agents/context",
                 "_gm-materials",
+                ".github",
             ]
             for rel_dir in expected_dirs:
                 self.assertTrue((target / rel_dir).is_dir(), f"Missing directory: {rel_dir}")
@@ -60,6 +61,7 @@ class TestInitVault(unittest.TestCase):
                 "campaigns/index.md",
                 "systems/index.md",
                 ".gitignore",
+                ".github/dependabot.yml",
             ]
             for rel_file in expected_files:
                 self.assertTrue((target / rel_file).is_file(), f"Missing file: {rel_file}")
