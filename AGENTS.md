@@ -155,9 +155,8 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 ## 7. Published-Canon Delivery Policy (Package C, #91)
 
-- **Notebook-Centric Delivery (#20):** `scribe_session.py --notebook-only` accepts only Jupyter/IPython notebooks (`.ipynb`) as session input; all other inputs are rejected with guidance. (The deprecated `bin/init_vault.sh`/`sync.sh` wrappers do not invoke scribing; enforcement lives in the `oude` CLI path.)
-- **Read-Aloud Prohibition (#20):** Boxed read-aloud text (`> Table Read-Aloud`) is prohibited in published Tier 1 canon. The `read_aloud_filter` Liquid filter (`jekyll/_plugins/canon_filters.rb`) strips it at render time, and `lint_wiki.py` fails any Tier 1 note containing it (`read-aloud` check).
-- **Narrative-Anchored Episode Links (#18):** Mechanical parentheticals such as `(See Episode 3)` are flagged by `lint_wiki.py` (`mechanical-parenthetical` WARN); the `narrative_link_filter` renders them as fallback badge spans. Genuine narrative markdown links are indexed in `catalog.json` via `links_out` as before.
+- **Notebook-Centric Prep (#20):** Session prep (`skills/prep-session`) is written for the GM's physical paper notebook used during planning and play — terse bullet cues only; boxed read-aloud text (`> Table Read-Aloud`) is never generated. No Python-notebook input restriction exists; scribe input remains audio/transcript.
+- **Narrative-Anchored Episode Links (#18):** Episode cross-references in published chapters must be narrative-anchored markdown links (e.g. `[exploding banana seller](ep_008.md)`), never mechanical parentheticals like `(See Episode 3)`. Enforced at the episode-authoring gate: `lint_chapter.py` emits a `mechanical-parenthetical` WARN (Gate 1 of the pre-publishing protocol). Narrative markdown links are indexed in `catalog.json` via `links_out`/`links_in` as before — no render-time rewriting.
 
 ## 8. Git Hygiene & Branch Lifecycle
 

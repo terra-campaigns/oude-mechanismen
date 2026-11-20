@@ -11,7 +11,6 @@ Verifies:
 7. Benchmark runner weighted throughput calculation, error surfacing, and Markdown report compilation.
 """
 
-import io
 import json
 import shutil
 import sys
@@ -363,37 +362,6 @@ class TestScribeSessionCluster(unittest.TestCase):
         out = scribe_session.extract_sensory_textures("http://x", "m", manifest, context, chunk_size=5)
         self.assertIn("Doc", out)
         self.assertEqual(mock_query.call_count, 1)
-
-    def test_notebook_only_rejects_non_notebook_input(self):
-        """#20: --notebook-only must reject non-.ipynb input with guidance and exit 1."""
-        (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
-        txt = self.repo_root / "session.txt"
-        txt.write_text("words", encoding="utf-8")
-        with patch("sys.argv", ["scribe_session.py", str(txt), "--repo-root", str(self.repo_root), "--notebook-only"]), \
-             patch("sys.stderr", new_callable=io.StringIO) as err:
-            with self.assertRaises(SystemExit) as cm:
-                scribe_session.main()
-        self.assertEqual(cm.exception.code, 1)
-        self.assertIn(".ipynb", err.getvalue())
-
-    def test_notebook_only_rejects_auto_discovery_and_accepts_ipynb(self):
-        """#20: --notebook-only with no input must not auto-discover audio; a .ipynb passes the gate."""
-        (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
-        with patch("sys.argv", ["scribe_session.py", "--repo-root", str(self.repo_root), "--notebook-only"]), \
-             patch("sys.stderr", new_callable=io.StringIO) as err:
-            with self.assertRaises(SystemExit) as cm:
-                scribe_session.main()
-        self.assertEqual(cm.exception.code, 1)
-        self.assertIn("auto-discovery", err.getvalue())
-        # A .ipynb input passes the notebook gate and proceeds to the Ollama check
-        nb = self.repo_root / "session.ipynb"
-        nb.write_text("{}", encoding="utf-8")
-        with patch("sys.argv", ["scribe_session.py", str(nb), "--repo-root", str(self.repo_root), "--notebook-only"]), \
-             patch("sys.stderr", new_callable=io.StringIO) as err2:
-            with self.assertRaises(SystemExit) as cm2:
-                scribe_session.main()
-        self.assertEqual(cm2.exception.code, 1)
-        self.assertIn("Ollama", err2.getvalue())  # reached the Ollama check, not the notebook gate
 
 
 if __name__ == "__main__":

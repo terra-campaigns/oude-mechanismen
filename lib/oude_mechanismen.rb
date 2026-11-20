@@ -5,7 +5,6 @@ require_relative "oude_mechanismen/version"
 
 # Load Jekyll plugins from engine
 require_relative "../jekyll/_plugins/data_extractor"
-require_relative "../jekyll/_plugins/canon_filters"
 
 module OudeMechanismen
   INCLUDES_PATH = File.expand_path("../jekyll/_includes", __dir__)

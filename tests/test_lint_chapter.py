@@ -454,5 +454,17 @@ class TestLintChapterCluster(unittest.TestCase):
         terms = lint_chapter.load_glossary_terms(g)
         self.assertEqual(terms, ["Kael Vorn", "Fomalhaut"])
 
+    def test_mechanical_parenthetical_warns_and_fence_is_skipped(self):
+        """#18: parentheticals are flagged at the episode-authoring gate; fenced code is skipped."""
+        chapter = self._write_file(
+            "ep.md",
+            "---\ntitle: Ep\n---\n\n## H1\n\nThe crew retreated (See Episode 1) after the ambush.\nMore prose here.\n\n## H2\n\n```\n(See Episode 9) in a code sample.\n```\n\nFinal prose line.\n",
+        )
+        rep = lint_chapter.lint_chapter_file(chapter)
+        parens = [d for d in rep.diagnostics if d.rule == "mechanical-parenthetical"]
+        self.assertEqual(len(parens), 1)
+        self.assertEqual(parens[0].severity, "WARN")
+        self.assertIn("(See Episode 1)", parens[0].actual)
+
 if __name__ == "__main__":
     unittest.main()
