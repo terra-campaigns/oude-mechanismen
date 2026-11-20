@@ -63,7 +63,7 @@ module OudeMechanismen
                       ""
                     end
 
-          # 2. Extract Links (comment blocks stay scannable for hidden cross-links; only _gm-materials/ targets are excluded so GM-only paths never leak into site.data)
+          # 2. Extract Links (skip _gm-materials/ targets so GM-only paths never leak into site.data)
           content.scan(/(?<!\!)\[(.*?)\]\((.*?)\)/).each do |text, url|
             next if text.include?("{{") || text.include?("}}") || text.include?("+") || text.include?("\"")
             next if url.include?("{{") || url.include?("}}") || url.include?("+") || url.include?("\"")
@@ -73,7 +73,12 @@ module OudeMechanismen
               dir = File.dirname(file_path)
               clean_url = url.split('#').first
               next if clean_url.nil? || clean_url.empty?
-              next if clean_url.split('/').include?('_gm-materials')
+              guard_url = begin
+                            URI::DEFAULT_PARSER.unescape(clean_url.split('?').first.to_s)
+                          rescue ArgumentError
+                            clean_url.split('?').first.to_s
+                          end
+              next if guard_url.split('/').any? { |seg| seg.downcase == '_gm-materials' }
               resolved_path = Pathname.new(dir).join(clean_url).cleanpath.to_s
               full_url = resolved_path
               favicon_url = nil

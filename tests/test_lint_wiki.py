@@ -174,6 +174,31 @@ class TestDeadLinks(LintWikiTestCase):
         self.assertEqual(len(dead), 1)
         self.assertEqual(dead[0].severity, "FAIL")
 
+    def test_gm_materials_link_fails_when_dir_present_but_target_missing(self):
+        # When _gm-materials/ exists on disk, its targets are validated normally.
+        (self.root / "_gm-materials/digests").mkdir(parents=True)
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n- [GM link](../../_gm-materials/digests/foo/missing.md)\n{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        dead = self._findings(report, "dead-link")
+        self.assertEqual(len(dead), 1)
+        self.assertEqual(dead[0].severity, "FAIL")
+
+    def test_percent_encoded_gm_materials_target_exempt_when_dir_absent(self):
+        # Encoded or query-wrapped _gm-materials segments are still exempt (dir absent).
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "- [enc](../../_gm-materials%2Fdigests/foo/bar.md)\n"
+            "- [q](/_gm-materials/digests/foo/bar.md?next=x)\n"
+            "- [case](../../_GM-Materials/digests/foo/bar.md)\n",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
 
 class TestOrphans(LintWikiTestCase):
     def test_orphan_directory_note_is_warn(self):
