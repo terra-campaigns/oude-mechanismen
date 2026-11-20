@@ -149,6 +149,31 @@ class TestDeadLinks(LintWikiTestCase):
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "dead-link"), [])
 
+    def test_gm_materials_link_exempt_when_dir_absent(self):
+        # _gm-materials/ is gitignored and absent on CI; its targets must not FAIL.
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n"
+            "- [GM link](../../_gm-materials/digests/foo/bar.md)\n"
+            "- [GM abs](/_gm-materials/digests/foo/bar.md)\n"
+            "{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
+    def test_comment_block_link_to_missing_tier1_file_still_fails(self):
+        # Comment blocks stay scannable: hidden links to real vault paths are validated.
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n- [hidden](../directory/nowhere.md)\n{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        dead = self._findings(report, "dead-link")
+        self.assertEqual(len(dead), 1)
+        self.assertEqual(dead[0].severity, "FAIL")
+
 
 class TestOrphans(LintWikiTestCase):
     def test_orphan_directory_note_is_warn(self):
