@@ -2,7 +2,7 @@ name: CI Health Check
 
 on:
   push:
-    branches: [ "main", "develop", "before-publish" ]
+    branches: [ "main", "develop" ]
   pull_request:
     branches: [ "main", "develop" ]
 
@@ -97,20 +97,51 @@ jobs:
     permissions:
       administration: read
     steps:
-      - name: Assert branch-protection rulesets are active
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Assert live rulesets match committed definitions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - << 'PY'
-          import json, os, sys, urllib.request
+          import glob, json, os, sys, urllib.request
           req = urllib.request.Request(
-              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/rulesets",
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/rulesets?per_page=100",
               headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
                        "Accept": "application/vnd.github+json"})
-          rulesets = json.load(urllib.request.urlopen(req))
-          inactive = [r["name"] for r in rulesets if r.get("enforcement") != "active"]
-          if inactive:
-              print(f"ERROR: rulesets not active: {inactive}", file=sys.stderr)
+          live_list = json.load(urllib.request.urlopen(req))
+          failures = []
+          checked = []
+          for path in sorted(glob.glob(".github/rulesets/*.json")):
+              want = json.load(open(path, encoding="utf-8"))
+              checked.append(want["name"])
+              match = next((r for r in live_list if r["name"] == want["name"]), None)
+              if match is None:
+                  failures.append(f"{want['name']}: not found live")
+                  continue
+              detail = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/rulesets/{match['id']}",
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              got = json.load(urllib.request.urlopen(detail))
+              if got.get("enforcement") != "active":
+                  failures.append(f"{want['name']}: enforcement={got.get('enforcement')}")
+              want_inc = want["conditions"]["ref_name"]["include"]
+              got_inc = got["conditions"]["ref_name"]["include"]
+              if want_inc != got_inc:
+                  failures.append(f"{want['name']}: targets {got_inc} != {want_inc}")
+              want_rules = sorted(r["type"] for r in want["rules"])
+              got_rules = sorted(r["type"] for r in got["rules"])
+              if want_rules != got_rules:
+                  failures.append(f"{want['name']}: rules {got_rules} != {want_rules}")
+              contexts = [c["context"] for r in got["rules"]
+                          if r["type"] == "required_status_checks"
+                          for c in r["parameters"]["required_status_checks"]]
+              if "validate" not in contexts:
+                  failures.append(f"{want['name']}: missing required check 'validate' (has {contexts})")
+          if failures:
+              for f in failures:
+                  print("ERROR:", f, file=sys.stderr)
               sys.exit(1)
-          print("OK: all repository rulesets active:", [r["name"] for r in rulesets])
+          print("OK: live rulesets match .github/rulesets/:", checked)
           PY

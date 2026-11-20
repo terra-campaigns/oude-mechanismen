@@ -156,9 +156,8 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 ### Two-Branch Flow: `develop` (Integration) vs `main` (Release-Only)
 
 1. **`develop` is the integration branch**: Cut all feature and fix branches from `develop`, and target every day-to-day feature/fix Pull Request at `develop` (the default PR base). Unreleased work must never land directly on `main`.
-2. **`main` is release-only**: `main` receives ONLY release-cut Pull Requests (from `develop`) in which every commit bumps `VERSION`, adds a dated section to `CHANGELOG.md`, and corresponds to a matching `vX.Y.Z` tag. Create the `vX.Y.Z` tag only after the release Pull Request has merged into `main`, then publish the release.
-3. **Release-cut procedure**: To cut a release, open a Pull Request from `develop` into `main` carrying the `VERSION` bump and the dated `CHANGELOG.md` section, merge it via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
-4. **Transition note**: PRs #71, #72, and #75 were merged directly into `main` after v0.7.1 and shipped together as v0.7.2. From now on, all unreleased work goes to `develop`; `main` stays exactly at tagged releases.
+2. **`main` is release-only**: `main` receives ONLY release-cut Pull Requests (from `develop`) carrying the `VERSION` bump and the dated `CHANGELOG.md` section; merge via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
+3. **Transition note**: PRs #71, #72, and #75 were merged directly into `main` after v0.7.1 and shipped together as v0.7.2. From now on, all unreleased work goes to `develop`; `main` stays exactly at tagged releases.
 
 ### Branch Protection (GitHub Rulesets)
 
