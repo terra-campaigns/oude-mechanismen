@@ -158,11 +158,11 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 1. **`develop` is the integration branch**: Cut all feature and fix branches from `develop`, and target every day-to-day feature/fix Pull Request at `develop` (the default PR base). Unreleased work must never land directly on `main`.
 2. **`main` is release-only**: `main` receives ONLY release-cut Pull Requests (from `develop`) carrying the `VERSION` bump and the dated `CHANGELOG.md` section; merge via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
-3. **Transition note**: PRs #71, #72, and #75 were merged directly into `main` after v0.7.1 and shipped together as v0.7.2. From now on, all unreleased work goes to `develop`; `main` stays exactly at tagged releases.
+3. **Transition note**: the first PRs landed directly on `main` ahead of a release and shipped together in the next tagged version. From the two-branch flow onward, all unreleased work goes to `develop`; `main` stays exactly at tagged releases. Pull Requests already open against `main` when this flow was introduced may still merge to `main`; otherwise retarget them to `develop`.
 
 ### Branch Protection (GitHub Rulesets)
 
-The two-branch flow is enforced by repository rulesets, whose definitions are committed in `.github/rulesets/` for audit and reproduction:
+The two-branch flow is enforced by repository [rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets), whose definitions are committed in `.github/rulesets/` for audit and reproduction:
 
 - `main-release-only` (active, targets `refs/heads/main`): require pull request, non-fast-forward, required status check `validate`.
 - `protect-develop` (active, targets `refs/heads/develop`): same rules.
