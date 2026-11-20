@@ -43,6 +43,10 @@ module OudeMechanismen
             f.start_with?("_gm-materials/")
         end
 
+        # Index the rolling glossary (Tier 2 add-on indexed for progressive retrieval)
+        rolling_glossary = ".agents/context/rolling_glossary.md"
+        md_files << rolling_glossary if File.exist?(File.join(base_dir, rolling_glossary)) && !md_files.include?(rolling_glossary)
+
         # Track internal link connections for links_out and links_in
         internal_outbound = Hash.new { |h, k| h[k] = [] }
         internal_inbound = Hash.new { |h, k| h[k] = [] }
@@ -63,7 +67,7 @@ module OudeMechanismen
                       ""
                     end
 
-          # 2. Extract Links
+          # 2. Extract Links (skip _gm-materials/ targets so GM-only paths never leak into site.data)
           content.scan(/(?<!\!)\[(.*?)\]\((.*?)\)/).each do |text, url|
             next if text.include?("{{") || text.include?("}}") || text.include?("+") || text.include?("\"")
             next if url.include?("{{") || url.include?("}}") || url.include?("+") || url.include?("\"")
@@ -73,6 +77,12 @@ module OudeMechanismen
               dir = File.dirname(file_path)
               clean_url = url.split('#').first
               next if clean_url.nil? || clean_url.empty?
+              guard_url = begin
+                            URI::DEFAULT_PARSER.unescape(clean_url.split('?').first.to_s)
+                          rescue ArgumentError
+                            clean_url.split('?').first.to_s
+                          end
+              next if guard_url.scrub.split('/').any? { |seg| seg.downcase == '_gm-materials' }
               resolved_path = Pathname.new(dir).join(clean_url).cleanpath.to_s
               full_url = resolved_path
               favicon_url = nil
@@ -187,9 +197,9 @@ module OudeMechanismen
 
         catalog_entries = []
         md_files.each do |file_path|
-          # Match against tier1_sources.yml allowlist
-          included = include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") }
-          excluded = exclude_paths.any? { |exc| file_path == exc || file_path.start_with?("#{exc}/") }
+          # Match against tier1_sources.yml allowlist; the rolling glossary is always indexed
+          included = (file_path == rolling_glossary) || include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") }
+          excluded = file_path != rolling_glossary && exclude_paths.any? { |exc| file_path == exc || file_path.start_with?("#{exc}/") }
           next unless included && !excluded
 
           content = begin
@@ -241,7 +251,7 @@ module OudeMechanismen
           catalog_entries << {
             "path" => file_path,
             "title" => fm['title'] || File.basename(file_path, '.md'),
-            "type" => fm['type'] || "misc",
+            "type" => fm['type'] || (file_path == rolling_glossary ? "glossary" : "misc"),
             "parent" => fm['parent'],
             "role" => fm['role'],
             "status" => fm['status'],
@@ -251,7 +261,7 @@ module OudeMechanismen
             "links_out" => internal_outbound[file_path].sort,
             "links_in" => internal_inbound[file_path].sort,
             "sha" => Digest::SHA256.hexdigest(content)[0..7],
-            "tier" => 1
+            "tier" => (file_path == rolling_glossary ? 2 : 1)
           }
         end
 

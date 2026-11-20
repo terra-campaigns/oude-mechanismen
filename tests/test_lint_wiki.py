@@ -149,6 +149,56 @@ class TestDeadLinks(LintWikiTestCase):
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "dead-link"), [])
 
+    def test_gm_materials_link_exempt_when_dir_absent(self):
+        # _gm-materials/ is gitignored and absent on CI; its targets must not FAIL.
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n"
+            "- [GM link](../../_gm-materials/digests/foo/bar.md)\n"
+            "- [GM abs](/_gm-materials/digests/foo/bar.md)\n"
+            "{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
+    def test_comment_block_link_to_missing_tier1_file_still_fails(self):
+        # Comment blocks stay scannable: hidden links to real vault paths are validated.
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n- [hidden](../directory/nowhere.md)\n{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        dead = self._findings(report, "dead-link")
+        self.assertEqual(len(dead), 1)
+        self.assertEqual(dead[0].severity, "FAIL")
+
+    def test_gm_materials_link_fails_when_dir_present_but_target_missing(self):
+        # When _gm-materials/ exists on disk, its targets are validated normally.
+        (self.root / "_gm-materials/digests").mkdir(parents=True)
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "{% comment %}\n- [GM link](../../_gm-materials/digests/foo/missing.md)\n{% endcomment %}",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        dead = self._findings(report, "dead-link")
+        self.assertEqual(len(dead), 1)
+        self.assertEqual(dead[0].severity, "FAIL")
+
+    def test_percent_encoded_gm_materials_target_exempt_when_dir_absent(self):
+        # Encoded or query-wrapped _gm-materials segments are still exempt (dir absent).
+        content = note_content("Episode 001").replace(
+            "Prose sentence number 2.",
+            "- [enc](../../_gm-materials%2Fdigests/foo/bar.md)\n"
+            "- [q](/_gm-materials/digests/foo/bar.md?next=x)\n"
+            "- [case](../../_GM-Materials/digests/foo/bar.md)\n",
+        )
+        self._write("campaigns/arc/ep001.md", content)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "dead-link"), [])
+
 
 class TestOrphans(LintWikiTestCase):
     def test_orphan_directory_note_is_warn(self):
@@ -473,6 +523,47 @@ class TestPrReviewRegressions(LintWikiTestCase):
         self.assertEqual([f.file for f in fm], ["directory/not_excluded.md"])
         self.assertIn("parent", fm[0].message)
 
+
+class TestRollingGlossary(LintWikiTestCase):
+    """Tests for rolling glossary validation against published canon (#28)."""
+
+    def test_missing_glossary_is_silent(self):
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rolling-glossary"), [])
+
+    def test_entry_without_definition_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Kael Vorn\n\n- First seen: `2026-11-20_001`\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertTrue(any(f.severity == "FAIL" and "no definition" in f.message for f in rg))
+
+    def test_canon_title_casing_conflict_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## kael vorn\n\n- Definition: Protagonist.\n",
+        )
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({"entries": [{"title": "Kael Vorn", "path": "directory/kael.md", "type": "people"}]}),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertTrue(any("conflicts with published canon" in f.message for f in rg))
+
+    def test_matching_canon_title_passes(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Kael Vorn\n\n- Definition: Protagonist.\n- First seen: `2026-11-20_001`\n",
+        )
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({"entries": [{"title": "Kael Vorn", "path": "directory/kael.md", "type": "people"}]}),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rolling-glossary"), [])
 
 if __name__ == "__main__":
     unittest.main()

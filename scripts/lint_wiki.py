@@ -172,9 +172,14 @@ def is_internal_target(target: str) -> bool:
     return bool(target) and not SCHEME_RE.match(target) and not target.startswith("#")
 
 
+def clean_target_str(target: str) -> str:
+    """Percent-decode a link target and strip anchor/query, mirroring the Ruby guard."""
+    return unquote(target.split("#", 1)[0].split("?", 1)[0])
+
+
 def resolve_target(root: Path, from_file: Path, target: str) -> Optional[Path]:
     """Resolve an internal link target to an absolute path (anchors stripped)."""
-    clean = unquote(target.split("#", 1)[0].split("?", 1)[0])
+    clean = clean_target_str(target)
     if not clean:
         return None
     if clean.startswith("/"):
@@ -221,11 +226,21 @@ def is_section_index(root: Path, path: Path) -> bool:
 def check_dead_links(
     root: Path, files: List[Path], findings: List[Finding]
 ) -> None:
-    """Check 1: every internal markdown link resolves to an existing file."""
+    """Check 1: every internal markdown link resolves to an existing file.
+
+    Targets containing an _gm-materials/ path segment (any depth, any case,
+    after percent-decoding) are exempt when the root _gm-materials/ directory
+    is absent on disk (it is gitignored and missing on CI runners / fresh
+    clones); when present locally they are validated normally.
+    """
+    gm_absent = not (root / "_gm-materials").is_dir()
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
         for line_no, target, is_image in extract_links(text):
             if not is_internal_target(target):
+                continue
+            clean_target = clean_target_str(target)
+            if gm_absent and "_gm-materials" in {seg.lower() for seg in clean_target.split("/")}:
                 continue
             resolved = resolve_target(root, path, target)
             if resolved is None:
@@ -542,6 +557,66 @@ def check_duplicate_titles(
 # ---------------------------------------------------------------------------
 
 
+def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
+    """
+    Validate .agents/context/rolling_glossary.md against published canon:
+    every '## Term' entry needs a definition line, and terms that collide with a
+    catalog.json Tier 1 title must match its casing exactly (conflict detection).
+    """
+    rg_path = root / ".agents" / "context" / "rolling_glossary.md"
+    if not rg_path.is_file():
+        return
+    rel = ".agents/context/rolling_glossary.md"
+    text = rg_path.read_text(encoding="utf-8", errors="replace")
+
+    catalog_titles: Dict[str, str] = {}
+    catalog_path = root / ".agents" / "context" / "catalog.json"
+    if catalog_path.is_file():
+        try:
+            data = json.loads(catalog_path.read_text(encoding="utf-8"))
+            entries = data.get("entries", []) if isinstance(data, dict) else []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                title = str(entry.get("title") or "").strip()
+                if title:
+                    catalog_titles.setdefault(title.lower(), title)
+        except (OSError, ValueError, AttributeError, TypeError):  # ValueError covers JSONDecodeError + UnicodeDecodeError
+            pass
+
+    current_term: Optional[str] = None
+    current_line = 0
+    has_definition = False
+
+    def flush() -> None:
+        nonlocal current_term, has_definition
+        if current_term is None:
+            return
+        if not has_definition:
+            findings.append(
+                Finding(check="rolling-glossary", severity="FAIL", file=rel, line=current_line,
+                        message=f"rolling glossary entry '{current_term}' has no definition line")
+            )
+        canon = catalog_titles.get(current_term.lower())
+        if canon is not None and canon != current_term:
+            findings.append(
+                Finding(check="rolling-glossary", severity="FAIL", file=rel, line=current_line,
+                        message=f"rolling glossary term '{current_term}' conflicts with published canon title '{canon}'")
+            )
+
+    for i, line in enumerate(text.splitlines(), 1):
+        h = re.match(r"^##\s+(.+?)\s*$", line)
+        if h:
+            flush()
+            current_term = h.group(1)
+            current_line = i
+            has_definition = False
+            continue
+        if current_term and re.match(r"^- Definition:\s*\S", line):
+            has_definition = line.split(":", 1)[1].strip() != "Pending canonical definition."
+    flush()
+
+
 def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     """Run the full or targeted lint suite and return a WikiReport."""
     root = root.resolve()
@@ -583,6 +658,7 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     check_stubs(root, files, f)
     check_deprecated_hooks(root, files, f)
     check_front_matter(root, files, f)
+    check_rolling_glossary(root, f)
     if report.mode == "full":
         check_duplicate_titles(root, files, f)
     return report

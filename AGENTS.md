@@ -41,6 +41,7 @@ oude-mechanismen/
 │   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
 │   ├── illustrate-entry/       # Archival art curation & graphic-novel styling
 │   │   └── scripts/            # Core art_filter.py graphic novel engine
+│   ├── crosslink-tiers/        # Tier 1 ↔ Tier 3 cross-linking inside {% comment %} blocks
 │   └── digest-book/            # Sourcebook PDF → validated semantic digest wiki (Design 004 Stage C)
 ├── scripts/                    # Shared campaign tooling (invoked via `oude <cmd>`)
 │   ├── generate_digests.py     # Tier 3 PDF digest extractor/validator & references.json compiler
@@ -152,7 +153,12 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 ---
 
-## 7. Git Hygiene & Branch Lifecycle
+## 7. Published-Canon Delivery Policy (Package C, #91)
+
+- **Notebook-Centric Prep (#20):** Session prep (`skills/prep-session`) is written for the GM's physical paper notebook used during planning and play — terse bullet cues only; boxed read-aloud text (`> Table Read-Aloud`) is never generated. No Python-notebook input restriction exists; scribe input remains audio/transcript.
+- **Narrative-Anchored Episode Links (#18):** Episode cross-references in published chapters must be narrative-anchored markdown links (e.g. `[exploding banana seller](ep_008.md)`), never mechanical parentheticals like `(See Episode 3)`. Enforced at the episode-authoring gate: `lint_chapter.py` emits a `mechanical-parenthetical` WARN (Gate 1 of the pre-publishing protocol). Narrative markdown links are indexed in `catalog.json` via `links_out`/`links_in` as before — no render-time rewriting.
+
+## 8. Git Hygiene & Branch Lifecycle
 
 ### Two-Branch Flow: `develop` (Integration) vs `main` (Release-Only)
 

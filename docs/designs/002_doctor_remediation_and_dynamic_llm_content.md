@@ -203,6 +203,15 @@ campaigns that genuinely customise the dump.
   detect a root `all-content.md` that is byte-identical to the bundled
   template and prune it (custom variants are reported, not deleted).
 
+### 5.4 Superseded — monolithic dump retired (#25/#35, PR #72)
+
+Section 5's dynamic generator was implemented in PR #31 but subsequently
+removed: `jekyll/_plugins/llm_content.rb` (including `Jekyll::LlmContentGenerator`)
+and `jekyll/all-content.md` no longer exist, and no `/all-content.html` is
+synthesised at build time. Vaults that still ship a root `all-content.md`
+have it flagged and removed by `oude doctor --fix`. See Design 005 for the
+full architectural evaluation and cross-issue reconciliation.
+
 ---
 
 ## 6. Cross-Cutting Verification & Test Strategy
@@ -212,13 +221,21 @@ campaigns that genuinely customise the dump.
   `--fix` convergence (idempotent second run is clean), preservation of
   genuine custom files, empty-directory pruning, and `init` no longer
   scaffolding `all-content.md`.
-- **Ruby verification**: build a fixture Jekyll site with the gem loaded;
-  assert `_site/all-content.html` exists, matches the pre-change output
-  byte-for-byte, and that a custom root `all-content.md` suppresses the
-  generated page.
-- **Wheel packaging test**: `uv build` then install the wheel into a clean
-  venv and assert `resolve_asset_dir("jekyll/_includes")` resolves inside
-  `site-packages`.
+- **Ruby end-to-end verification** (automated in CI, issue #34 —
+  `tests/test_e2e_jekyll.py`): build a fixture Jekyll vault with the gem
+  loaded from the local checkout via a path Gemfile, and assert the build
+  succeeds, `_site/` pages render, `.agents/context/catalog.json` is emitted
+  with Tier 1 entries, and `_site/all-content.html` is NOT generated
+  (the monolith was retired by #25/#35). A vault-supplied root
+  `all-content.md` still builds as an ordinary page — with the generator
+  gone there is nothing left to yield against.
+- **Wheel packaging test** (automated in CI, issue #34 —
+  `tests/test_e2e_wheel.py`): `uv build`, install the wheel into a clean
+  venv outside the repository checkout, and assert
+  `resolve_asset_dir("jekyll/_includes")` (plus `scripts/`, `skills/`,
+  `templates/`, `VERSION`) resolves inside `site-packages`, while
+  `jekyll/all-content.md` and `jekyll/_plugins/llm_content.rb` are absent
+  from the wheel.
 
 ---
 
