@@ -29,12 +29,17 @@ jobs:
         run: |
           python3 -c "import ast, glob; [ast.parse(open(f, 'rb').read(), f) for f in glob.glob('scripts/*.py') + glob.glob('src/oude_mechanismen/*.py') + glob.glob('tests/*.py')]"
 
-      - name: Run automated unit tests
-        run: |
-          python3 -m unittest discover -s tests -v
-
       - name: Install Astral uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Run automated unit tests (incl. #34 e2e Jekyll fixture build and clean-venv wheel smoke)
+        run: |
+          python3 -m unittest discover -s tests -v
 
       - name: Validate Python package wheel build and CLI
         run: |
@@ -43,11 +48,6 @@ jobs:
           oude --version
           oude lint --help
           oude lint-wiki --help
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
 
       - name: Validate Ruby plugins syntax
         run: |
@@ -59,6 +59,12 @@ jobs:
           done
           ruby -c lib/oude_mechanismen/version.rb
           gem build oude-mechanismen.gemspec
+
+      - name: Install Jekyll for the headless dynamic-gem test
+        run: gem install --no-document jekyll -v '~> 4.4.1'
+
+      - name: Run headless dynamic-gem integration test (issue #23)
+        run: ruby tests/test_dynamic_gem.rb
 
       - name: Validate Shell scripts syntax
         run: |
