@@ -130,12 +130,16 @@ class JekyllHeadlessTest < Minitest::Test
   end
 
   # The scratch GEM_HOME holds only the built oude-mechanismen gem; every other
-  # gem (jekyll and its dependencies) resolves from the ambient gem paths, so
-  # any `require "oude-mechanismen"` must come from the isolated install.
+  # gem (jekyll and its dependencies) resolves from the ambient gem paths. The
+  # -I pin via RUBYOPT makes `require "oude-mechanismen"` load from the scratch
+  # install even when another copy is visible in the ambient GEM_PATH (RubyGems
+  # otherwise activates the highest visible version).
   def isolated_env
+    gem_lib = File.join(@gem_home, "gems", "oude-mechanismen-#{VERSION}", "lib")
     {
       "GEM_HOME" => @gem_home,
-      "GEM_PATH" => ([@gem_home] + Gem.path).join(File::PATH_SEPARATOR)
+      "GEM_PATH" => ([@gem_home] + Gem.path).join(File::PATH_SEPARATOR),
+      "RUBYOPT" => "-I#{gem_lib}"
     }
   end
 end
