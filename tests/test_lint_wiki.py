@@ -590,5 +590,6 @@ class TestCanonPolicy(LintWikiTestCase):
         self.assertEqual(mp[0].severity, "WARN")
         self.assertIn("(See Episode 1)", mp[0].message)
 
+
 if __name__ == "__main__":
     unittest.main()

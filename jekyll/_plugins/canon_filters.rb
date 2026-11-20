@@ -19,19 +19,25 @@
 module OudeMechanismen
   module CanonFilters
     # Read-aloud blockquote block in markdown: header line anywhere (indented,
-    # nested `>>`), optional trailing newline at EOF, continuation lines at any
-    # quote depth.
+    # nested `>>`), optional trailing newline at EOF. Continuation lines must be
+    # `>`-prefixed (lazy non-`>` continuations are not consumed by this filter;
+    # end-to-end output is still clean because the HTML-level strip removes the
+    # whole rendered blockquote).
     READ_ALOUD_BLOCK_RE = /(?:^|\n)[ \t]*(?:>[ \t]*)+\**\s*(?:Table[ \t]+)?Read[- ]?Aloud\b[^\n]*(?:\n|\z)(?:[ \t]*(?:>[ \t]*)+[^\n]*\n?)*/i
-
     # Rendered-HTML form: kramdown converts the blockquote before :post_render,
-    # so the hook also strips <blockquote> blocks whose first paragraph is a
-    # read-aloud marker.
-    READ_ALOUD_HTML_RE = /<blockquote>\s*<p>[^<]*(?:<[^>]+>[^<]*)*\**\s*(?:Table[ \t]+)?Read[- ]?Aloud\b[\s\S]*?<\/blockquote>/i
+    # so the hook also strips <blockquote> blocks containing a read-aloud
+    # marker. The tempered prefix permits any first child (p, ul, ...) but not
+    # a nested blockquote boundary.
+    READ_ALOUD_HTML_RE = /<blockquote>(?:(?!<\/?blockquote>)[\s\S])*?\**\s*(?:Table[ \t]+)?Read[- ]?Aloud\b[\s\S]*?<\/blockquote>/i
 
     # Mechanical parenthetical episode references with a numeric-ish token,
     # e.g. "(See Episode 3)" or "(see ep_012)". Ordinary prose such as
-    # "(see session notes)" must NOT match.
-    MECHANICAL_PAREN_RE = /\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)/i
+    # "(see session notes)" must NOT match. Keep aligned with
+    # scripts/lint_wiki.py MECHANICAL_PAREN_RE.
+    MECHANICAL_PAREN_RE = /\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t_]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)/i
+
+    # Matches <pre>/<code> regions, which must never be rewritten.
+    CODE_REGION_RE = /(<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>)/i
 
     def read_aloud_filter(input)
       return input if input.nil?
@@ -48,9 +54,17 @@ module OudeMechanismen
 
     def self.apply_canon_policy(output)
       obj = Object.new.extend(CanonFilters)
-      output = obj.read_aloud_filter(output)
-      output = output.gsub(READ_ALOUD_HTML_RE, "")
-      obj.narrative_link_filter(output)
+      # Rewrite only outside <pre>/<code> regions (lint deliberately skips
+      # fenced code; render must agree).
+      output.split(CODE_REGION_RE).map do |segment|
+        if segment =~ /\A<(?:pre|code)/i
+          segment
+        else
+          segment = obj.read_aloud_filter(segment)
+          segment = segment.gsub(READ_ALOUD_HTML_RE, "")
+          obj.narrative_link_filter(segment)
+        end
+      end.join
     end
   end
 end

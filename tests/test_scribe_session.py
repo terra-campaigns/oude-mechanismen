@@ -11,6 +11,7 @@ Verifies:
 7. Benchmark runner weighted throughput calculation, error surfacing, and Markdown report compilation.
 """
 
+import io
 import json
 import shutil
 import sys
@@ -365,7 +366,6 @@ class TestScribeSessionCluster(unittest.TestCase):
 
     def test_notebook_only_rejects_non_notebook_input(self):
         """#20: --notebook-only must reject non-.ipynb input with guidance and exit 1."""
-        import io
         (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
         txt = self.repo_root / "session.txt"
         txt.write_text("words", encoding="utf-8")
@@ -378,7 +378,6 @@ class TestScribeSessionCluster(unittest.TestCase):
 
     def test_notebook_only_rejects_auto_discovery_and_accepts_ipynb(self):
         """#20: --notebook-only with no input must not auto-discover audio; a .ipynb passes the gate."""
-        import io
         (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
         with patch("sys.argv", ["scribe_session.py", "--repo-root", str(self.repo_root), "--notebook-only"]), \
              patch("sys.stderr", new_callable=io.StringIO) as err:

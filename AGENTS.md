@@ -153,7 +153,6 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 
 ---
 
-
 ## 7. Published-Canon Delivery Policy (Package C, #91)
 
 - **Notebook-Centric Delivery (#20):** `scribe_session.py --notebook-only` accepts only Jupyter/IPython notebooks (`.ipynb`) as session input; all other inputs are rejected with guidance. (The deprecated `bin/init_vault.sh`/`sync.sh` wrappers do not invoke scribing; enforcement lives in the `oude` CLI path.)

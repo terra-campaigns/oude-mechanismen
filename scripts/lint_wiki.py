@@ -617,12 +617,10 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
     flush()
 
 
-
-
 # Aligned with jekyll/_plugins/canon_filters.rb — keep both copies in sync so every
 # lint-flagged form is also stripped/rendered at build time.
 READ_ALOUD_LINE_RE = re.compile(r"^\s*(?:>\s*)+\**\s*(?:Table\s+)?Read[- ]?Aloud\b", re.IGNORECASE)
-MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)", re.IGNORECASE)
+MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t_]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)", re.IGNORECASE)
 
 
 def _body_lines_no_fences(text: str) -> List[Tuple[int, str]]:
@@ -683,7 +681,6 @@ def check_mechanical_parentheticals(root: Path, files: List[Path], findings: Lis
                         message=f"mechanical parenthetical '{m.group(0)}' breaks narrative flow; anchor the episode link in contextual prose instead",
                     )
                 )
-
 
 
 def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
