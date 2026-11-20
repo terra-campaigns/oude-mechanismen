@@ -166,7 +166,7 @@ The two-branch flow is enforced by repository rulesets, whose definitions are co
 - `main-release-only` (active, targets `refs/heads/main`): require pull request, non-fast-forward, required status check `validate`.
 - `protect-develop` (active, targets `refs/heads/develop`): same rules.
 
-The `rulesets` CI job fails if any repository ruleset is not `enforcement: active`. To change a ruleset, update the JSON in `.github/rulesets/` and apply it via the GitHub API or Settings UI, then verify with `gh api repos/terra-campaigns/oude-mechanismen/rulesets`.
+On pushes, the `rulesets` CI job fails if any live repository ruleset is not `enforcement: active`, and verifies each committed `.github/rulesets/*.json` matches its live ruleset (target refs, rule types, required check `validate`). To change a ruleset, update the JSON in `.github/rulesets/` and apply it via the GitHub API or Settings UI, then verify with `gh api repos/terra-campaigns/oude-mechanismen/rulesets`.
 
 ### Standing Hygiene Rules
 

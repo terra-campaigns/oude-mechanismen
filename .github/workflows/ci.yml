@@ -93,6 +93,7 @@ jobs:
           PY
 
   rulesets:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       administration: read
@@ -110,7 +111,8 @@ jobs:
               headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
                        "Accept": "application/vnd.github+json"})
           live_list = json.load(urllib.request.urlopen(req))
-          failures = []
+          failures = [f"{r['name']}: enforcement={r.get('enforcement')} (live ruleset not active)"
+                      for r in live_list if r.get("enforcement") != "active"]
           checked = []
           for path in sorted(glob.glob(".github/rulesets/*.json")):
               want = json.load(open(path, encoding="utf-8"))
