@@ -46,8 +46,6 @@ the proposed `all-agents` surface in the modern engine:
   scaffolding, and documentation references were removed, and `oude doctor
   --fix` was made to prune residual root `all-content.md` and
   `_plugins/llm_content.rb` in downstream vaults.
-- **`TASKS.md`:** retired in PR #31; the backlog lives in GitHub issues
-  (#13–#35), so no roadmap file requires reconciliation.
 
 ## 3. Evaluation: Progressive Retrieval vs Monolithic LLM Dump
 
@@ -119,8 +117,8 @@ Explicitly covering both artefacts named in #32:
 
 ## 7. Verification & Test Coverage
 
-- **Unit suite:** `python3 -m unittest discover -s tests` — 219 tests OK
-  (local run, 2026-11-20), including the 6 new e2e tests.
+- **Unit suite:** `python3 -m unittest discover -s tests` — full suite
+  green locally, including the 6 new e2e tests.
 - **`tests/test_e2e_jekyll.py`** (issue #34): builds a fixture vault in a temp
   dir with a path Gemfile pointing at the checkout, runs a real
   `bundle exec jekyll build`, and asserts `_site/` pages render,
@@ -135,8 +133,9 @@ Explicitly covering both artefacts named in #32:
   and `jekyll/_plugins/llm_content.rb` are absent from the wheel, and that the
   installed `oude --version` runs from outside the checkout. Skips when `uv`
   is absent.
-- **CI:** the `validate` job in `.github/workflows/ci.yml` now installs `uv`
-  and Ruby before `unittest discover`, so both e2e suites execute on every
-  push/PR to `main` and `develop` (the required `validate` check).
+- **CI:** the required `validate` job in `.github/workflows/ci.yml` installs
+  `uv` and Ruby before `unittest discover`, so the e2e suites run there
+  whenever the toolchains are usable (they self-skip otherwise; see
+  AGENTS.md → Branch Protection for the required-check wiring).
 - **Docs:** Design 002 §5.4 marks the dynamic generator superseded and §6 now
   states the post-removal verification contract.

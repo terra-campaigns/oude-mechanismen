@@ -212,7 +212,6 @@ synthesised at build time. Vaults that still ship a root `all-content.md`
 have it flagged and removed by `oude doctor --fix`. See Design 005 for the
 full architectural evaluation and cross-issue reconciliation.
 
-
 ---
 
 ## 6. Cross-Cutting Verification & Test Strategy

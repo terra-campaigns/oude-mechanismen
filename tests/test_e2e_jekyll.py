@@ -39,7 +39,6 @@ RUBY_AVAILABLE = shutil.which("ruby") is not None and shutil.which("bundle") is 
 def _write_fixture_vault(vault: Path) -> None:
     """Scaffold a minimal Jekyll vault wired to the local engine checkout."""
     (vault / "campaigns").mkdir(parents=True)
-    (vault / ".agents" / "context").mkdir(parents=True)
     (vault / "_config.yml").write_text(
         "\n".join(
             [
@@ -90,6 +89,7 @@ class TestE2EJekyllBuild(unittest.TestCase):
         cls.vault.mkdir()
         _write_fixture_vault(cls.vault)
         cls.bundle_env = {
+            "BUNDLE_GEMFILE": str(cls.vault / "Gemfile"),
             "BUNDLE_PATH": str(cls.vault / "vendor" / "bundle"),
             "BUNDLE_APP_CONFIG": str(cls.vault / ".bundle"),
         }

@@ -41,7 +41,6 @@ assert str(PACKAGE_DIR).startswith(sys.prefix), (PACKAGE_DIR, sys.prefix)
 for rel in ("jekyll/_includes", "scripts", "skills", "templates", "VERSION"):
     resolved = resolve_asset_dir(rel)
     assert resolved.exists(), f"bundled asset missing from wheel: {rel} -> {resolved}"
-assert resolve_asset_dir("jekyll/_includes").is_dir()
 
 # Retired monolithic LLM dump assets must NOT be bundled (#25/#35, PR #72).
 jekyll_dir = PACKAGE_DIR / "jekyll"
