@@ -410,18 +410,17 @@ def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -
 
 
 def _gemfile_pins_engine_via_git(gemfile_content: str) -> bool:
-    """Return True if the Gemfile pins oude-mechanismen via a git source with a tag, ref, or branch.
+    """Return True if the Gemfile pins oude-mechanismen via a git source.
 
-    Matches the whole gem statement (single- or multi-line) and accepts the
-    git:, github:, gitlab:, and bitbucket: source shorthands.
+    Matches the whole gem statement (single- or multi-line, comments stripped)
+    and accepts the git:, github:, gitlab:, and bitbucket: source shorthands,
+    with or without an explicit tag/ref/branch.
     """
-    match = re.search(
-        r'\bgem\s+["\']oude-mechanismen["\'](?s:(?!\bgem\b).)*?\b(?:tag|ref|branch)\s*:',
-        gemfile_content,
-    )
-    if match is None:
-        return False
-    return bool(re.search(r'\b(?:git|github|gitlab|bitbucket)\s*:', match.group(0)))
+    stripped = re.sub(r"(?m)(^\s*#.*$)|(\s#.*$)", "", gemfile_content)
+    return bool(re.search(
+        r'\bgem\s+["\']oude-mechanismen["\'](?s:(?!\bgem\b).)*?\b(?:git|github|gitlab|bitbucket)\s*:',
+        stripped,
+    ))
 
 
 def _dependabot_ignores_engine(dependabot_content: str) -> bool:
@@ -455,7 +454,7 @@ def _append_managed_updates_block(dependabot_content: str) -> Optional[str]:
     exists (block or flow style), in which case the caller instructs a manual edit. The
     result is validated with `yaml.safe_load` before being returned.
     """
-    if any(re.match(r"^updates:\s*\S", line) or re.match(r"^updates:\s*(?:#.*)?$", line)
+    if any(re.match(r'^["\']?updates["\']?\s*:', line)
            for line in dependabot_content.splitlines()):
         return None
     template = _dependabot_template()
@@ -622,7 +621,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                     "run `oude doctor --fix`)"
                 )
                 all_passed = False
-        except OSError as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             print(f"  ✗ Failed to inspect or update Gemfile/.github/dependabot.yml: {exc}")
             all_passed = False
 

@@ -1188,6 +1188,11 @@ class TestDependabotGuard(unittest.TestCase):
         # A registry-pinned engine must not match a later, unrelated git-sourced gem.
         mixed = 'gem "oude-mechanismen", "~> 0.7"\ngem "jekyll-theme", git: "https://x.git", tag: "v1.0"\n'
         self.assertFalse(cli._gemfile_pins_engine_via_git(mixed))
+        # Commented-out pins and bare git sources (no tag/ref/branch).
+        commented = '# gem "oude-mechanismen", git: "https://x.git", tag: "v1"\n'
+        self.assertFalse(cli._gemfile_pins_engine_via_git(commented))
+        bare_git = 'gem "oude-mechanismen", git: "https://x.git"\n'
+        self.assertTrue(cli._gemfile_pins_engine_via_git(bare_git))
 
     def test_ignores_engine_scoped_to_bundler_update(self):
         bundler_ignore = (
@@ -1216,6 +1221,7 @@ class TestDependabotGuard(unittest.TestCase):
     def test_append_managed_block_refuses_existing_updates_key(self):
         # Block or flow style: caller must instruct a manual edit instead.
         self.assertIsNone(cli._append_managed_updates_block("version: 2\nupdates: []\n"))
+        self.assertIsNone(cli._append_managed_updates_block('version: 2\n"updates": []\n'))
         block = "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n"
         self.assertIsNone(cli._append_managed_updates_block(block))
 
