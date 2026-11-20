@@ -43,6 +43,9 @@ This local execution:
 3. Compiles the session acoustic glossary in `<drive_dir>/_gm-materials/session-summaries/<slug>_glossary.md`.
 4. **Pass 2A (Tactical Facts Extraction):** Local Ollama (`qwen2.5:14b`) extracts chronological timeline, combat actions, damage, mechanical rolls, sustained wounds/stress, and inventory/credits ledger -> saves `<drive_dir>/_gm-materials/session-summaries/<slug>_tactical_facts.md` (Tier 2 Canon, de-personalised).
 5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_gm-materials/session-summaries/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
+6. **Optional GM Recap Anchor (`#26`):** pass `--recap <file>` or place `<slug>_recap.md` beside the transcript; the recap (schema: level-1 `# ` title + body) is validated and injected as prior context into both passes.
+7. **Optional Chunked Extraction (`#27`):** pass `--chunk-size <words>` to extract the transcript chunk-by-chunk (sentence-boundary chunks) and merge via a link-graph-prioritised pass (`scripts/link_graph.py`).
+8. **Rolling Glossary (`#28`):** unless `--no-rolling-glossary`, session glossary terms are merged into `.agents/context/rolling_glossary.md` (deduplicated, first definition wins) and indexed into `catalog.json` on the next build.
 
 At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in `_gm-materials/session-summaries/`.
 

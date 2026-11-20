@@ -412,5 +412,49 @@ S4.
             self.assertNotIn("index.md", mock_out.getvalue())
 
 
+
+
+class TestLintChapterCluster(unittest.TestCase):
+    """Tests for chunk validation and canon name/ledger checks (#26 #27)."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.test_dir = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _write_file(self, filename: str, content: str) -> Path:
+        p = self.test_dir / filename
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def test_lint_chunk_file_passes_valid_chunk_and_fails_empty(self):
+        good = self._write_file("chunk1.md", "# Chunk\n\nBody text here.\n")
+        rep = lint_chapter.lint_chunk_file(good)
+        self.assertEqual(rep.status, "PASS")
+        bad = self._write_file("chunk2.md", "## No level-1\ntext\n")
+        rep_bad = lint_chapter.lint_chunk_file(bad)
+        self.assertEqual(rep_bad.status, "FAIL")
+
+    def test_name_casing_and_ledger_validation(self):
+        chapter = self._write_file(
+            "ep.md",
+            "---\ntitle: Ep\n---\n\n## H1\n\nThe kael vorn saluted.\nMore prose here.\n\n## 6. Loot & Inventory Ledger\n\n- Spent credits on fuel.\n- Gained 50 salvage.\n",
+        )
+        masked = lint_chapter.mask_markdown_noise(chapter.read_text(encoding="utf-8"))
+        diags = lint_chapter.validate_names_and_ledger(str(chapter), masked, ["Kael Vorn"])
+        rules = {d.rule for d in diags}
+        self.assertIn("canon-name-casing", rules)
+        self.assertIn("ledger-entry-numeric", rules)
+        numeric = [d for d in diags if d.rule == "ledger-entry-numeric"]
+        self.assertEqual(len(numeric), 1)
+        self.assertIn("fuel", numeric[0].actual)
+
+    def test_load_glossary_terms_reads_headings(self):
+        g = self._write_file("glossary.md", "# Rolling Campaign Glossary\n\n## Kael Vorn\n\n- Definition: x\n\n## Fomalhaut\n\n- Definition: y\n")
+        terms = lint_chapter.load_glossary_terms(g)
+        self.assertEqual(terms, ["Kael Vorn", "Fomalhaut"])
+
 if __name__ == "__main__":
     unittest.main()

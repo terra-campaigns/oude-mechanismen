@@ -43,6 +43,10 @@ module OudeMechanismen
             f.start_with?("_gm-materials/")
         end
 
+        # Index the rolling glossary (Tier 2 add-on indexed for progressive retrieval)
+        rolling_glossary = ".agents/context/rolling_glossary.md"
+        md_files << rolling_glossary if File.exist?(File.join(base_dir, rolling_glossary)) && !md_files.include?(rolling_glossary)
+
         # Track internal link connections for links_out and links_in
         internal_outbound = Hash.new { |h, k| h[k] = [] }
         internal_inbound = Hash.new { |h, k| h[k] = [] }
@@ -194,7 +198,8 @@ module OudeMechanismen
         catalog_entries = []
         md_files.each do |file_path|
           # Match against tier1_sources.yml allowlist
-          included = include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") }
+          included = true if file_path == ".agents/context/rolling_glossary.md"
+          included = include_paths.any? { |inc| file_path == inc || file_path.start_with?("#{inc}/") } unless included
           excluded = exclude_paths.any? { |exc| file_path == exc || file_path.start_with?("#{exc}/") }
           next unless included && !excluded
 
@@ -247,7 +252,7 @@ module OudeMechanismen
           catalog_entries << {
             "path" => file_path,
             "title" => fm['title'] || File.basename(file_path, '.md'),
-            "type" => fm['type'] || "misc",
+            "type" => fm['type'] || (file_path == ".agents/context/rolling_glossary.md" ? "glossary" : "misc"),
             "parent" => fm['parent'],
             "role" => fm['role'],
             "status" => fm['status'],

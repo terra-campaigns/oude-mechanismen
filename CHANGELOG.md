@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
+- **Scribe-session cluster (`#26`, `#27`, `#28`)**: `scripts/scribe_session.py` now supports GM recap anchors (`--recap` or auto-discovered `<slug>_recap.md`, validated schema with level-1 title, injected as a `### GM Recap Anchor:` prompt section that is stripped from outputs like other Tier 0 boundaries), chunked extraction (`--chunk-size` words, sentence-boundary chunks merged via a link-graph-prioritised pass from the new pure `scripts/link_graph.py` module), and a rolling session add-on glossary (`--rolling-glossary`/`--no-rolling-glossary`, merged into `.agents/context/rolling_glossary.md` with dedupe and first-definition-wins conflict resolution). The rolling glossary is indexed into `.agents/context/catalog.json` by `jekyll/_plugins/data_extractor.rb` (type `glossary`) for progressive retrieval.
+- **Linter support (`#26`, `#27`, `#28`)**: `scripts/lint_chapter.py` gains `--chunk` (independent chunk validation: non-empty, level-1 heading, blank line after headings) and canon name/ledger validation against the rolling glossary (`canon-name-casing`, `ledger-entry-numeric` warnings); `scripts/lint_wiki.py` gains a `rolling-glossary` check validating definitions and flagging casing conflicts with published catalog titles.
+
+---
 
 ## [0.7.2] - 2026-11-19
 
