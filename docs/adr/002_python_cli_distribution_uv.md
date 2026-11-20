@@ -159,11 +159,11 @@ pattern = "(?P<version>\\d+\\.\\d+\\.\\d+)"
 packages = ["src/oude_mechanismen"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"jekyll/_includes" = "oude_mechanismen/jekyll/_includes"
 "VERSION" = "oude_mechanismen/VERSION"
 "scripts" = "oude_mechanismen/scripts"
 "skills" = "oude_mechanismen/skills"
 "templates" = "oude_mechanismen/templates"
-"jekyll/all-content.md" = "oude_mechanismen/jekyll/all-content.md"
 ```
 
 #### Dual-Mode Asset Resolution (`_resolve_asset_dir`)
