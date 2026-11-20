@@ -38,7 +38,7 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
 
 ## Procedural Skill Catalogue
 
-When linked to your campaign vault, AI coding assistants (such as Antigravity, Claude Code, or Cursor) gain access to 10 specialised campaign skills:
+When linked to your campaign vault, AI coding assistants (such as Antigravity, Claude Code, or Cursor) gain access to 11 specialised campaign skills:
 
 | Skill | Trigger | Purpose | Key Deliverables |
 | :--- | :--- | :--- | :--- |
@@ -52,6 +52,7 @@ When linked to your campaign vault, AI coding assistants (such as Antigravity, C
 | **`review-style`** | `/review-style <note>` | Calibrates prose against setting voice, cadence, and vocabulary | Diff review with anchor-and-veil balance |
 | **`lint-wiki`** | `/lint-wiki` | Health-checks the campaign wiki for broken links, stubs, and orphans | Markdown audit report & suggested fixes |
 | **`digest-book`** | `/digest-book <pdf_path>` | Deterministic PDF slice extraction + synthesis into a validated `_gm-materials/digests/<source>/` wiki | Hyperlinked entity notes, `manifest.json`, clean `references.json` |
+| **`crosslink-tiers`** | `/crosslink-tiers` | Cross-links Tier 1 canon and Tier 3 digests via hidden `{% comment %}` link blocks | Idempotent Obsidian-only cross-tier links, invisible on the Jekyll site |
 
 ---
 

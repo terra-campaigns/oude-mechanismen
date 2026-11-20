@@ -41,6 +41,7 @@ oude-mechanismen/
 │   ├── scribe-session/         # Decomposed air-gapped speech-to-text & chapter scribing
 │   ├── illustrate-entry/       # Archival art curation & graphic-novel styling
 │   │   └── scripts/            # Core art_filter.py graphic novel engine
+│   ├── crosslink-tiers/        # Tier 1 ↔ Tier 3 cross-linking inside {% comment %} blocks
 │   └── digest-book/            # Sourcebook PDF → validated semantic digest wiki (Design 004 Stage C)
 ├── scripts/                    # Shared campaign tooling (invoked via `oude <cmd>`)
 │   ├── generate_digests.py     # Tier 3 PDF digest extractor/validator & references.json compiler

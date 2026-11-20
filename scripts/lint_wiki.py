@@ -172,9 +172,14 @@ def is_internal_target(target: str) -> bool:
     return bool(target) and not SCHEME_RE.match(target) and not target.startswith("#")
 
 
+def clean_target_str(target: str) -> str:
+    """Percent-decode a link target and strip anchor/query, mirroring the Ruby guard."""
+    return unquote(target.split("#", 1)[0].split("?", 1)[0])
+
+
 def resolve_target(root: Path, from_file: Path, target: str) -> Optional[Path]:
     """Resolve an internal link target to an absolute path (anchors stripped)."""
-    clean = unquote(target.split("#", 1)[0].split("?", 1)[0])
+    clean = clean_target_str(target)
     if not clean:
         return None
     if clean.startswith("/"):
@@ -221,11 +226,21 @@ def is_section_index(root: Path, path: Path) -> bool:
 def check_dead_links(
     root: Path, files: List[Path], findings: List[Finding]
 ) -> None:
-    """Check 1: every internal markdown link resolves to an existing file."""
+    """Check 1: every internal markdown link resolves to an existing file.
+
+    Targets containing an _gm-materials/ path segment (any depth, any case,
+    after percent-decoding) are exempt when the root _gm-materials/ directory
+    is absent on disk (it is gitignored and missing on CI runners / fresh
+    clones); when present locally they are validated normally.
+    """
+    gm_absent = not (root / "_gm-materials").is_dir()
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
         for line_no, target, is_image in extract_links(text):
             if not is_internal_target(target):
+                continue
+            clean_target = clean_target_str(target)
+            if gm_absent and "_gm-materials" in {seg.lower() for seg in clean_target.split("/")}:
                 continue
             resolved = resolve_target(root, path, target)
             if resolved is None:
