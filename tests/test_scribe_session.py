@@ -363,5 +363,18 @@ class TestScribeSessionCluster(unittest.TestCase):
         self.assertIn("Doc", out)
         self.assertEqual(mock_query.call_count, 1)
 
+    def test_notebook_only_rejects_non_notebook_input(self):
+        """#20: --notebook-only must reject non-.ipynb input with guidance and exit 1."""
+        import io
+        from unittest.mock import patch
+        (self.repo_root / "_config.yml").write_text("title: t\n", encoding="utf-8")
+        txt = self.repo_root / "session.txt"
+        txt.write_text("words", encoding="utf-8")
+        with patch("sys.argv", ["scribe_session.py", str(txt), "--repo-root", str(self.repo_root), "--notebook-only"]), \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            with self.assertRaises(SystemExit) as cm:
+                scribe_session.main()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn(".ipynb", err.getvalue())
 if __name__ == "__main__":
     unittest.main()

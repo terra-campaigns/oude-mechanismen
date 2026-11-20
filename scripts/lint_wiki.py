@@ -617,6 +617,48 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
     flush()
 
 
+
+
+READ_ALOUD_LINE_RE = re.compile(r"^\s*>\s*\**\s*(?:Table\s+)?Read[- ]?Aloud\b", re.IGNORECASE)
+MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t]+[0-9a-zA-Z_\-]+\)", re.IGNORECASE)
+
+
+def check_read_aloud(root: Path, files: List[Path], findings: List[Finding]) -> None:
+    """Canon policy (#20): boxed read-aloud text must never appear in published Tier 1 notes."""
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for i, line in enumerate(text.splitlines(), 1):
+            if READ_ALOUD_LINE_RE.match(line):
+                rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+                findings.append(
+                    Finding(
+                        check="read-aloud",
+                        severity="FAIL",
+                        file=rel,
+                        line=i,
+                        message="boxed read-aloud text is prohibited in published canon; remove or move to GM notes",
+                    )
+                )
+
+
+def check_mechanical_parentheticals(root: Path, files: List[Path], findings: List[Finding]) -> None:
+    """Narrative policy (#18): flag mechanical episode parentheticals and suggest narrative-anchored links."""
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for i, line in enumerate(text.splitlines(), 1):
+            m = MECHANICAL_PAREN_RE.search(line)
+            if m:
+                rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+                findings.append(
+                    Finding(
+                        check="mechanical-parenthetical",
+                        severity="WARN",
+                        file=rel,
+                        line=i,
+                        message=f"mechanical parenthetical '{m.group(0)}' breaks narrative flow; anchor the episode link in contextual prose instead",
+                    )
+                )
+
 def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     """Run the full or targeted lint suite and return a WikiReport."""
     root = root.resolve()
@@ -659,6 +701,8 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     check_deprecated_hooks(root, files, f)
     check_front_matter(root, files, f)
     check_rolling_glossary(root, f)
+    check_read_aloud(root, files, f)
+    check_mechanical_parentheticals(root, files, f)
     if report.mode == "full":
         check_duplicate_titles(root, files, f)
     return report

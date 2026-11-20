@@ -565,5 +565,30 @@ class TestRollingGlossary(LintWikiTestCase):
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "rolling-glossary"), [])
 
+
+class TestCanonPolicy(LintWikiTestCase):
+    """Package C (#91): read-aloud prohibition (#20) and mechanical parentheticals (#18)."""
+
+    def test_read_aloud_block_fails(self):
+        self._write(
+            "campaigns/arc/ep001.md",
+            "---\ntitle: Ep 1\nparent: Index\n---\n\nOne.\nTwo.\nThree.\n\n> Table Read-Aloud: The door creaks open.\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        ra = self._findings(report, "read-aloud")
+        self.assertEqual(len(ra), 1)
+        self.assertEqual(ra[0].severity, "FAIL")
+
+    def test_mechanical_parenthetical_warns_but_clean_file_passes(self):
+        self._write(
+            "campaigns/arc/ep002.md",
+            "---\ntitle: Ep 2\nparent: Index\n---\n\nOne.\nTwo.\nThree.\n\nThe crew retreated (See Episode 1) after the ambush.\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        mp = self._findings(report, "mechanical-parenthetical")
+        self.assertEqual(len(mp), 1)
+        self.assertEqual(mp[0].severity, "WARN")
+        self.assertIn("(See Episode 1)", mp[0].message)
+
 if __name__ == "__main__":
     unittest.main()

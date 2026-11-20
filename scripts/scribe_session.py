@@ -767,11 +767,19 @@ def main() -> None:
     parser.add_argument("--language", help="Whisper language code override (e.g. 'en', 'pt').")
     parser.add_argument("--dry-run", action="store_true", help="Perform extraction without writing output files.")
     parser.add_argument("--keep-alive", default="15m", help="Ollama model keep-alive duration (default: 15m).")
+    parser.add_argument("--notebook-only", action="store_true", help="Notebook-centric delivery (#20): only accept Jupyter/IPython notebooks (.ipynb) as input; reject anything else with guidance.")
 
     args = parser.parse_args()
 
     repo_root = find_campaign_root(args.repo_root)
     input_file = Path(args.input_file).expanduser().resolve() if args.input_file else None
+    if args.notebook_only and input_file is not None and input_file.suffix.lower() != ".ipynb":
+        print(
+            f"Error: --notebook-only accepts only Jupyter/IPython notebooks (.ipynb); got '{input_file.name}'.\n"
+            "Convert the session to a notebook first, or drop --notebook-only to allow audio/transcript ingestion.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     start_time = time.time()
     print("=" * 70)
