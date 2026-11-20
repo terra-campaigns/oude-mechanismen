@@ -38,6 +38,10 @@ Verify the catalogue compiled with zero errors and carries the expected `engine_
 - **Art filter presets**: `.agents/context/aesthetics.yml`.
 - **Agent skills & procedural tooling**: the Python CLI and global skills (`oude init`, `oude install-skills`, `oude doctor`, `oude digest`, `oude audit`, …) are distributed separately via `uv` (ADR 002) and registered in `~/.gemini/config/skills.json` — the gem covers only the Jekyll build.
 
+## Engine branches: `main` vs `develop`
+
+The engine repository uses a two-branch flow. `main` is release-only and always sits exactly on the latest `vX.Y.Z` tag, so vaults pin the gem `tag:` (and the `uv tool install …@<tag>` CLI) to a release tag on `main`. All unreleased feature and fix work integrates on `develop`, the default base for pull requests; CI runs on both branches. `develop` is promoted to `main` only via a release-cut PR (`VERSION` bump plus a dated `CHANGELOG.md` section), after which the `vX.Y.Z` tag is created.
+
 ## Updating the engine
 
 1. Bump the `tag:` in the vault `Gemfile` to the new release.
