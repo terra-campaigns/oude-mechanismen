@@ -2,7 +2,6 @@
 # (tests/test_dynamic_gem.rb, issue #23). Deliberately theme-free so the
 # build only needs the jekyll and oude-mechanismen gems.
 title: "Fixture Vault"
-description: "Deterministic fixture site for the oude-mechanismen dynamic-gem test."
 
 plugins:
   - oude-mechanismen
@@ -11,7 +10,4 @@ permalink: pretty
 
 exclude:
   - ".agents"
-  - "Gemfile"
-  - "Gemfile.lock"
   - "README.md"
-  - "vendor"

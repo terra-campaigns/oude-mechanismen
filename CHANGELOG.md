@@ -11,9 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Headless integration coverage for the packaged dynamic gem (`#23`; `#34` is covered by PR `#86`)**:
-  - `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`, minitest): builds `oude-mechanismen.gemspec`, asserts the gem archive bundles `lib/`, `jekyll/_plugins/`, and `jekyll/_includes/` (and no `tests/` or `.github/` clutter), installs the built gem into a scratch `GEM_HOME` and loads it in isolation, then runs a headless `jekyll build` of the new `tests/fixtures/vault/` fixture driven by that installed gem — asserting layout and page rendering, the gem-served `connected_to.html` include, `site.data.markdown_links` output from `_plugins/data_extractor.rb`, and the `.agents/context/catalog.json` catalogue (engine version stamp, Tier 1 entries, links).
-  - The CI `validate` job installs Jekyll and runs the suite (`ruby tests/test_dynamic_gem.rb`); documented in `tests/README.md` and `docs/DYNAMIC_GEM.md`.
+- **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
 
 ## [0.7.2] - 2026-11-19
 
