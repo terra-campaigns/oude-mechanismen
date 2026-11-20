@@ -10,9 +10,9 @@ Scan Tier 1 notes (`.agents/context/catalog.json`) and Tier 3 digest notes (`.ag
 
 ## Discovery
 
-1. Load `.agents/context/catalog.json` for Tier 1 entries (title, path, aliases, tags).
+1. Load `.agents/context/catalog.json` for Tier 1 entries (`path`, `title`, `type`, `parent`, `summary`, `links_out`/`links_in`); read a note's front matter for aliases/tags when needed.
 2. Load `.agents/context/references.json` for Tier 3 digest entries (source, slug, digest_path).
-3. Match entities by title, aliases, tags, and related concepts across the two indexes.
+3. Match entities by title, path, and related concepts across the two indexes.
 
 ## Link Insertion
 

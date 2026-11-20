@@ -78,7 +78,7 @@ module OudeMechanismen
                           rescue ArgumentError
                             clean_url.split('?').first.to_s
                           end
-              next if guard_url.split('/').any? { |seg| seg.downcase == '_gm-materials' }
+              next if guard_url.scrub.split('/').any? { |seg| seg.downcase == '_gm-materials' }
               resolved_path = Pathname.new(dir).join(clean_url).cleanpath.to_s
               full_url = resolved_path
               favicon_url = nil
