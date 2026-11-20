@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
+
 ## [0.7.2] - 2026-11-19
 
 ### Changed

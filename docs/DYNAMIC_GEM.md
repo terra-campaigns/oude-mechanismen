@@ -30,6 +30,17 @@ bundle exec jekyll build   # writes .agents/context/catalog.json in memory durin
 
 Verify the catalogue compiled with zero errors and carries the expected `engine_version`.
 
+## Testing the gem end to end
+
+The engine repository covers the packaged gem with a headless integration suite (issue #23), run by the CI `validate` job:
+
+```bash
+gem install --no-document jekyll -v '~> 4.4.1'   # once per machine
+ruby tests/test_dynamic_gem.rb                   # JekyllHeadlessTest: gem build + isolated GEM_HOME load + fixture vault headless jekyll build
+```
+
+`tests/test_dynamic_gem.rb` builds the gemspec, installs the built gem into a scratch `GEM_HOME`, and builds the minimal `tests/fixtures/vault/` site with that installed gem to prove plugin execution, in-memory includes, and catalogue generation. See [tests/README.md](../tests/README.md) for details.
+
 ## Configuration & customisation
 
 - **Site identity**: `title`, `description`, `url`, `baseurl` in `_config.yml` (production GitHub Pages values; LAN preview works without touching them — see the [Migration Guide](MIGRATION_GUIDE.md#step-7--lan-preview-smoke-check)).

@@ -60,6 +60,12 @@ jobs:
           ruby -c lib/oude_mechanismen/version.rb
           gem build oude-mechanismen.gemspec
 
+      - name: Install Jekyll for the headless dynamic-gem test
+        run: gem install --no-document jekyll -v '~> 4.4.1'
+
+      - name: Run headless dynamic-gem integration test (issue #23)
+        run: ruby tests/test_dynamic_gem.rb
+
       - name: Validate Shell scripts syntax
         run: |
           bash -n sync.sh
