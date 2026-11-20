@@ -284,6 +284,7 @@ class TestScribeSessionCluster(unittest.TestCase):
         recap.write_text("# Recap of Episode 12\nThe party reached Fomalhaut.\n", encoding="utf-8")
         anchor = scribe_session.load_recap_anchor(recap)
         self.assertEqual(anchor["title"], "Recap of Episode 12")
+        self.assertEqual(anchor["body"], "The party reached Fomalhaut.")  # title stripped from body
         bad = self.repo_root / "bad.md"
         bad.write_text("No heading here.\n", encoding="utf-8")
         with self.assertRaises(ValueError):
@@ -324,11 +325,59 @@ class TestScribeSessionCluster(unittest.TestCase):
         self.assertIn("New Term", entries)
         self.assertEqual(path, self.repo_root / ".agents" / "context" / "rolling_glossary.md")
 
-    def test_extract_glossary_terms_parses_session_glossary(self):
-        glossary = "## 1. People\n\n- **Kael Vorn** (`directory/kael.md`)\n  - Protagonist engineer.\n- **Monarch** (`directory/monarch.md`)\n"
-        terms = scribe_session.extract_glossary_terms(glossary)
-        self.assertIn(("Kael Vorn", "Protagonist engineer."), terms)
-        self.assertIn(("Monarch", ""), terms)
+    def test_extract_glossary_terms_parses_real_glossary_format(self):
+        glossary = (
+            "# Campaign Context & Entity Glossary — 2026-11-20_001\n\n"
+            "## 1. Player Characters & Key Personnel\n\n"
+            "- **Kael Vorn** (`directory/kael.md`)\n"
+            "  - **Role & Locus:** Engineer | Fomalhaut\n"
+            "  - **Background:** Protagonist engineer.\n"
+            "- **Monarch** (`directory/monarch.md`)\n"
+            "  - **Role & Locus:** Ruler | Cloudbank\n\n"
+            "## 2. Directory Locations & Hubs\n\n"
+            "- **Fomalhaut** (`directory/fomalhaut.md`)\n"
+            "  - Orbital station hub.\n\n"
+            "## 4. Recent Session Recaps (Chronological Continuity)\n\n"
+            "- **Episode 12: Arrival** (2026-11-13 @ Fomalhaut)\n"
+            "  - Should never become a term.\n\n"
+            "## 5. Active Tier 2 Table Rulings & Decisions\n\n"
+            "- **Ruling:** Synthetic blood counts as evidence.\n"
+        )
+        terms = dict(scribe_session.extract_glossary_terms(glossary))
+        self.assertEqual(terms["Kael Vorn"], "Protagonist engineer.")  # Background preferred over Role & Locus
+        self.assertEqual(terms["Monarch"], "")  # Role & Locus never used as definition
+        self.assertEqual(terms["Fomalhaut"], "Orbital station hub.")
+        self.assertNotIn("Episode 12: Arrival", terms)  # section 4 excluded
+        self.assertNotIn("Ruling", terms)  # section 5 excluded
+
+    def test_rolling_glossary_skips_canon_titles_and_fills_empty_definitions(self):
+        scribe_session.update_rolling_glossary(self.repo_root, "2026-11-20_001", [("Kael Vorn", ""), ("New Term", "Fresh")])
+        path = scribe_session.update_rolling_glossary(
+            self.repo_root, "2026-11-20_002", [("Kael Vorn", "Now defined"), ("Other Canon", "x")],
+            skip_titles={"other canon"},
+        )
+        entries = scribe_session.parse_rolling_glossary(path.read_text(encoding="utf-8"))
+        self.assertEqual(entries["Kael Vorn"]["definition"], "Now defined")  # empty placeholder filled later
+        self.assertNotIn("Other Canon", entries)  # catalog title skipped
+
+    @patch("scribe_session.query_ollama_stream")
+    def test_chunked_pass_lints_each_chunk_before_merge(self, mock_query):
+        # Second chunk has no level-1 heading -> chunk validation FAIL -> RuntimeError, no merge call
+        mock_query.side_effect = ["# Chunk A\n\nKael fought.", "no heading here"]
+        manifest = self._manifest()
+        context = {"transcript": "Kael fought hard. No heading chunk follows.", "glossary": "", "decisions": "", "recap": ""}
+        with self.assertRaises(RuntimeError):
+            scribe_session.extract_tactical_facts("http://x", "m", manifest, context, chunk_size=4)
+        self.assertEqual(mock_query.call_count, 2)  # merge never fired
+
+    @patch("scribe_session.query_ollama_stream")
+    def test_chunked_pass_falls_back_to_single_pass_on_empty_transcript(self, mock_query):
+        mock_query.return_value = "# Doc\n\nBody."
+        manifest = self._manifest()
+        context = {"transcript": "", "glossary": "", "decisions": "", "recap": ""}
+        out = scribe_session.extract_sensory_textures("http://x", "m", manifest, context, chunk_size=5)
+        self.assertIn("Doc", out)
+        self.assertEqual(mock_query.call_count, 1)
 
 if __name__ == "__main__":
     unittest.main()

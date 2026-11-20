@@ -43,12 +43,6 @@ class TestLinkGraph(unittest.TestCase):
         self.assertEqual(ranked[0][0], "Kael")
         self.assertGreaterEqual(ranked[0][1], ranked[-1][1])
 
-    def test_prioritise_terms_with_candidates_keeps_unknown_at_zero(self):
-        graph = link_graph.build_link_graph(["Kael met the Monarch."])
-        ranked = link_graph.prioritise_terms(graph, candidates=["Kael", "Unknown Term"], top_n=10)
-        self.assertEqual(ranked[0][0], "Kael")
-        self.assertEqual(ranked[-1], ("Unknown Term", 0))
-
 
 if __name__ == "__main__":
     unittest.main()

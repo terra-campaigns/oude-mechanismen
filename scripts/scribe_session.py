@@ -27,9 +27,10 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import link_graph  # noqa: E402
+import lint_chapter  # noqa: E402
 
 PROMPT_BOUNDARY_RE = re.compile(
-    r"(?:^|\n)(?:---\s*\n)?###\s+(?:Session Glossary|Active Decisions|GM Recap Anchor|Verbatim Session Transcript)\b",
+    r"(?:^|\n)(?:---\s*\n)?###\s+(?:Session Glossary|Active Decisions|GM Recap Anchor|Verbatim Session Transcript|Chunk \d+)\b",
     re.IGNORECASE,
 )
 
@@ -38,9 +39,11 @@ OLLAMA_STOP_SEQUENCES: List[str] = [
     "\n---\n### Active Decisions",
     "\n---\n### GM Recap Anchor:",
     "\n---\n### Verbatim Session Transcript:",
+    "\n---\n### Chunk",
     "### Session Glossary:",
     "### GM Recap Anchor:",
     "### Verbatim Session Transcript:",
+    "### Chunk",
 ]
 
 
@@ -193,7 +196,8 @@ def resolve_session_metadata(manifest: Dict[str, Any]) -> Tuple[str, str]:
 def load_recap_anchor(recap_path: Path) -> Dict[str, str]:
     """
     Parse and validate a GM recap anchor file (schema: a level-1 '# ' title
-    followed by the recap body). Returns {'title': ..., 'body': ...}.
+    followed by the recap body). Returns {'title': ..., 'body': ...} with the
+    title line stripped from the body so it is not duplicated in prompts.
     """
     if not recap_path.exists():
         raise FileNotFoundError(f"Recap anchor file not found: {recap_path}")
@@ -201,7 +205,8 @@ def load_recap_anchor(recap_path: Path) -> Dict[str, str]:
     title_match = re.match(r"^#\s+(.+)$", raw, re.MULTILINE)
     if not title_match:
         raise ValueError(f"Recap anchor '{recap_path}' must contain a level-1 '# ' title.")
-    return {"title": title_match.group(1).strip(), "body": raw}
+    body = raw[title_match.end():].strip()
+    return {"title": title_match.group(1).strip(), "body": body}
 
 
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
@@ -209,8 +214,9 @@ SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 def chunk_transcript(text: str, chunk_size: int) -> List[str]:
     """
-    Split a transcript into chunks of at most chunk_size words, breaking only
-    at sentence boundaries. chunk_size <= 0 returns the text as a single chunk.
+    Split a transcript into chunks of at most chunk_size words, breaking only at
+    sentence boundaries (an over-long single sentence forms its own chunk).
+    chunk_size <= 0 returns the text as a single chunk.
     """
     if chunk_size <= 0:
         return [text] if text.strip() else []
@@ -274,22 +280,66 @@ Crucial Directives:
 ROLLING_GLOSSARY_REL = Path(".agents/context/rolling_glossary.md")
 
 
+GLOSSARY_ENTITY_SECTION_RE = re.compile(r"^##\s+[123]\.")
+GLOSSARY_BACKGROUND_RE = re.compile(r"^\s+- \*\*Background:\*\*\s*(.+)$")
+GLOSSARY_SUBBULLET_RE = re.compile(r"^\s+- (.+)$")
+GLOSSARY_TERM_RE = re.compile(r"^- \*\*(.+?)\*\*")
+
+
 def extract_glossary_terms(glossary_text: str) -> List[Tuple[str, str]]:
-    """Extract (term, definition) pairs from a session glossary markdown document."""
+    """
+    Extract (term, definition) pairs from a session glossary as produced by
+    transcribe_session.build_dynamic_glossary: only the entity sections
+    ('## 1.'-'## 3.') are parsed (recaps and raw decisions in sections 4-5 are
+    excluded), the definition prefers the '**Background:**' sub-bullet and
+    otherwise falls back to the first plain sub-bullet (never 'Role & Locus').
+    """
     terms: List[Tuple[str, str]] = []
-    lines = glossary_text.splitlines()
-    for i, line in enumerate(lines):
-        m = re.match(r"^- \*\*(.+?)\*\*", line)
-        if not m:
+    in_entity_section = False
+    pending: Optional[Tuple[str, str]] = None
+    for line in glossary_text.splitlines():
+        if re.match(r"^##\s", line):
+            if pending:
+                terms.append(pending)
+                pending = None
+            in_entity_section = bool(GLOSSARY_ENTITY_SECTION_RE.match(line))
             continue
-        term = m.group(1).strip()
-        definition = ""
-        if i + 1 < len(lines):
-            dm = re.match(r"^\s+- (.+)$", lines[i + 1])
-            if dm:
-                definition = dm.group(1).strip()
-        terms.append((term, definition))
+        if not in_entity_section:
+            continue
+        m = GLOSSARY_TERM_RE.match(line)
+        if m:
+            if pending:
+                terms.append(pending)
+            pending = (m.group(1).strip(), "")
+            continue
+        if pending is None:
+            continue
+        bm = GLOSSARY_BACKGROUND_RE.match(line)
+        if bm:
+            pending = (pending[0], bm.group(1).strip())
+            continue
+        dm = GLOSSARY_SUBBULLET_RE.match(line)
+        if dm and not pending[1] and not dm.group(1).startswith("**Role & Locus:**"):
+            pending = (pending[0], dm.group(1).strip())
+    if pending:
+        terms.append(pending)
     return terms
+
+
+def load_catalog_titles(repo_root: Path) -> set:
+    """Load lower-cased Tier 1 catalog titles, used to keep canon terms out of the rolling glossary."""
+    catalog_path = repo_root / ".agents" / "context" / "catalog.json"
+    titles: set = set()
+    if catalog_path.exists():
+        try:
+            data = json.loads(catalog_path.read_text(encoding="utf-8"))
+            entries = data.get("entries", []) if isinstance(data, dict) else []
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("title"):
+                    titles.add(str(entry["title"]).strip().lower())
+        except (OSError, json.JSONDecodeError):
+            pass
+    return titles
 
 
 def parse_rolling_glossary(text: str) -> Dict[str, Dict[str, Any]]:
@@ -309,7 +359,9 @@ def parse_rolling_glossary(text: str) -> Dict[str, Dict[str, Any]]:
             continue
         dm = re.match(r"^- Definition:\s*(.+)$", line)
         if dm and not entries[current]["definition"]:
-            entries[current]["definition"] = dm.group(1).strip()
+            value = dm.group(1).strip()
+            # The 'Pending canonical definition.' placeholder is not a real definition
+            entries[current]["definition"] = "" if value == "Pending canonical definition." else value
             continue
         sm = re.match(r"^- (?:First seen|Also seen):\s*`([^`]+)`", line)
         if sm and sm.group(1) not in entries[current]["sessions"]:
@@ -342,26 +394,33 @@ def update_rolling_glossary(
     repo_root: Path,
     session_slug: str,
     new_terms: List[Tuple[str, str]],
+    skip_titles: Optional[set] = None,
 ) -> Path:
     """
     Merge new session glossary terms into .agents/context/rolling_glossary.md.
-    Existing entries are never overwritten (conflict resolution: first definition wins);
-    the session slug is appended to the term's sighting list. Deduplicates by term.
+    Existing definitions are never overwritten (conflict resolution: first
+    definition wins), except that an empty/placeholder definition is filled by a
+    later non-empty one. Terms already present as Tier 1 catalog titles
+    (skip_titles, lower-cased) are excluded to avoid a catalog->glossary->catalog
+    feedback cycle. The session slug is appended to each term's sighting list.
     """
     path = repo_root / ROLLING_GLOSSARY_REL
     entries: Dict[str, Dict[str, Any]] = {}
     if path.exists():
         entries = parse_rolling_glossary(path.read_text(encoding="utf-8"))
 
+    skip = skip_titles or set()
     lower_index = {t.lower(): t for t in entries}
     for term, definition in new_terms:
-        if not term:
+        if not term or term.lower() in skip:
             continue
         key = lower_index.get(term.lower())
         if key is None:
             entries[term] = {"definition": definition, "sessions": [session_slug]}
             lower_index[term.lower()] = term
         else:
+            if definition and not entries[key]["definition"]:
+                entries[key]["definition"] = definition
             if session_slug not in entries[key]["sessions"]:
                 entries[key]["sessions"].append(session_slug)
 
@@ -587,6 +646,63 @@ Required Structure:
 """
 
 
+def run_chunked_pass(
+    ollama_url: str,
+    model: str,
+    manifest: Dict[str, Any],
+    context: Dict[str, str],
+    prompt_builder,
+    pass_label: str,
+    merge_label: str,
+    temperature: float,
+    chunk_size: int,
+    keep_alive: str = "15m",
+) -> str:
+    """
+    Shared chunked-extraction path: split the transcript, extract each chunk,
+    validate/lint every chunk before proceeding (issue #27), then merge all
+    partials via a link-graph-prioritised merge pass. Falls back to a single
+    pass when the transcript yields no chunks.
+    """
+    slug = manifest.get("session_slug", "unknown_session")
+    chunks = chunk_transcript(context.get("transcript", ""), chunk_size)
+    if not chunks:
+        prompt = prompt_builder(manifest, context)
+        raw = query_ollama_stream(
+            ollama_url, model, prompt,
+            temperature=temperature, keep_alive=keep_alive,
+            stop=OLLAMA_STOP_SEQUENCES, log_prefix=f"    [{pass_label}] ",
+        )
+        return enforce_markdown_cleanliness(strip_prompt_echo(raw, pass_label=pass_label))
+
+    partials: List[str] = []
+    for i, chunk in enumerate(chunks, 1):
+        chunk_context = dict(context, transcript=chunk)
+        prompt = prompt_builder(manifest, chunk_context)
+        raw = query_ollama_stream(
+            ollama_url, model, prompt,
+            temperature=temperature, keep_alive=keep_alive,
+            stop=OLLAMA_STOP_SEQUENCES,
+            log_prefix=f"    [{pass_label} chunk {i}/{len(chunks)}] ",
+        )
+        partial = strip_prompt_echo(raw, pass_label=f"{pass_label} chunk {i}")
+        report = lint_chapter.lint_chunk_text(partial, f"{pass_label} chunk {i}")
+        if report.status == "FAIL":
+            fails = "; ".join(
+                f"line {d.line} {d.rule}: {d.message}" for d in report.diagnostics if d.severity == "FAIL"
+            )
+            raise RuntimeError(f"Chunk {i}/{len(chunks)} failed validation ({pass_label}): {fails}")
+        partials.append(partial)
+
+    graph = link_graph.build_link_graph(chunks)
+    top_terms = [t for t, _ in link_graph.prioritise_terms(graph, top_n=20)]
+    merged = merge_chunk_outputs(
+        ollama_url, model, merge_label, slug, partials,
+        prioritised_terms=top_terms, keep_alive=keep_alive,
+    )
+    return enforce_markdown_cleanliness(merged)
+
+
 def extract_tactical_facts(
     ollama_url: str,
     model: str,
@@ -599,34 +715,14 @@ def extract_tactical_facts(
     Pass 2A: Prompt local Ollama model to extract chronological and tactical facts.
     Strictly de-personalises the transcript by stripping player banter and real-world names.
     Outputs structured Markdown saved to _gm-materials/session-summaries/<slug>_tactical_facts.md.
-    When chunk_size > 0, the transcript is extracted chunk-by-chunk and merged via a
-    link-graph-prioritised merge pass.
+    When chunk_size > 0, the transcript is extracted chunk-by-chunk (each chunk linted
+    before proceeding) and merged via a link-graph-prioritised merge pass.
     """
-    slug = manifest.get("session_slug", "unknown_session")
     if chunk_size > 0:
-        chunks = chunk_transcript(context.get("transcript", ""), chunk_size)
-        partials: List[str] = []
-        for i, chunk in enumerate(chunks, 1):
-            chunk_context = dict(context, transcript=chunk)
-            prompt = build_tactical_prompt(manifest, chunk_context)
-            raw = query_ollama_stream(
-                ollama_url,
-                model,
-                prompt,
-                temperature=0.2,
-                keep_alive=keep_alive,
-                stop=OLLAMA_STOP_SEQUENCES,
-                log_prefix=f"    [Tactical Facts 2A chunk {i}/{len(chunks)}] ",
-            )
-            partials.append(strip_prompt_echo(raw, pass_label=f"Pass 2A chunk {i}"))
-        graph = link_graph.build_link_graph(chunks)
-        top_terms = [t for t, _ in link_graph.prioritise_terms(graph, top_n=20)]
-        merged = merge_chunk_outputs(
-            ollama_url, model, "tactical facts", slug, partials,
-            prioritised_terms=top_terms, keep_alive=keep_alive,
+        return run_chunked_pass(
+            ollama_url, model, manifest, context, build_tactical_prompt,
+            "Pass 2A tactical facts", "tactical facts", 0.2, chunk_size, keep_alive,
         )
-        return enforce_markdown_cleanliness(merged)
-
     prompt = build_tactical_prompt(manifest, context)
     raw_facts = query_ollama_stream(
         ollama_url,
@@ -653,34 +749,14 @@ def extract_sensory_textures(
     Pass 2B: Prompt local Ollama model to extract evocative sensory and atmospheric textures.
     Strictly de-personalises the transcript by capturing in-character dialogue and physical descriptions.
     Outputs structured Markdown saved to _gm-materials/session-summaries/<slug>_sensory_textures.md.
-    When chunk_size > 0, the transcript is extracted chunk-by-chunk and merged via a
-    link-graph-prioritised merge pass.
+    When chunk_size > 0, the transcript is extracted chunk-by-chunk (each chunk linted
+    before proceeding) and merged via a link-graph-prioritised merge pass.
     """
-    slug = manifest.get("session_slug", "unknown_session")
     if chunk_size > 0:
-        chunks = chunk_transcript(context.get("transcript", ""), chunk_size)
-        partials: List[str] = []
-        for i, chunk in enumerate(chunks, 1):
-            chunk_context = dict(context, transcript=chunk)
-            prompt = build_sensory_prompt(manifest, chunk_context)
-            raw = query_ollama_stream(
-                ollama_url,
-                model,
-                prompt,
-                temperature=0.3,
-                keep_alive=keep_alive,
-                stop=OLLAMA_STOP_SEQUENCES,
-                log_prefix=f"    [Sensory Textures 2B chunk {i}/{len(chunks)}] ",
-            )
-            partials.append(strip_prompt_echo(raw, pass_label=f"Pass 2B chunk {i}"))
-        graph = link_graph.build_link_graph(chunks)
-        top_terms = [t for t, _ in link_graph.prioritise_terms(graph, top_n=20)]
-        merged = merge_chunk_outputs(
-            ollama_url, model, "sensory textures", slug, partials,
-            prioritised_terms=top_terms, keep_alive=keep_alive,
+        return run_chunked_pass(
+            ollama_url, model, manifest, context, build_sensory_prompt,
+            "Pass 2B sensory textures", "sensory textures", 0.3, chunk_size, keep_alive,
         )
-        return enforce_markdown_cleanliness(merged)
-
     prompt = build_sensory_prompt(manifest, context)
     raw_textures = query_ollama_stream(
         ollama_url,
@@ -757,9 +833,14 @@ def main() -> None:
         if candidate.exists():
             recap_path = candidate
     if recap_path is not None:
-        anchor = load_recap_anchor(recap_path)
+        try:
+            anchor = load_recap_anchor(recap_path)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: invalid GM recap anchor: {e}", file=sys.stderr)
+            sys.exit(1)
         manifest["recap_path"] = str(recap_path)
         manifest["recap_anchor"] = anchor["title"]
+        print(f"    GM Recap Anchor: {anchor['title']} ({recap_path.name})")
 
     context = read_context_files(repo_root, manifest)
     if not context["transcript"]:
@@ -813,10 +894,12 @@ def main() -> None:
 
     # Stage 3: Rolling glossary merge (incremental add-on glossary across sessions)
     if args.rolling_glossary:
+        canon_titles = load_catalog_titles(repo_root)
         new_terms = extract_glossary_terms(context.get("glossary", ""))
         if new_terms and not args.dry_run:
             rg_path = update_rolling_glossary(
-                repo_root, manifest.get("session_slug", "unknown_session"), new_terms
+                repo_root, manifest.get("session_slug", "unknown_session"), new_terms,
+                skip_titles=canon_titles,
             )
             print(f"    [Rolling Glossary] Merged {len(new_terms)} terms -> {rg_path}")
         elif new_terms:

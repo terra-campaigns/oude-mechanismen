@@ -404,7 +404,7 @@ def load_glossary_terms(glossary_path: Path) -> List[str]:
     terms: List[str] = []
     for line in glossary_path.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^##\s+(.+?)\s*$", line)
-        if m and not m.group(1).lower().startswith("rolling campaign glossary"):
+        if m:
             terms.append(m.group(1))
     return terms
 
@@ -427,7 +427,7 @@ def validate_names_and_ledger(
         for term in glossary_terms:
             if len(term) < 3:
                 continue
-            for m in re.finditer(re.escape(term), full_text, re.IGNORECASE):
+            for m in re.finditer(r"(?<!\w)" + re.escape(term) + r"(?!\w)", full_text, re.IGNORECASE):
                 actual = m.group(0)
                 if actual != term:
                     line_no = full_text[: m.start()].count("\n") + 1
@@ -463,11 +463,48 @@ def validate_names_and_ledger(
     return diagnostics
 
 
+def lint_chunk_text(content: str, file_label: str) -> FileReport:
+    """
+    Validate a single extraction chunk (as text) independently of the 2-4 prose
+    framework: non-empty body, at least one level-1 heading, and a blank line
+    after every heading. Used both by the --chunk CLI mode and by
+    scribe_session's per-chunk validation between extraction chunks.
+    """
+    masked_lines = mask_markdown_noise(content)
+    diagnostics: List[Diagnostic] = []
+    body_lines = [l for _, l in masked_lines if l.strip()]
+    if not body_lines:
+        diagnostics.append(
+            Diagnostic(file=file_label, line=1, rule="chunk-empty",
+                       message="Chunk is empty.", expected="non-empty chunk", actual="empty",
+                       severity="FAIL")
+        )
+    if not any(re.match(r"^#\s", l) for _, l in masked_lines):
+        diagnostics.append(
+            Diagnostic(file=file_label, line=1, rule="chunk-heading",
+                       message="Chunk lacks a level-1 '# ' title heading.",
+                       expected="one '# ' heading", actual="none", severity="FAIL")
+        )
+    for i, (line_no, line) in enumerate(masked_lines):
+        if re.match(r"^#{1,6}\s", line):
+            nxt = masked_lines[i + 1][1] if i + 1 < len(masked_lines) else ""
+            if nxt.strip() != "":
+                diagnostics.append(
+                    Diagnostic(file=file_label, line=line_no, rule="heading-blank-line",
+                               message="Missing empty blank line after heading.",
+                               expected="blank line", actual=nxt.strip()[:60], severity="WARN")
+                )
+
+    status = "FAIL" if any(d.severity == "FAIL" for d in diagnostics) else "PASS"
+    return FileReport(
+        file=file_label, bilingual=False, status=status,
+        sections=[SectionResult(label="chunk", headings_count=sum(1 for _, l in masked_lines if re.match(r"^#{1,6}\s", l)), status=status)],
+        diagnostics=diagnostics,
+    )
+
+
 def lint_chunk_file(file_path: Path) -> FileReport:
-    """
-    Validate a single extraction chunk independently of the 2-4 prose framework:
-    non-empty body, at least one level-1 heading, and a blank line after every heading.
-    """
+    """Validate a single extraction chunk file on disk (see lint_chunk_text)."""
     try:
         content = file_path.read_text(encoding="utf-8")
     except Exception as exc:
@@ -483,38 +520,7 @@ def lint_chunk_file(file_path: Path) -> FileReport:
                 )
             ],
         )
-
-    masked_lines = mask_markdown_noise(content)
-    diagnostics: List[Diagnostic] = []
-    body_lines = [l for _, l in masked_lines if l.strip()]
-    if not body_lines:
-        diagnostics.append(
-            Diagnostic(file=str(file_path), line=1, rule="chunk-empty",
-                       message="Chunk is empty.", expected="non-empty chunk", actual="empty",
-                       severity="FAIL")
-        )
-    if not any(re.match(r"^#\s", l) for _, l in masked_lines):
-        diagnostics.append(
-            Diagnostic(file=str(file_path), line=1, rule="chunk-heading",
-                       message="Chunk lacks a level-1 '# ' title heading.",
-                       expected="one '# ' heading", actual="none", severity="FAIL")
-        )
-    for i, (line_no, line) in enumerate(masked_lines):
-        if re.match(r"^#{1,6}\s", line):
-            nxt = masked_lines[i + 1][1] if i + 1 < len(masked_lines) else ""
-            if nxt.strip() != "":
-                diagnostics.append(
-                    Diagnostic(file=str(file_path), line=line_no, rule="heading-blank-line",
-                               message="Missing empty blank line after heading.",
-                               expected="blank line", actual=nxt.strip()[:60], severity="WARN")
-                )
-
-    status = "FAIL" if any(d.severity == "FAIL" for d in diagnostics) else "PASS"
-    return FileReport(
-        file=str(file_path), bilingual=False, status=status,
-        sections=[SectionResult(label="chunk", headings_count=sum(1 for _, l in masked_lines if re.match(r"^#{1,6}\s", l)), status=status)],
-        diagnostics=diagnostics,
-    )
+    return lint_chunk_text(content, str(file_path))
 
 def lint_chapter_file(
     file_path: Path,
@@ -650,7 +656,7 @@ def main() -> int:
             if (candidate / ".agents").is_dir() or (candidate / "_config.yml").is_file():
                 glossary_path = candidate / ".agents" / "context" / "rolling_glossary.md"
                 break
-    glossary_terms = load_glossary_terms(glossary_path) if glossary_path else []
+    glossary_terms = [] if args.chunk else (load_glossary_terms(glossary_path) if glossary_path else [])
 
     reports: List[FileReport] = []
     for f in files_to_lint:

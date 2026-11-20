@@ -575,11 +575,15 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
     catalog_path = root / ".agents" / "context" / "catalog.json"
     if catalog_path.is_file():
         try:
-            for entry in json.loads(catalog_path.read_text(encoding="utf-8")).get("entries", []):
+            data = json.loads(catalog_path.read_text(encoding="utf-8"))
+            entries = data.get("entries", []) if isinstance(data, dict) else []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
                 title = str(entry.get("title") or "").strip()
                 if title:
                     catalog_titles.setdefault(title.lower(), title)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
             pass
 
     current_term: Optional[str] = None

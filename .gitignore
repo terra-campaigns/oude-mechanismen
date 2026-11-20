@@ -6,6 +6,8 @@ __pycache__/
 venv/
 .agents/venv/
 .agents/tmp/
+.agents/context/catalog.json
+.agents/context/rolling_glossary.md
 _site/
 .jekyll-cache/
 .sass-cache/

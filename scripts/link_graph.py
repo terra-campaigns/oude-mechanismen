@@ -10,7 +10,7 @@ All output strictly adheres to British English.
 
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # Capitalised single or multi-word terms (proper-noun candidates).
 TERM_RE = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b")
@@ -61,19 +61,13 @@ def term_scores(graph: Dict[str, Dict[str, int]]) -> Dict[str, int]:
 
 def prioritise_terms(
     graph: Dict[str, Dict[str, int]],
-    candidates: Optional[List[str]] = None,
     top_n: int = 20,
 ) -> List[Tuple[str, int]]:
     """
-    Rank terms by link-graph score. When candidates are given, only those terms
-    are ranked (unknown candidates score 0 and sort last, alphabetically).
-    Returns a list of (term, score) sorted by descending score.
+    Rank all graph terms by weighted degree, descending (ties alphabetical).
+    Returns a list of (term, score) truncated to top_n.
     """
     scores = term_scores(graph)
-    if candidates is None:
-        pool = list(scores.keys())
-    else:
-        pool = list(dict.fromkeys(candidates))
-    ranked = [(t, scores.get(t, 0)) for t in pool]
+    ranked = [(t, s) for t, s in scores.items()]
     ranked.sort(key=lambda item: (-item[1], item[0]))
     return ranked[:top_n]
