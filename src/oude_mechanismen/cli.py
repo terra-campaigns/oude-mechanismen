@@ -416,7 +416,7 @@ def _gemfile_pins_engine_via_git(gemfile_content: str) -> bool:
     git:, github:, gitlab:, and bitbucket: source shorthands.
     """
     match = re.search(
-        r'\bgem\s+["\']oude-mechanismen["\'](?s:.*?)\b(?:tag|ref|branch)\s*:',
+        r'\bgem\s+["\']oude-mechanismen["\'](?s:(?!\bgem\b).)*?\b(?:tag|ref|branch)\s*:',
         gemfile_content,
     )
     if match is None:
@@ -448,158 +448,25 @@ def _dependabot_template() -> str:
     return template.read_text(encoding="utf-8")
 
 
-def _default_dependabot_yml() -> str:
-    """Return the scaffolded .github/dependabot.yml content from the template asset."""
-    return _dependabot_template()
+def _append_managed_updates_block(dependabot_content: str) -> Optional[str]:
+    """Append the managed `updates:` block from the dependabot template to *dependabot_content*.
 
-
-class _NoDuplicateKeysLoader(yaml.SafeLoader):
-    """SafeLoader that rejects duplicate mapping keys."""
-
-
-def _reject_duplicate_keys(loader: yaml.Loader, node: yaml.MappingNode, deep: bool = False) -> dict:
-    mapping: dict = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=True)
-        if key in mapping:
-            raise ValueError(f"duplicate mapping key: {key!r}")
-        mapping[key] = loader.construct_object(value_node, deep=deep)
-    return mapping
-
-
-_NoDuplicateKeysLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _reject_duplicate_keys
-)
-
-
-def _is_valid_dependabot_yml(content: str) -> bool:
-    """Return True if *content* parses as YAML without duplicate keys."""
-    try:
-        yaml.load(content, Loader=_NoDuplicateKeysLoader)
-    except (yaml.YAMLError, ValueError):
-        return False
-    return True
-
-
-def _patch_dependabot_engine_ignore(dependabot_content: str) -> Optional[str]:
-    """Return *dependabot_content* with an ignore rule for oude-mechanismen added.
-
-    Idempotent: the input is returned unchanged when the rule already exists. Unrelated
-    entries are preserved; only the oude-mechanismen ignore is added to the bundler
-    update (or a managed bundler update is appended). Returns None when the file uses a
-    flow-style ``updates:`` list that cannot be patched line-wise.
+    Only safe when the file has no top-level `updates:` key at all; returns None when one
+    exists (block or flow style), in which case the caller instructs a manual edit. The
+    result is validated with `yaml.safe_load` before being returned.
     """
-    if _dependabot_ignores_engine(dependabot_content):
-        return dependabot_content
-
-    lines = dependabot_content.splitlines()
-    trailing_newline = dependabot_content.endswith("\n")
-    comment = (
-        "# Engine bumps are managed explicitly via release tags + `oude doctor`.",
-        "# With a git-tag pin and no gem registry, Dependabot's git-ref updater",
-        "# (https://docs.github.com/en/code-security/dependabot/working-with-dependabot)",
-        "# can mis-sort tags and open inverted downgrade PRs, so the engine is ignored here.",
-    )
-
-    updates_idx = None
-    for idx, line in enumerate(lines):
-        if re.match(r"^updates:\s*(?:#.*)?$", line):
-            updates_idx = idx
-            break
-        if re.match(r"^updates:\s*\S", line):
-            return None  # single-line (flow-style) updates list; patch manually
-    if updates_idx is None:
-        template = _dependabot_template()
-        if not any(re.match(r"^version:\s*\S", line) for line in lines):
-            result = template  # scaffold the whole managed file
-        else:
-            updates_block = template[template.index("updates:"):]
-            base = dependabot_content.rstrip("\n")
-            result = f"{base}\n\n{updates_block}" if base else updates_block
-        return result if _is_valid_dependabot_yml(result) else None
-
-    # Block-style updates: the region spans until the next top-level key.
-    region_end = len(lines)
-    for idx in range(updates_idx + 1, len(lines)):
-        line = lines[idx]
-        if line.strip() and not line.lstrip().startswith("#") and not line.startswith((" ", "\t")):
-            region_end = idx
-            break
-
-    def entry_stop(start: int, dash_indent: int) -> int:
-        """Return the exclusive end of the list entry starting at *start*."""
-        for idx in range(start + 1, region_end):
-            if re.match(r"^\s*-\s", lines[idx]) and len(lines[idx]) - len(lines[idx].lstrip()) <= dash_indent:
-                return idx
-        return region_end
-
-    def trim_blanks(end: int) -> int:
-        """Walk *end* back over trailing blank lines inside the updates region."""
-        while end > updates_idx + 1 and not lines[end - 1].strip():
-            end -= 1
-        return end
-
-    bundler_idx = None
-    dash_indent = 2
-    for idx in range(updates_idx + 1, region_end):
-        if re.match(r'^\s*-\s*package-ecosystem:\s*["\']?bundler["\']?', lines[idx]):
-            bundler_idx = idx
-            dash_indent = len(lines[idx]) - len(lines[idx].lstrip())
-            break
-
-    if bundler_idx is None:
-        # No bundler update yet: append a managed one at the end of the updates list.
-        pad = " " * dash_indent
-        insert_at = trim_blanks(region_end)
-        lines[insert_at:insert_at] = [
-            f'{pad}- package-ecosystem: "bundler"',
-            f'{pad}  directory: "/"',
-            f"{pad}  schedule:",
-            f'{pad}    interval: "weekly"',
-            f"{pad}  ignore:",
-            *[f"{pad}    {c}" for c in comment],
-            f'{pad}    - dependency-name: "oude-mechanismen"',
-        ]
-        result = "\n".join(lines) + ("\n" if trailing_newline else "")
-        return result if _is_valid_dependabot_yml(result) else None
-
-    stop = entry_stop(bundler_idx, dash_indent)
-    key_indent = dash_indent + 2
-    ignore_idx = None
-    for idx in range(bundler_idx + 1, stop):
-        match = re.match(r"^(\s*)ignore:\s*(?:#.*)?$", lines[idx])
-        if match and len(match.group(1)) >= key_indent:
-            ignore_idx = idx
-            break
-
-    if ignore_idx is not None:
-        # Extend the existing ignore list with the engine entry.
-        ignore_indent = len(lines[ignore_idx]) - len(lines[ignore_idx].lstrip())
-        item_indent = ignore_indent + 2
-        insert_at = ignore_idx + 1
-        for idx in range(ignore_idx + 1, stop):
-            line = lines[idx]
-            if not line.strip():
-                continue
-            if line.lstrip().startswith("#") or len(line) - len(line.lstrip()) > ignore_indent:
-                insert_at = idx + 1
-            else:
-                break
-        lines[insert_at:insert_at] = [
-            *[f"{' ' * item_indent}{c}" for c in comment],
-            f"{' ' * item_indent}- dependency-name: \"oude-mechanismen\"",
-        ]
-    else:
-        # Add an ignore key to the existing bundler entry.
-        pad = " " * key_indent
-        insert_at = trim_blanks(stop)
-        lines[insert_at:insert_at] = [
-            f"{pad}ignore:",
-            *[f"{pad}  {c}" for c in comment],
-            f"{pad}  - dependency-name: \"oude-mechanismen\"",
-        ]
-    result = "\n".join(lines) + ("\n" if trailing_newline else "")
-    return result if _is_valid_dependabot_yml(result) else None
+    if any(re.match(r"^updates:\s*\S", line) or re.match(r"^updates:\s*(?:#.*)?$", line)
+           for line in dependabot_content.splitlines()):
+        return None
+    template = _dependabot_template()
+    block = template[template.index("updates:"):]
+    base = dependabot_content.rstrip("\n")
+    result = f"{base}\n\n{block}" if base else block
+    try:
+        yaml.safe_load(result)
+    except yaml.YAMLError:
+        return None
+    return result
 
 
 def _find_bundle_cmd() -> Optional[str]:
@@ -731,21 +598,23 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
             if pins_via_git and dependabot_path.is_file() and _dependabot_ignores_engine(dependabot_path.read_text(encoding="utf-8")):
                 print("  ✓ Dependabot ignores git-pinned oude-mechanismen (.github/dependabot.yml)")
             elif pins_via_git and fix:
-                if dependabot_path.is_file():
-                    patched = _patch_dependabot_engine_ignore(dependabot_path.read_text(encoding="utf-8"))
+                if not dependabot_path.is_file():
+                    dependabot_path.parent.mkdir(parents=True, exist_ok=True)
+                    dependabot_path.write_text(_dependabot_template(), encoding="utf-8")
+                    print("  ✓ Created .github/dependabot.yml with oude-mechanismen ignore rule")
+                else:
+                    patched = _append_managed_updates_block(dependabot_path.read_text(encoding="utf-8"))
                     if patched is None:
                         print(
-                            "  ⚠ .github/dependabot.yml uses a single-line (flow-style) updates list; "
-                            "add an ignore rule for oude-mechanismen manually"
+                            "  ⚠ .github/dependabot.yml already has an updates list; add this ignore rule "
+                            "to its bundler update manually:\n"
+                            "      ignore:\n"
+                            "        - dependency-name: \"oude-mechanismen\""
                         )
                         all_passed = False
                     else:
                         dependabot_path.write_text(patched, encoding="utf-8")
-                        print("  ✓ Added oude-mechanismen ignore rule to .github/dependabot.yml")
-                else:
-                    dependabot_path.parent.mkdir(parents=True, exist_ok=True)
-                    dependabot_path.write_text(_default_dependabot_yml(), encoding="utf-8")
-                    print("  ✓ Created .github/dependabot.yml with oude-mechanismen ignore rule")
+                        print("  ✓ Appended managed bundler update with oude-mechanismen ignore rule to .github/dependabot.yml")
             elif pins_via_git:
                 print(
                     "  ⚠ Gemfile pins oude-mechanismen via a git source (tag/ref/branch) but .github/dependabot.yml "

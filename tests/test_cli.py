@@ -1185,6 +1185,9 @@ class TestDependabotGuard(unittest.TestCase):
     def test_gemfile_matcher_registry_pinned_is_not_git(self):
         self.assertFalse(cli._gemfile_pins_engine_via_git('gem "oude-mechanismen", "~> 0.7"\n'))
         self.assertFalse(cli._gemfile_pins_engine_via_git('gem "jekyll", "~> 4.3"\n'))
+        # A registry-pinned engine must not match a later, unrelated git-sourced gem.
+        mixed = 'gem "oude-mechanismen", "~> 0.7"\ngem "jekyll-theme", git: "https://x.git", tag: "v1.0"\n'
+        self.assertFalse(cli._gemfile_pins_engine_via_git(mixed))
 
     def test_ignores_engine_scoped_to_bundler_update(self):
         bundler_ignore = (
@@ -1203,55 +1206,23 @@ class TestDependabotGuard(unittest.TestCase):
         self.assertFalse(cli._dependabot_ignores_engine("version: 2\nupdates: []\n"))
         self.assertFalse(cli._dependabot_ignores_engine("not: [valid, yaml: {"))
 
-    def test_patcher_extends_existing_bundler_ignore_idempotently(self):
-        base = (
-            "version: 2\nupdates:\n  - package-ecosystem: \"bundler\"\n    directory: \"/\"\n"
-            "    ignore:\n      - dependency-name: \"some-other-gem\"\n"
-        )
-        patched = cli._patch_dependabot_engine_ignore(base)
-        self.assertIsNotNone(patched)
-        self.assertTrue(cli._is_valid_dependabot_yml(patched))
-        self.assertIn('dependency-name: "oude-mechanismen"', patched)
-        self.assertIn('dependency-name: "some-other-gem"', patched)
-        self.assertNotIn('versions:', patched)
-        # Idempotent: patching again returns the input unchanged.
-        self.assertEqual(cli._patch_dependabot_engine_ignore(patched), patched)
-        self.assertTrue(cli._dependabot_ignores_engine(patched))
+    def test_append_managed_block_when_no_updates_key(self):
+        import yaml as _yaml
+        result = cli._append_managed_updates_block("version: 2\n")
+        self.assertIsNotNone(result)
+        _yaml.safe_load(result)  # must stay valid YAML
+        self.assertTrue(cli._dependabot_ignores_engine(result))
 
-    def test_patcher_adds_bundler_update_when_missing_and_preserves_others(self):
-        base = "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n"
-        patched = cli._patch_dependabot_engine_ignore(base)
-        self.assertIsNotNone(patched)
-        self.assertTrue(cli._is_valid_dependabot_yml(patched))
-        self.assertIn('package-ecosystem: "github-actions"', patched)
-        self.assertIn('package-ecosystem: "bundler"', patched)
-        self.assertTrue(cli._dependabot_ignores_engine(patched))
+    def test_append_managed_block_refuses_existing_updates_key(self):
+        # Block or flow style: caller must instruct a manual edit instead.
+        self.assertIsNone(cli._append_managed_updates_block("version: 2\nupdates: []\n"))
+        block = "version: 2\nupdates:\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n"
+        self.assertIsNone(cli._append_managed_updates_block(block))
 
-    def test_patcher_appends_managed_block_when_no_updates_key(self):
-        patched = cli._patch_dependabot_engine_ignore("version: 2\n")
-        self.assertIsNotNone(patched)
-        self.assertTrue(cli._is_valid_dependabot_yml(patched))
-        self.assertTrue(cli._dependabot_ignores_engine(patched))
-
-    def test_patcher_flow_style_updates_returns_none(self):
-        self.assertIsNone(cli._patch_dependabot_engine_ignore("version: 2\nupdates: []\n"))
-
-    def test_patcher_never_emits_duplicate_keys(self):
-        # Multi-line flow-style ignore list that line-patching cannot detect:
-        # result must still be valid YAML with a single ignore key.
-        tricky = (
-            "version: 2\nupdates:\n  - package-ecosystem: \"bundler\"\n    directory: \"/\"\n"
-            "    ignore: [\n      {dependency-name: some-gem}\n    ]\n"
-        )
-        patched = cli._patch_dependabot_engine_ignore(tricky)
-        if patched is not None:
-            self.assertTrue(cli._is_valid_dependabot_yml(patched))
-            self.assertEqual(patched.count("ignore:"), 1)
-
-    def test_default_dependabot_yml_matches_template(self):
+    def test_template_itself_carries_the_ignore_rule(self):
         template = cli.resolve_asset_dir("templates/github/dependabot.yml.template").read_text(encoding="utf-8")
-        self.assertEqual(cli._default_dependabot_yml(), template)
         self.assertTrue(cli._dependabot_ignores_engine(template))
+        self.assertNotIn("versions:", template)
 
 if __name__ == "__main__":
     unittest.main()
