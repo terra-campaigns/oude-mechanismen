@@ -111,6 +111,10 @@ class JekyllHeadlessTest < Minitest::Test
     alpha_entry = catalog["entries"].find { |e| e["path"] == "directory/alpha.md" }
     assert_includes alpha_entry["links_out"], "campaigns/ep_001.md"
     assert_includes alpha_entry["links_in"], "index.md"
+    ep1_entry = catalog["entries"].find { |e| e["path"] == "campaigns/ep_001.md" }
+    assert_includes ep1_entry["links_in"], "directory/alpha.md",
+                    "narrative-anchored episode links must be indexed in catalog.json (#18)"
+
     all_links = catalog["entries"].flat_map { |e| [e["links_out"], e["links_in"]].compact.flatten }
     refute all_links.any? { |l| l.include?("_gm-materials") },
            "catalog links leak a _gm-materials path: #{all_links.grep(/_gm-materials/).inspect}"

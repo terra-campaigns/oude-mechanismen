@@ -461,6 +461,40 @@ def validate_names_and_ledger(
     return diagnostics
 
 
+# Mechanical parenthetical episode references, e.g. "(See Episode 3)" or
+# "(see ep_012)". Ordinary prose such as "(see session notes)" must not match.
+MECHANICAL_PAREN_RE = re.compile(r"\((?:see|cf\.|refer to)[ \t]+(?:episode|ep\.?|session)[ \t_]+([0-9]+[a-z]?|_?[0-9a-z]+_[0-9]+)\)", re.IGNORECASE)
+
+
+def validate_episode_parentheticals(file_path: str, masked_lines: List[Tuple[int, str]]) -> List[Diagnostic]:
+    """
+    Narrative policy (#18), enforced at the episode-authoring gate: flag
+    mechanical parentheticals and suggest narrative-anchored links instead.
+    Fenced code blocks are skipped.
+    """
+    diagnostics: List[Diagnostic] = []
+    in_fence = False
+    for line_no, line in masked_lines:
+        if re.match(r"^\s*(```|~~~)", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for m in MECHANICAL_PAREN_RE.finditer(line):
+            diagnostics.append(
+                Diagnostic(
+                    file=file_path,
+                    line=line_no,
+                    rule="mechanical-parenthetical",
+                    message=f"Mechanical parenthetical '{m.group(0)}' breaks narrative flow; anchor the episode link in contextual prose instead.",
+                    expected="narrative-anchored markdown link",
+                    actual=m.group(0),
+                    severity="WARN",
+                )
+            )
+    return diagnostics
+
+
 def lint_chunk_text(content: str, file_label: str) -> FileReport:
     """
     Validate a single extraction chunk (as text) independently of the 2-4 prose
@@ -574,6 +608,7 @@ def lint_chapter_file(
     for sr in section_results:
         all_diagnostics.extend(sr.diagnostics)
     all_diagnostics.extend(validate_names_and_ledger(str(file_path), masked_lines, glossary_terms))
+    all_diagnostics.extend(validate_episode_parentheticals(str(file_path), masked_lines))
 
     overall_status = "FAIL" if any(d.severity == "FAIL" for d in all_diagnostics) else "PASS"
 
