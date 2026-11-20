@@ -395,7 +395,6 @@ def lint_section(
     )
 
 
-
 def load_glossary_terms(glossary_path: Path) -> List[str]:
     """Load canonical term names from a rolling/session glossary ('## Term' headings)."""
     if not glossary_path.exists():
@@ -520,6 +519,7 @@ def lint_chunk_file(file_path: Path) -> FileReport:
             ],
         )
     return lint_chunk_text(content, str(file_path))
+
 
 def lint_chapter_file(
     file_path: Path,

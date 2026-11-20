@@ -280,64 +280,36 @@ Crucial Directives:
 ROLLING_GLOSSARY_REL = Path(".agents/context/rolling_glossary.md")
 
 
-GLOSSARY_ENTITY_SECTION_RE = re.compile(r"^##\s+[123]\.")
-GLOSSARY_BACKGROUND_RE = re.compile(r"^\s+- \*\*Background:\*\*\s*(.+)$")
-GLOSSARY_SUBBULLET_RE = re.compile(r"^\s+- (.+)$")
-GLOSSARY_TERM_RE = re.compile(r"^- \*\*(.+?)\*\*")
-
-
-def extract_glossary_terms(glossary_text: str) -> List[Tuple[str, str]]:
+def session_glossary_terms(transcript: str, skip_titles: Optional[set] = None) -> List[Tuple[str, str]]:
     """
-    Extract (term, definition) pairs from a session glossary as produced by
-    transcribe_session.build_dynamic_glossary: only the entity sections
-    ('## 1.'-'## 3.') are parsed (recaps and raw decisions in sections 4-5 are
-    excluded), the definition prefers the '**Background:**' sub-bullet and
-    otherwise falls back to the first plain sub-bullet (never 'Role & Locus').
+    Derive session-new glossary terms from the transcript itself via link-graph
+    candidate extraction (the dynamic session glossary is catalog-derived, so it
+    can only restate canon). Terms already present as catalog titles (skip_titles,
+    lower-cased) are excluded. Definitions start empty and are filled by later
+    sessions or by hand.
     """
+    skip = skip_titles or set()
     terms: List[Tuple[str, str]] = []
-    in_entity_section = False
-    pending: Optional[Tuple[str, str]] = None
-    for line in glossary_text.splitlines():
-        if re.match(r"^##\s", line):
-            if pending:
-                terms.append(pending)
-                pending = None
-            in_entity_section = bool(GLOSSARY_ENTITY_SECTION_RE.match(line))
-            continue
-        if not in_entity_section:
-            continue
-        m = GLOSSARY_TERM_RE.match(line)
-        if m:
-            if pending:
-                terms.append(pending)
-            pending = (m.group(1).strip(), "")
-            continue
-        if pending is None:
-            continue
-        bm = GLOSSARY_BACKGROUND_RE.match(line)
-        if bm:
-            pending = (pending[0], bm.group(1).strip())
-            continue
-        dm = GLOSSARY_SUBBULLET_RE.match(line)
-        if dm and not pending[1] and not dm.group(1).startswith("**Role & Locus:**"):
-            pending = (pending[0], dm.group(1).strip())
-    if pending:
-        terms.append(pending)
+    for term in link_graph.extract_candidate_terms(transcript):
+        if term.lower() not in skip:
+            terms.append((term, ""))
     return terms
 
 
 def load_catalog_titles(repo_root: Path) -> set:
-    """Load lower-cased Tier 1 catalog titles, used to keep canon terms out of the rolling glossary."""
+    """Load lower-cased catalog.json titles of any tier, used to keep canon terms out of the rolling glossary."""
     catalog_path = repo_root / ".agents" / "context" / "catalog.json"
     titles: set = set()
     if catalog_path.exists():
         try:
             data = json.loads(catalog_path.read_text(encoding="utf-8"))
-            entries = data.get("entries", []) if isinstance(data, dict) else []
+            entries = data.get("entries") if isinstance(data, dict) else None
+            if not isinstance(entries, list):
+                entries = []
             for entry in entries:
                 if isinstance(entry, dict) and entry.get("title"):
                     titles.add(str(entry["title"]).strip().lower())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError, AttributeError, TypeError):  # ValueError covers JSONDecodeError + UnicodeDecodeError
             pass
     return titles
 
@@ -835,11 +807,10 @@ def main() -> None:
     if recap_path is not None:
         try:
             anchor = load_recap_anchor(recap_path)
-        except (FileNotFoundError, ValueError) as e:
+        except (OSError, ValueError) as e:
             print(f"Error: invalid GM recap anchor: {e}", file=sys.stderr)
             sys.exit(1)
         manifest["recap_path"] = str(recap_path)
-        manifest["recap_anchor"] = anchor["title"]
         print(f"    GM Recap Anchor: {anchor['title']} ({recap_path.name})")
 
     context = read_context_files(repo_root, manifest)
@@ -892,10 +863,12 @@ def main() -> None:
         print(f"        [Dry-Run] Skipped writing {sensory_p}")
 
 
-    # Stage 3: Rolling glossary merge (incremental add-on glossary across sessions)
+    # Stage 3: Rolling glossary merge (incremental add-on glossary across sessions).
+    # Terms are sourced from the session transcript itself (link-graph candidates),
+    # since the dynamic session glossary is catalog-derived and would only restate canon.
     if args.rolling_glossary:
         canon_titles = load_catalog_titles(repo_root)
-        new_terms = extract_glossary_terms(context.get("glossary", ""))
+        new_terms = session_glossary_terms(context.get("transcript", ""), skip_titles=canon_titles)
         if new_terms and not args.dry_run:
             rg_path = update_rolling_glossary(
                 repo_root, manifest.get("session_slug", "unknown_session"), new_terms,

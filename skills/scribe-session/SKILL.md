@@ -45,7 +45,7 @@ This local execution:
 5. **Pass 2B (Sensory Textures Extraction):** Local Ollama (`qwen2.5:14b`) extracts environmental grime, lighting, acoustics, smells, in-character quotes, and physical improvisations -> saves `<drive_dir>/_gm-materials/session-summaries/<slug>_sensory_textures.md` (Tier 2 Canon, de-personalised).
 6. **Optional GM Recap Anchor (`#26`):** pass `--recap <file>` or place `<slug>_recap.md` beside the transcript; the recap (schema: level-1 `# ` title + body) is validated and injected as prior context into both passes.
 7. **Optional Chunked Extraction (`#27`):** pass `--chunk-size <words>` to extract the transcript chunk-by-chunk (sentence-boundary chunks, each lint-validated before the next via `lint_chapter.lint_chunk_text`) and merge via a link-graph-prioritised pass (`scripts/link_graph.py`).
-8. **Rolling Glossary (`#28`):** unless `--no-rolling-glossary`, session glossary entity terms (sections 1–3 only, canon titles excluded) are merged into `.agents/context/rolling_glossary.md` (deduplicated, first definition wins, gitignored) and indexed into `catalog.json` on the next build as a tier-2 `glossary` entry.
+8. **Rolling Glossary (`#28`):** unless `--no-rolling-glossary`, session-new terms (link-graph candidates from the transcript, canon titles excluded) are merged into `.agents/context/rolling_glossary.md` (deduplicated, first definition wins, gitignored) and indexed into `catalog.json` on the next build as a tier-2 `glossary` entry.
 
 At completion, the privacy air-gap is cleanly cleared. Only de-personalised records land in `_gm-materials/session-summaries/`.
 

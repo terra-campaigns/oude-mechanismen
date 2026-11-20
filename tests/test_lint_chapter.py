@@ -412,8 +412,6 @@ S4.
             self.assertNotIn("index.md", mock_out.getvalue())
 
 
-
-
 class TestLintChapterCluster(unittest.TestCase):
     """Tests for chunk validation and canon name/ledger checks (#26 #27)."""
 

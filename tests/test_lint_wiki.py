@@ -524,8 +524,6 @@ class TestPrReviewRegressions(LintWikiTestCase):
         self.assertIn("parent", fm[0].message)
 
 
-
-
 class TestRollingGlossary(LintWikiTestCase):
     """Tests for rolling glossary validation against published canon (#28)."""
 

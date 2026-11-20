@@ -256,8 +256,6 @@ class TestScribeSession(unittest.TestCase):
         self.assertIn("| `broken-model:latest` | ERROR |", content)
 
 
-
-
 class TestScribeSessionCluster(unittest.TestCase):
     """Tests for GM recap anchors, chunked extraction, and the rolling glossary (#26 #27 #28)."""
 
@@ -325,30 +323,16 @@ class TestScribeSessionCluster(unittest.TestCase):
         self.assertIn("New Term", entries)
         self.assertEqual(path, self.repo_root / ".agents" / "context" / "rolling_glossary.md")
 
-    def test_extract_glossary_terms_parses_real_glossary_format(self):
-        glossary = (
-            "# Campaign Context & Entity Glossary — 2026-11-20_001\n\n"
-            "## 1. Player Characters & Key Personnel\n\n"
-            "- **Kael Vorn** (`directory/kael.md`)\n"
-            "  - **Role & Locus:** Engineer | Fomalhaut\n"
-            "  - **Background:** Protagonist engineer.\n"
-            "- **Monarch** (`directory/monarch.md`)\n"
-            "  - **Role & Locus:** Ruler | Cloudbank\n\n"
-            "## 2. Directory Locations & Hubs\n\n"
-            "- **Fomalhaut** (`directory/fomalhaut.md`)\n"
-            "  - Orbital station hub.\n\n"
-            "## 4. Recent Session Recaps (Chronological Continuity)\n\n"
-            "- **Episode 12: Arrival** (2026-11-13 @ Fomalhaut)\n"
-            "  - Should never become a term.\n\n"
-            "## 5. Active Tier 2 Table Rulings & Decisions\n\n"
-            "- **Ruling:** Synthetic blood counts as evidence.\n"
-        )
-        terms = dict(scribe_session.extract_glossary_terms(glossary))
-        self.assertEqual(terms["Kael Vorn"], "Protagonist engineer.")  # Background preferred over Role & Locus
-        self.assertEqual(terms["Monarch"], "")  # Role & Locus never used as definition
-        self.assertEqual(terms["Fomalhaut"], "Orbital station hub.")
-        self.assertNotIn("Episode 12: Arrival", terms)  # section 4 excluded
-        self.assertNotIn("Ruling", terms)  # section 5 excluded
+    def test_session_glossary_terms_sources_from_transcript_and_skips_canon(self):
+        transcript = "Kael Vorn met the Monarch at Fomalhaut Station. The Cat watched."
+        terms = dict(scribe_session.session_glossary_terms(transcript, skip_titles={"kael vorn"}))
+        self.assertNotIn("Kael Vorn", terms)  # canon title skipped
+        self.assertIn("Monarch", terms)  # session-new term kept with empty definition
+        self.assertEqual(terms["Monarch"], "")
+        self.assertIn("Fomalhaut Station", terms)
+        # (stopword-led multi-word candidates are acceptable; dedupe is what matters)
+        terms2 = scribe_session.session_glossary_terms("Monarch spoke. Monarch left.")
+        self.assertEqual(terms2.count(("Monarch", "")), 1)  # deduplicated
 
     def test_rolling_glossary_skips_canon_titles_and_fills_empty_definitions(self):
         scribe_session.update_rolling_glossary(self.repo_root, "2026-11-20_001", [("Kael Vorn", ""), ("New Term", "Fresh")])

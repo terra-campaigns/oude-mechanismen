@@ -19,7 +19,7 @@ TERM_RE = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b")
 STOPWORDS = {
     "The", "A", "An", "This", "That", "These", "Those", "He", "She", "It",
     "They", "We", "I", "You", "In", "On", "At", "As", "But", "And", "Or",
-    "Not", "No", "Yes", "Then", "When", "While", "After", "Before", "They",
+    "Not", "No", "Yes", "Then", "When", "While", "After", "Before",
     "There", "Here", "What", "Which", "Who", "How", "If", "So", "His", "Her",
     "Their", "Our", "Your", "My", "Its", "Session", "Chapter",
 }

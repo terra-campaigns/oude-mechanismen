@@ -557,7 +557,6 @@ def check_duplicate_titles(
 # ---------------------------------------------------------------------------
 
 
-
 def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
     """
     Validate .agents/context/rolling_glossary.md against published canon:
@@ -582,7 +581,7 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
                 title = str(entry.get("title") or "").strip()
                 if title:
                     catalog_titles.setdefault(title.lower(), title)
-        except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+        except (OSError, ValueError, AttributeError, TypeError):  # ValueError covers JSONDecodeError + UnicodeDecodeError
             pass
 
     current_term: Optional[str] = None
@@ -614,8 +613,9 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
             has_definition = False
             continue
         if current_term and re.match(r"^- Definition:\s*\S", line):
-            has_definition = True
+            has_definition = line.split(":", 1)[1].strip() != "Pending canonical definition."
     flush()
+
 
 def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     """Run the full or targeted lint suite and return a WikiReport."""
