@@ -287,7 +287,7 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertEqual(by_slug["abs_inside"]["source_pdf"], "books/Inside.pdf")
         self.assertEqual(by_slug["abs_outside"]["source_pdf"], "Outside.pdf")
 
-    def test_compile_references_warns_on_flat_stub_colliding_with_nested_wiki(self):
+    def test_compile_references_excludes_flat_stub_colliding_with_nested_wiki(self):
         digests_dir = self.repo_root / "_gm-materials" / "digests"
         nested = digests_dir / "hostile_synthetics"
         nested.mkdir(parents=True)

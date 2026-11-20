@@ -189,16 +189,16 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
     # A legacy flat stub (<slug>.md) left alongside a nested wiki (<slug>/) at any
     # depth collides: the nested wiki supersedes the stub, so warn and exclude the
     # stub from indexing instead of silently co-indexing both into references.json.
-    colliding = {
-        p for p in md_files
-        if p.with_suffix("").is_dir() and any(p.with_suffix("").rglob("*.md"))
-    }
-    for flat_md in sorted(colliding, key=lambda p: p.as_posix()):
-        nested_dir = flat_md.with_suffix("")
+    colliding = []
+    for p in md_files:  # md_files is already sorted; keeps warning order deterministic
+        stem_dir = p.with_suffix("")
+        if stem_dir.is_dir() and any(stem_dir.rglob("*.md")):
+            colliding.append(p)
+    for flat_md in colliding:
         print(
-            f"[WARN] Flat digest stub {flat_md} collides with nested digest directory {nested_dir}/ "
-            f"containing Markdown notes; the nested wiki supersedes the stub, so the stub is "
-            f"excluded from references.json. Remove the legacy flat stub."
+            f"[WARN] Flat digest stub {flat_md} collides with nested digest directory "
+            f"{flat_md.with_suffix('')}/ containing Markdown notes; the nested wiki supersedes "
+            f"the stub, so the stub is excluded from references.json. Remove the legacy flat stub."
         )
     if colliding:
         md_files = [p for p in md_files if p not in colliding]
