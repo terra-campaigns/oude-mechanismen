@@ -73,6 +73,37 @@ class TestOudeCLI(unittest.TestCase):
             self.assertEqual(cm.exception.code, 0)
             self.assertIn(oude_mechanismen.__version__, fake_out.getvalue())
 
+
+    def test_enable_auto_branch_deletion_invokes_gh_when_remote_present(self):
+        """gh repo edit --delete-branch-on-merge runs when gh exists and origin is set."""
+        subprocess.run(["git", "init"], cwd=self.target_dir, capture_output=True, check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "remote", "add", "origin", "https://example.com/x.git"], check=True)
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            out = "https://example.com/x.git" if len(cmd) > 3 and cmd[3] == "config" else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+        with patch.object(cli.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(cli.subprocess, "run", side_effect=fake_run):
+            self.assertTrue(cli._enable_auto_branch_deletion(self.target_dir))
+        self.assertIn(["gh", "repo", "edit", "--delete-branch-on-merge"], calls)
+
+    def test_enable_auto_branch_deletion_skips_without_remote(self):
+        """No gh call when the repo has no origin remote."""
+        subprocess.run(["git", "init"], cwd=self.target_dir, capture_output=True, check=True)
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 1 if len(cmd) > 3 and cmd[3] == "config" else 0, stdout="", stderr="")
+
+        with patch.object(cli.shutil, "which", return_value="/usr/bin/gh"), \
+             patch.object(cli.subprocess, "run", side_effect=fake_run):
+            self.assertFalse(cli._enable_auto_branch_deletion(self.target_dir))
+        self.assertNotIn(["gh", "repo", "edit", "--delete-branch-on-merge"], calls)
+
     def test_init_repository_scaffolding(self):
         """Verify that oude init bootstraps topology, templates, and badges."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \

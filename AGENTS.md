@@ -124,6 +124,8 @@ The engine operates on a strict **Three-Tier Canon Hierarchy**:
 - **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
+- **Route graph (optional)**: `.agents/context/route_graph.json` (scaffolded from `templates/route_graph.json.template`) encodes station topology — stations, aliases, connections, `station_lore` — and is consumed only by `scripts/audit_coverage.py` for the *Geographic Proximity & Destination Gaps* section of `oude audit`. It is not canon and not part of progressive retrieval; when absent, the audit simply skips that section (audit findings on issue #29).
+
 ### Low-Token Progressive Retrieval Protocol
 
 When searching for lore, locations, NPCs, or mechanics:
@@ -136,7 +138,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ## 5. Legacy Synchronisation & Version Stamping
 
-- **Deprecated Template Sync (`sync.sh`)**: `sync.sh` is formally deprecated and its `MANAGED_FILES` list is empty. Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and deprecated `all-content.md` downstream.
+- **Retired Template Sync (`sync.sh`)**: the legacy `sync.sh` and `bin/init_vault.sh` scripts have been removed from this repo (see `docs/reviews/002_occam_razor_evaluation_052.md`). Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and deprecated `all-content.md` downstream.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
 ---

@@ -690,6 +690,9 @@ def format_markdown_report(report: Dict[str, Any]) -> str:
     lines.append(f"- **Indexed Tier 3 Sources:** {len(drive.get('indexed_sources', []))}")
     lines.append(f"- **Unindexed Source Files:** {unindexed_count}")
     lines.append(f"- **Missing Digests:** {missing_digests_count}")
+    unillustrated_entries = report.get("unillustrated_entries", [])
+    fallback_n = sum(1 for u in unillustrated_entries if u.get("status") == "fallback_badge")
+    lines.append(f"- **Unillustrated Entries:** {len(unillustrated_entries)} ({fallback_n} with fallback badge, {len(unillustrated_entries) - fallback_n} missing image)")
     lines.append(f"- **Latest Session:** `{loc.get('latest_episode', 'None')}`")
     lines.append(f"- **Current Location:** {loc.get('raw_region', 'Unknown')}")
     if has_graph:

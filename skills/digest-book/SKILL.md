@@ -59,7 +59,7 @@ Write notes under `<out-dir>/staged/<source>/` (never directly into the live dig
 
 - Body structure: `# <Title>` followed by a blank line, a 1–2 sentence summary, then `## Overview` (with `[p. X]` / `[pp. X–Y]` page citations), `## Key Details / Rules / Hazards` (statblocks and rollable tables as native Markdown tables), and `## Connections / See Also`.
 - Links are standard relative Markdown links with a mandatory annotation: `[Harbour Guild](../factions/harbour_guild.md) — controls docking permits.` Wikilinks are not used: relative paths resolve in any renderer and give agents zero-hop paths.
-- Hard invariants: a blank line immediately after every heading (`#`–`######`); only relative links that resolve inside the repository.
+- Hard invariants: a blank line immediately after every heading (`#`–`######`); only relative links that resolve inside the repository; `related:` entries resolve like body links; no `[[wikilinks]]`; `source_pdf` is a portable relative path or basename, never absolute; `pages:` and `[p. N]` / `[pp. N–M]` citations stay within the source book's page count when validated with `--manifest`.
 - Soft sizing guidance: aim for roughly 30–120 lines per note; if a category folder would exceed 20 substantial notes, subdivide once (`<category>/<subgroup>/<note>.md`, subgroup of at least 4 notes, all subgroups listed in `_index.md`).
 
 ### 3. Validate, then replace atomically
@@ -68,7 +68,7 @@ Write notes under `<out-dir>/staged/<source>/` (never directly into the live dig
 oude digest --validate <out-dir>/staged/<source> --manifest <out-dir>/manifest.json
 ```
 
-- Exit code must be `0`. Failures are reported as `file:line: <reason>` and must be fixed in staging, not after publishing. Non-fatal `[INFO]` stats (line counts, auto-fallback counts) never block.
+- Exit code must be `0`. Failures are reported as `file:line: <reason>` and must be fixed in staging, not after publishing. Non-fatal `[INFO]` stats (line counts, auto-fallback counts) and `[WARN]` orphan-note notices (notes unreachable from `_index.md`) never block.
 - On pass, replace `_gm-materials/digests/<source>/` atomically: copy the validated `<out-dir>/staged/<source>/` tree to a temporary sibling directory **on the same filesystem outside `digests/`** (e.g. `_gm-materials/.staged-<source>.tmp` — keeping unfinished `.md` files out of `digests/` so `compile_references()` and sync do not index them prematurely, while staying on the same filesystem so an atomic swap works), then swap it into place.
 - **Legacy flat-digest cleanup:** If upgrading an older vault from a legacy flat summary (`_gm-materials/digests/<source>.md`), remove the stale `<source>.md` file during the swap. `compile_references()` warns about and excludes such a stub (the nested `<source>/` wiki supersedes it in `.agents/context/references.json`), but `oude digest --validate` still checks every `*.md` under `digests/`, so the stale file must go.
 

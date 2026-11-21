@@ -974,16 +974,23 @@ def extract_pdf(
 VALID_ENTITY_TYPES = {"index", "faction", "location", "person", "creature", "artefact", "mechanic", "table", "other"}
 LINK_EXCLUDED_DIRS = {".git", "_site", "vendor"}
 DIGEST_LINK_RE = re.compile(r'(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
+WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
+PAGE_CITE_RE = re.compile(r"\[p{1,2}\.\s*([^\]]+)\]", re.IGNORECASE)
+PAGE_RANGE_RE = re.compile(r"^(\d+)\s*[-–—]\s*(\d+)$")
 
 
 def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] = None) -> int:
     """Validate digest notes against hard invariants; return 0 on pass, 1 on any failure.
 
     Hard invariants: YAML-mapping frontmatter with non-empty 'source' and 'title', 'tier' == 3,
-    'entity_type' in VALID_ENTITY_TYPES; a blank line immediately after every Markdown heading
-    (outside fenced code blocks); every relative Markdown link resolves to an existing file inside
-    the repository root (or *digest_dir* when validating external staging) and outside
-    LINK_EXCLUDED_DIRS. Soft sizing stays non-fatal [INFO] output.
+    'entity_type' in VALID_ENTITY_TYPES, a portable (non-absolute) 'source_pdf' when present, and
+    every 'related:' entry resolving like a body link; no [[wikilinks]] outside fenced code blocks;
+    a blank line immediately after every Markdown heading (outside fenced code blocks); every
+    relative Markdown link resolves to an existing file inside the repository root (or *digest_dir*
+    when validating external staging) and outside LINK_EXCLUDED_DIRS. When *manifest* records
+    'total_pages', frontmatter 'pages:' and inline [p. N]/[pp. A-B] citations must stay within
+    1..total_pages. Nested book wikis with an _index.md get a non-fatal [WARN] for orphan notes.
+    Soft sizing stays non-fatal [INFO] output.
     """
     repo_root = repo_root.resolve()
     digest_dir = digest_dir.resolve()
@@ -994,8 +1001,64 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
     if not md_files:
         print(f"[FAIL] {digest_dir}: no markdown digest files found")
         return 1
+    manifest_data: Dict[str, Any] = {}
+    total_pages: Optional[int] = None
+    if manifest and Path(manifest).exists():
+        manifest_data = json.loads(Path(manifest).read_text(encoding="utf-8"))
+        tp = manifest_data.get("total_pages")
+        if isinstance(tp, int):
+            total_pages = tp
+
+    def check_link(md_file: Path, raw_target: str) -> Tuple[Optional[str], Optional[Path]]:
+        """Return (error, resolved_path) for a relative markdown target; skips non-relative targets."""
+        if (
+            not raw_target
+            or raw_target.startswith(("http://", "https://", "mailto:", "#"))
+            or "{{" in raw_target
+            or "}}" in raw_target
+        ):
+            return None, None
+        target = unquote(raw_target.split("#", 1)[0].split("?", 1)[0])
+        if not target:
+            return None, None
+        link_resolved = (md_file.parent / target).resolve()
+        # Links may resolve inside the repository root or inside the digest directory
+        # itself (e.g. <out-dir>/staged/<source>/ validated outside the repo).
+        inside_repo = repo_root in link_resolved.parents or link_resolved == repo_root
+        inside_digest = digest_dir in link_resolved.parents or link_resolved == digest_dir
+        if not (inside_repo or inside_digest):
+            return f"link '{raw_target}' escapes the digest directory and repository root", None
+        base = repo_root if inside_repo else digest_dir
+        if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(base).parts):
+            return f"link '{raw_target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})", None
+        if not link_resolved.exists():
+            return f"broken relative link '{raw_target}'", None
+        return None, link_resolved
+
+    def out_of_range_pages(spec: str, total: int) -> List[int]:
+        """Return page numbers in a 'pages' spec like '14-18, 23' outside 1..total without expanding ranges."""
+        bad: List[int] = []
+        for part in spec.split(","):
+            part = part.strip()
+            m = PAGE_RANGE_RE.match(part)
+            if m:
+                lo, hi = int(m.group(1)), int(m.group(2))
+                if lo > hi or lo < 1:
+                    bad.append(lo)
+                elif hi > total:
+                    bad.append(hi)
+            elif part.isdigit():
+                n = int(part)
+                if n < 1 or n > total:
+                    bad.append(n)
+            else:
+                bad.append(-1)  # unparseable token counts as out of range
+        return bad
+
     errors: List[str] = []
     total_lines = 0
+    link_targets: Dict[Path, List[Path]] = {md.resolve(): [] for md in md_files}
+    page_refs: List[Tuple[str, int, str]] = []  # (rel, line_no, spec)
     for md_file in md_files:
         resolved_md = md_file.resolve()
         rel = resolved_md.relative_to(repo_root).as_posix() if repo_root in resolved_md.parents else str(md_file)
@@ -1014,6 +1077,25 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 errors.append(f"{rel}:1: frontmatter 'entity_type' must be one of {sorted(VALID_ENTITY_TYPES)}")
             if not (isinstance(loaded.get("title"), str) and loaded["title"].strip()):
                 errors.append(f"{rel}:1: frontmatter 'title' must be a non-empty string")
+            source_pdf = loaded.get("source_pdf")
+            if source_pdf is not None and isinstance(source_pdf, str) and source_pdf.startswith("/"):
+                errors.append(f"{rel}:1: frontmatter 'source_pdf' must be a portable relative path or basename, not an absolute path")
+            related = loaded.get("related")
+            if related is not None:
+                if not isinstance(related, list) or not all(isinstance(r, str) for r in related):
+                    errors.append(f"{rel}:1: frontmatter 'related' must be a list of relative Markdown paths")
+                else:
+                    for raw in related:
+                        err, resolved = check_link(md_file, raw)
+                        if err:
+                            errors.append(f"{rel}:1: related {err}")
+                        elif resolved is not None:
+                            link_targets[resolved_md].append(resolved)
+            pages_spec = loaded.get("pages")
+            if pages_spec is not None and not (isinstance(pages_spec, str) and pages_spec.strip()):
+                errors.append(f"{rel}:1: frontmatter 'pages' must be a non-empty string like '14-18'")
+            elif isinstance(pages_spec, str) and pages_spec.strip():
+                page_refs.append((rel, 1, pages_spec))
 
         fm_end_line = fm_prefix.count("\n")
         in_fence = False
@@ -1028,57 +1110,58 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 continue
             if re.match(r"^#{1,6}\s+\S", line) and line_no < len(lines) and lines[line_no].strip() != "":
                 errors.append(f"{rel}:{line_no}: heading not followed by a blank line")
+            if WIKILINK_RE.search(line):
+                errors.append(f"{rel}:{line_no}: wikilink not allowed; use a relative Markdown link")
             for m in DIGEST_LINK_RE.finditer(line):
-                raw_target = m.group(3)
-                if (
-                    not raw_target
-                    or raw_target.startswith(("http://", "https://", "mailto:", "#"))
-                    or "{{" in raw_target
-                    or "}}" in raw_target
-                ):
-                    continue
-                target = unquote(raw_target.split("#", 1)[0].split("?", 1)[0])
-                if not target:
-                    continue
-                link_resolved = (md_file.parent / target).resolve()
-                # Links may resolve inside the repository root or inside the digest directory
-                # itself (e.g. <out-dir>/staged/<source>/ validated outside the repo).
-                inside_repo = repo_root in link_resolved.parents or link_resolved == repo_root
-                inside_digest = digest_dir in link_resolved.parents or link_resolved == digest_dir
-                if not (inside_repo or inside_digest):
-                    errors.append(f"{rel}:{line_no}: link '{raw_target}' escapes the digest directory and repository root")
-                    continue
-                base = repo_root if inside_repo else digest_dir
-                if any(part in LINK_EXCLUDED_DIRS for part in link_resolved.relative_to(base).parts):
-                    errors.append(f"{rel}:{line_no}: link '{raw_target}' targets an excluded directory ({sorted(LINK_EXCLUDED_DIRS)})")
-                    continue
-                if not link_resolved.exists():
-                    errors.append(f"{rel}:{line_no}: broken relative link '{raw_target}'")
+                err, resolved = check_link(md_file, m.group(3))
+                if err:
+                    errors.append(f"{rel}:{line_no}: {err}")
+                elif resolved is not None:
+                    link_targets[resolved_md].append(resolved)
+            for m in PAGE_CITE_RE.finditer(line):
+                page_refs.append((rel, line_no, m.group(1)))
 
+    if total_pages is not None:
+        for rel, line_no, spec in page_refs:
+            out_of_range = out_of_range_pages(spec, total_pages)
+            if out_of_range:
+                errors.append(f"{rel}:{line_no}: page citation '{spec}' out of range 1..{total_pages} (book has {total_pages} page(s))")
+    index_file = digest_dir / "_index.md"
+    if index_file.is_file():
+        reached = {index_file.resolve()}
+        queue = [index_file.resolve()]
+        while queue:
+            current = queue.pop()
+            for target in link_targets.get(current, []):
+                if target in link_targets and target not in reached:
+                    reached.add(target)
+                    queue.append(target)
+        for md_file in md_files:
+            if md_file.resolve() not in reached:
+                resolved_md = md_file.resolve()
+                rel = resolved_md.relative_to(repo_root).as_posix() if repo_root in resolved_md.parents else str(md_file)
+                print(f"[WARN] {rel}: orphan note not linked from any digest note")
     print(f"[INFO] {len(md_files)} digest note(s), {total_lines} total line(s) in {digest_dir}")
-    if manifest:
-        mpath = Path(manifest)
-        if mpath.exists():
-            data = json.loads(mpath.read_text(encoding="utf-8"))
-            reasons: Dict[str, int] = {}
-            for s in data.get("slices", []):
-                reason = s.get("auto_fallback_reason")
-                if reason:
-                    key = reason.split(":", 1)[0].strip()
-                    reasons[key] = reasons.get(key, 0) + 1
-            if reasons:
-                print(f"[INFO] auto-fallback slice counts: {json.dumps(reasons, ensure_ascii=False)}")
-            large_img_pages = sorted({
-                pg
-                for s in data.get("slices", [])
-                if s.get("format") == "text" and s.get("has_large_images")
-                for pg in (s.get("large_image_pages") or [])
-            })
-            if large_img_pages:
-                text_with_images = sum(
-                    1 for s in data.get("slices", []) if s.get("format") == "text" and s.get("has_large_images")
-                )
-                print(f"[INFO] text slices with large images: {text_with_images} slice(s) (pages: {large_img_pages})")
+    if manifest_data:
+        reasons: Dict[str, int] = {}
+        for s in manifest_data.get("slices", []):
+            reason = s.get("auto_fallback_reason")
+            if reason:
+                key = reason.split(":", 1)[0].strip()
+                reasons[key] = reasons.get(key, 0) + 1
+        if reasons:
+            print(f"[INFO] auto-fallback slice counts: {json.dumps(reasons, ensure_ascii=False)}")
+        large_img_pages = sorted({
+            pg
+            for s in manifest_data.get("slices", [])
+            if s.get("format") == "text" and s.get("has_large_images")
+            for pg in (s.get("large_image_pages") or [])
+        })
+        if large_img_pages:
+            text_with_images = sum(
+                1 for s in manifest_data.get("slices", []) if s.get("format") == "text" and s.get("has_large_images")
+            )
+            print(f"[INFO] text slices with large images: {text_with_images} slice(s) (pages: {large_img_pages})")
     for err in errors:
         print(f"[FAIL] {err}")
     if errors:

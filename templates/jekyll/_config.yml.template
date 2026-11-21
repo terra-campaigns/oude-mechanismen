@@ -31,12 +31,11 @@ exclude:
   - ".agents"
   - ".obsidian"
   - "_gm-materials"
-  - "bin"
   - "Gemfile"
   - "Gemfile.lock"
   - "README.md"
   - "LICENSE"
-  - "sync.sh"
+  - "TASKS.md"
   - "vendor"
 
 # Sass configuration

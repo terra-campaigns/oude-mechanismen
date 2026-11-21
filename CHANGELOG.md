@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+## [0.9.0] - 2026-11-21
+
+### Added
+
+- **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
+- **Scribe-session cluster (`#26`, `#27`, `#28`)**: `scripts/scribe_session.py` now supports GM recap anchors (`--recap` or auto-discovered `<slug>_recap.md`, validated schema with level-1 title, injected as a `### GM Recap Anchor:` prompt section that is stripped from outputs like other Tier 0 boundaries), chunked extraction (`--chunk-size` words, sentence-boundary chunks each lint-validated before the next, merged via a link-graph-prioritised pass from the new pure `scripts/link_graph.py` module), and a rolling session add-on glossary (`--rolling-glossary`/`--no-rolling-glossary`; session-new terms derived from the transcript via link-graph candidates, canon titles excluded, merged into `.agents/context/rolling_glossary.md` with dedupe and first-definition-wins conflict resolution). The rolling glossary is indexed into `.agents/context/catalog.json` by `jekyll/_plugins/data_extractor.rb` (type `glossary`, tier 2) for progressive retrieval; both files are gitignored local caches.
+- **Linter support (`#26`, `#27`, `#28`)**: `scripts/lint_chapter.py` gains `--chunk` (independent chunk validation via shared `lint_chunk_text`, also called per chunk inside `scribe_session.py`'s chunked passes) and canon name/ledger validation against the rolling glossary (`canon-name-casing` with word boundaries, `ledger-entry-numeric` warnings); `scripts/lint_wiki.py` gains a type-safe `rolling-glossary` check validating definitions and flagging casing conflicts with published catalog titles. `.agents/context/rolling_glossary.md` and `catalog.json` are gitignored local caches.
+- **Published-canon delivery policy (package #91: `#20`, `#18`)**: prep-session is documented as paper-notebook-centric delivery with a strict no-read-aloud-boxes rule (#20; no change to scribe input types); episode cross-references must be narrative-anchored markdown links, with `lint_chapter.py` (Gate 1, the episode-authoring lint) emitting a `mechanical-parenthetical` WARN for `(See Episode N)` forms (#18); narrative links are indexed in `catalog.json` via `links_out`/`links_in` as before.
+- **Route graph audit (`#29`)**: findings on the issue — `.agents/context/route_graph.json` is not redundant (sole consumer: proximity-gap analysis in `oude audit`, live in the `charged` vault); purpose noted in `AGENTS.md`, proximity logic covered by a regression test.
+
+### Removed
+
+- **Template cleanup (`#92`)**: dropped the redundant `gem "webrick"` pin from `templates/jekyll/Gemfile.template` (transitive via `jekyll ~> 4.4.1`), added `"TASKS.md"` to `exclude:` and pruned retired `"sync.sh"` / unscaffolded `"bin"` from `templates/jekyll/_config.yml.template`, and refreshed the stale `_data/` description and legacy runner names in `templates/AGENTS.md.template`.
+- **Legacy root scripts removed (`#52` Occam's razor pass)**: deleted deprecated `sync.sh` and `bin/init_vault.sh` (superseded by ADR 001/002 gem + `oude` CLI), their shell-syntax CI step, and `tests/test_init_vault.py` (init behaviour covered by `tests/test_cli.py`, with auto-branch-deletion coverage re-added there); dropped stale per-file version stamps from `jekyll/_includes/`.
+
+### Changed
+
+- **`oude digest --validate` enforces the full `digest-book` SKILL.md invariant set (`#73`)**: FAIL on broken/escaping `related:` frontmatter paths, `[[wikilinks]]` outside code fences, absolute `source_pdf` paths, non-string `pages:`, and `pages:` / `[p. N]` / `[pp. A–B]` citations outside `1..total_pages` when `--manifest` is supplied; WARN on orphan notes unreachable from `_index.md`.
+- **`oude audit` summary now counts unillustrated entries (`#21` pilot)**: one `Unillustrated Entries` line with fallback-badge vs missing-image split, so the per-note table no longer reads as the whole signal.
+
 ## [0.8.0] - 2026-11-20
 
 ### Added
@@ -344,7 +366,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
 [0.7.3]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...v0.7.3
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.3...v0.8.0
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
