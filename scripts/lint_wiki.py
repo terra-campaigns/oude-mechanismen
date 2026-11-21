@@ -47,13 +47,18 @@ LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
+LIQUID_COMMENT_RE = re.compile(
+    r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}",
+    re.DOTALL,
+)
+PENDING_GLOSSARY_DEFINITION = "Pending canonical definition."
 
 
 @dataclass
 class Finding:
     """A single lint diagnostic."""
 
-    check: str  # dead-link, orphan, stub, unused-image, deprecated-hook, catalogue, front-matter, duplicate-title
+    check: str  # dead-link, orphan, stub, unused-image, deprecated-hook, catalogue, front-matter, duplicate-title, rolling-glossary
     severity: str  # FAIL, WARN
     file: str
     line: int = 0
@@ -188,10 +193,11 @@ def resolve_target(root: Path, from_file: Path, target: str) -> Optional[Path]:
 
 
 def prose_line_count(body: str) -> int:
-    """Count body lines carrying prose (excludes fences, liquid, and attributes)."""
+    """Count body lines carrying prose (excludes fences, Liquid comments/tags, and attributes)."""
+    cleaned = LIQUID_COMMENT_RE.sub("", body)
     count = 0
     in_fence = False
-    for line in body.splitlines():
+    for line in cleaned.splitlines():
         stripped = line.strip()
         if re.match(r"^(```|~~~)", stripped):
             in_fence = not in_fence
@@ -586,22 +592,42 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
 
     current_term: Optional[str] = None
     current_line = 0
-    has_definition = False
+    definition_state = "missing"  # missing | pending | defined
 
     def flush() -> None:
-        nonlocal current_term, has_definition
+        nonlocal current_term, definition_state
         if current_term is None:
             return
-        if not has_definition:
+        if definition_state == "missing":
             findings.append(
-                Finding(check="rolling-glossary", severity="FAIL", file=rel, line=current_line,
-                        message=f"rolling glossary entry '{current_term}' has no definition line")
+                Finding(
+                    check="rolling-glossary",
+                    severity="FAIL",
+                    file=rel,
+                    line=current_line,
+                    message=f"rolling glossary entry '{current_term}' has no definition line",
+                )
+            )
+        elif definition_state == "pending":
+            findings.append(
+                Finding(
+                    check="rolling-glossary",
+                    severity="WARN",
+                    file=rel,
+                    line=current_line,
+                    message=f"rolling glossary entry '{current_term}' has a pending canonical definition",
+                )
             )
         canon = catalog_titles.get(current_term.lower())
         if canon is not None and canon != current_term:
             findings.append(
-                Finding(check="rolling-glossary", severity="FAIL", file=rel, line=current_line,
-                        message=f"rolling glossary term '{current_term}' conflicts with published canon title '{canon}'")
+                Finding(
+                    check="rolling-glossary",
+                    severity="FAIL",
+                    file=rel,
+                    line=current_line,
+                    message=f"rolling glossary term '{current_term}' conflicts with published canon title '{canon}'",
+                )
             )
 
     for i, line in enumerate(text.splitlines(), 1):
@@ -610,10 +636,15 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
             flush()
             current_term = h.group(1)
             current_line = i
-            has_definition = False
+            definition_state = "missing"
             continue
         if current_term and re.match(r"^- Definition:\s*\S", line):
-            has_definition = line.split(":", 1)[1].strip() != "Pending canonical definition."
+            val = line.split(":", 1)[1].strip()
+            if val == PENDING_GLOSSARY_DEFINITION:
+                if definition_state == "missing":
+                    definition_state = "pending"
+            else:
+                definition_state = "defined"
     flush()
 
 
@@ -621,6 +652,8 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     """Run the full or targeted lint suite and return a WikiReport."""
     root = root.resolve()
     include_paths, exclude_paths = load_tier1_config(root)
+    rg_resolved = (root / ".agents" / "context" / "rolling_glossary.md").resolve()
+    rg_targeted = False
 
     if paths:
         files: List[Path] = []
@@ -643,8 +676,11 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
             else:
                 raise FileNotFoundError(f"path not found: {raw}")
         files = sorted(set(f.resolve() for f in files))
+        rg_targeted = rg_resolved in files
         report = WikiReport(root=str(root), mode="targeted", files_scanned=len(files))
         report.checks_skipped = ["orphan", "unused-image", "catalogue", "duplicate-title"]
+        if not rg_targeted:
+            report.checks_skipped.append("rolling-glossary")
     else:
         files = iter_content_files(root, include_paths, exclude_paths)
         report = WikiReport(root=str(root), mode="full", files_scanned=len(files))
@@ -658,7 +694,8 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     check_stubs(root, files, f)
     check_deprecated_hooks(root, files, f)
     check_front_matter(root, files, f)
-    check_rolling_glossary(root, f)
+    if report.mode == "full" or rg_targeted:
+        check_rolling_glossary(root, f)
     if report.mode == "full":
         check_duplicate_titles(root, files, f)
     return report
@@ -684,8 +721,15 @@ def render_text_report(report: WikiReport) -> str:
         "catalogue",
         "front-matter",
         "duplicate-title",
+        "rolling-glossary",
     ]
-    for check in order:
+    by_check: Dict[str, List[Finding]] = {}
+    for finding in report.findings:
+        by_check.setdefault(finding.check, []).append(finding)
+    extra_checks = sorted(k for k in by_check if k not in order)
+    display_order = [*order, *extra_checks]
+
+    for check in display_order:
         if summary.get(check):
             lines.append(f"- {summary[check]} {check}")
     lines.append(f"- {summary['fail']} FAIL, {summary['warn']} WARN")
@@ -696,10 +740,7 @@ def render_text_report(report: WikiReport) -> str:
         lines.append("Wiki is clean — no findings.")
         return "\n".join(lines)
 
-    by_check: Dict[str, List[Finding]] = {}
-    for finding in report.findings:
-        by_check.setdefault(finding.check, []).append(finding)
-    for check in order:
+    for check in display_order:
         group = by_check.get(check)
         if not group:
             continue

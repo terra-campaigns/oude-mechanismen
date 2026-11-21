@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lint_wiki
+import scribe_session
 
 
 def note_content(title: str, prose_lines: int = 4, extra_fm: str = "") -> str:
@@ -249,6 +250,49 @@ class TestStubs(LintWikiTestCase):
         )
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual([s.file for s in self._findings(report, "stub")], ["directory/liquid.md"])
+
+    def test_comment_blocks_and_liquid_includes_count_as_stub_without_null_summary_warning(self):
+        # Issue #109: multi-line {% comment %} blocks (Dataview / crosslink-tiers) carry zero published prose.
+        body = (
+            "{% include header_directories.md %}\n\n"
+            "{% comment %}\n"
+            "```dataview\n"
+            "LIST FROM [[]] SORT file.name ASC\n"
+            "```\n"
+            "- [Tier 3 link](../../_gm-materials/digests/book/entry.md)\n"
+            "{% endcomment %}\n\n"
+            "{%- comment -%}\n"
+            "Whitespace-trimmed GM note line 1.\n"
+            "Whitespace-trimmed GM note line 2.\n"
+            "{%- endcomment -%}\n"
+        )
+        self.assertEqual(lint_wiki.prose_line_count(body), 0)
+        self._write(
+            "directory/comment_stub.md",
+            f"---\ntitle: Comment Stub\nparent: Index\n---\n\n{body}",
+        )
+        # Re-link from index so it isn't flagged as orphan; populate catalog.json with summary: null
+        self._write(
+            "index.md",
+            "---\ntitle: Home\n---\n\nWelcome.\n[Ep](campaigns/arc/ep001.md)\n[Place](directory/place.md)\n[Stub](directory/comment_stub.md)\n",
+        )
+        self._write_catalog(
+            ["campaigns/arc/ep001.md", "directory/place.md", "directory/comment_stub.md"]
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual([s.file for s in self._findings(report, "stub")], ["directory/comment_stub.md"])
+        null_summary_warns = [
+            f for f in self._findings(report, "catalogue") if "summary is null" in f.message
+        ]
+        self.assertEqual(null_summary_warns, [])
+
+    def test_inline_liquid_comment_on_prose_line_still_counts_prose(self):
+        body = (
+            "First visible line. {% comment %}hidden note{% endcomment %}\n"
+            "Second visible line.\n"
+            "Third visible line.\n"
+        )
+        self.assertEqual(lint_wiki.prose_line_count(body), 3)
 
 
 class TestUnusedImages(LintWikiTestCase):
@@ -564,6 +608,122 @@ class TestRollingGlossary(LintWikiTestCase):
         )
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "rolling-glossary"), [])
+
+    def test_pending_definition_is_warn_not_fail(self):
+        # Issue #103: default placeholder from scribe_session must warn, not fail Gate 3.
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Monarch\n\n- Definition: Pending canonical definition.\n- First seen: `2026-11-21_001`\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertEqual(len(rg), 1)
+        self.assertEqual(rg[0].severity, "WARN")
+        self.assertIn("pending", rg[0].message)
+        self.assertFalse(report.has_failures())
+
+        rc, out = self._run_main(["--root", str(self.root)])
+        self.assertEqual(rc, 0)
+        self.assertIn("- 1 rolling-glossary", out)
+        self.assertIn("## Rolling Glossary", out)
+
+        rc_strict, _ = self._run_main(["--root", str(self.root), "--strict"])
+        self.assertEqual(rc_strict, 1)
+
+    def test_blank_definition_line_still_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Monarch\n\n- Definition:   \n- First seen: `2026-11-21_001`\n",
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        self.assertEqual(len(rg), 1)
+        self.assertEqual(rg[0].severity, "FAIL")
+        self.assertIn("no definition", rg[0].message)
+
+    def test_canon_title_casing_conflict_with_pending_definition_still_fails(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## kael vorn\n\n- Definition: Pending canonical definition.\n",
+        )
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({"entries": [{"title": "Kael Vorn", "path": "directory/kael.md", "type": "people"}]}),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        rg = self._findings(report, "rolling-glossary")
+        severities = {f.severity for f in rg}
+        self.assertEqual(severities, {"WARN", "FAIL"})
+        self.assertTrue(report.has_failures())
+
+    def test_scribe_session_to_lint_wiki_rolling_glossary_round_trip(self):
+        terms = scribe_session.session_glossary_terms(
+            "Monarch met Kael Vorn at Fomalhaut Station.", skip_titles={"kael vorn"}
+        )
+        self.assertTrue(terms)
+        scribe_session.update_rolling_glossary(
+            self.root, "2026-11-21_001", terms, skip_titles={"kael vorn"}
+        )
+        rc, out = self._run_main(["--root", str(self.root)])
+        self.assertEqual(rc, 0)
+        self.assertIn("rolling-glossary", out)
+
+        # Filling in definitions clears all rolling-glossary warnings
+        defined_terms = [(term, f"Canonical note for {term}.") for term, _ in terms]
+        scribe_session.update_rolling_glossary(
+            self.root, "2026-11-21_002", defined_terms, skip_titles={"kael vorn"}
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rolling-glossary"), [])
+
+    def test_render_text_report_includes_rolling_glossary_and_unexpected_checks(self):
+        # Issue #102: text report renders rolling-glossary FAILs/WARNs and unexpected checks.
+        report = lint_wiki.WikiReport(
+            root=str(self.root),
+            mode="full",
+            files_scanned=2,
+            findings=[
+                lint_wiki.Finding(
+                    check="rolling-glossary",
+                    severity="FAIL",
+                    file=".agents/context/rolling_glossary.md",
+                    line=3,
+                    message="rolling glossary entry 'Bad' has no definition line",
+                ),
+                lint_wiki.Finding(
+                    check="custom-check",
+                    severity="WARN",
+                    file="directory/place.md",
+                    line=1,
+                    message="unexpected future diagnostic",
+                ),
+            ],
+        )
+        rendered = lint_wiki.render_text_report(report)
+        self.assertIn("- 1 rolling-glossary", rendered)
+        self.assertIn("## Rolling Glossary", rendered)
+        self.assertIn("rolling glossary entry 'Bad' has no definition line", rendered)
+        self.assertIn("- 1 custom-check", rendered)
+        self.assertIn("## Custom Check", rendered)
+        self.assertIn("unexpected future diagnostic", rendered)
+
+    def test_targeted_mode_skips_rolling_glossary_unless_explicitly_targeted(self):
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "# Rolling Campaign Glossary\n\n## Broken\n\n- First seen: `2026-11-21_001`\n",
+        )
+        regular = lint_wiki.lint_wiki(self.root, paths=["campaigns/arc/ep001.md"])
+        self.assertIn("rolling-glossary", regular.checks_skipped)
+        self.assertEqual(self._findings(regular, "rolling-glossary"), [])
+        self.assertFalse(regular.has_failures())
+
+        explicit = lint_wiki.lint_wiki(
+            self.root, paths=[".agents/context/rolling_glossary.md"]
+        )
+        self.assertNotIn("rolling-glossary", explicit.checks_skipped)
+        rg = self._findings(explicit, "rolling-glossary")
+        self.assertEqual(len(rg), 1)
+        self.assertEqual(rg[0].severity, "FAIL")
 
 if __name__ == "__main__":
     unittest.main()
