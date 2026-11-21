@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-21
+
 ### Added
 
 - **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
@@ -340,6 +342,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
 [Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...HEAD
+[0.9.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...v0.9.0
 [0.7.2]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
