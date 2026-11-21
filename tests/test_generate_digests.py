@@ -689,6 +689,86 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir)
         self.assertEqual(rc, 1)
 
+    def test_validate_rejects_broken_and_escaping_related_entries(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\nrelated: ["factions/missing.md", "../../../../../etc/hostname"]\n---\n\n# Book\n\nIntro.\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 1)
+        out = buf.getvalue()
+        self.assertIn("related broken relative link 'factions/missing.md'", out)
+        self.assertIn("related link '../../../../../etc/hostname' escapes", out)
+
+    def test_validate_rejects_wikilinks_outside_code_fences(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nSee [[Guild]] and:\n\n```\n[[in fence]]\n```\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 1)
+        out = buf.getvalue()
+        self.assertIn("wikilink not allowed", out)
+        self.assertEqual(out.count("wikilink not allowed"), 1)
+
+    def test_validate_warns_on_orphan_notes_in_nested_book(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        self._write_valid_note(digest_dir, with_link=True)
+        (digest_dir / "factions").mkdir()
+        (digest_dir / "factions" / "guild.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
+            encoding="utf-8",
+        )
+        (digest_dir / "factions" / "orphan.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Orphan\n---\n\n# Orphan\n\nNobody links here.\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 0)
+        self.assertIn("[WARN]", buf.getvalue())
+        self.assertIn("orphan.md", buf.getvalue())
+
+    def test_validate_page_bounds_against_manifest_total_pages(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5"\n---\n\n# Book\n\nCites [p. 5] and [pp. 1–3].\n',
+            encoding="utf-8",
+        )
+        manifest = Path(self.temp_dir.name) / "manifest.json"
+        manifest.write_text(json.dumps({"total_pages": 4, "slices": []}), encoding="utf-8")
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
+        self.assertEqual(rc, 1)
+        out = buf.getvalue()
+        self.assertIn("page citation '3-5' out of range", out)
+        self.assertIn("page citation '5' out of range", out)
+        self.assertNotIn("'1–3' out of range", out)
+
+    def test_validate_rejects_absolute_source_pdf(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            '---\nsource: book\nsource_pdf: /home/gm/rulebooks/book.pdf\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nIntro.\n',
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir)
+        self.assertEqual(rc, 1)
+        self.assertIn("'source_pdf' must be a portable relative path or basename", buf.getvalue())
+
     def test_validate_handles_link_titles_and_url_encoded_spaces(self):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         (digest_dir / "factions").mkdir(parents=True)
