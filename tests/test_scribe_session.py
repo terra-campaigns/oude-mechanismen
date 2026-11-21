@@ -12,6 +12,7 @@ Verifies:
 """
 
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -296,6 +297,35 @@ class TestScribeSessionCluster(unittest.TestCase):
         self.assertIn("RECAP BODY", prompt)
         leaked = scribe_session.strip_prompt_echo("# Doc\nText\n---\n### GM Recap Anchor:\nsecret")
         self.assertNotIn("secret", leaked)
+
+    def test_all_prompt_boundaries_prefix_matched_by_stop_sequences_and_strip_re(self):
+        """Verify every ### boundary header emitted by prompts matches OLLAMA_STOP_SEQUENCES and PROMPT_BOUNDARY_RE (#108)."""
+        manifest = self._manifest()
+        context = {"transcript": "T", "glossary": "G", "decisions": "D", "recap": "R"}
+        expected_counts = [
+            (scribe_session.build_tactical_prompt, 4),
+            (scribe_session.build_sensory_prompt, 3),
+        ]
+        for builder, expected_count in expected_counts:
+            prompt = builder(manifest, context)
+            headers = re.findall(r"\n---\n(### [^\n]+)", prompt)
+            self.assertEqual(len(headers), expected_count, f"Unexpected boundary count in {builder.__name__}")
+            for bare_header in headers:
+                full_header = f"\n---\n{bare_header}"
+                self.assertTrue(
+                    any(full_header.startswith(seq) for seq in scribe_session.OLLAMA_STOP_SEQUENCES),
+                    f"Full boundary {full_header!r} not prefix-matched by OLLAMA_STOP_SEQUENCES",
+                )
+                self.assertTrue(
+                    any(bare_header.startswith(seq) for seq in scribe_session.OLLAMA_STOP_SEQUENCES),
+                    f"Bare boundary {bare_header!r} not prefix-matched by OLLAMA_STOP_SEQUENCES",
+                )
+                self.assertIsNotNone(scribe_session.PROMPT_BOUNDARY_RE.search(full_header))
+                self.assertIsNotNone(scribe_session.PROMPT_BOUNDARY_RE.search(bare_header))
+
+        exact_recap_header = "### GM Recap Anchor (Prior Session Context — prioritise for continuity):"
+        stripped = scribe_session.strip_prompt_echo(f"# Doc\n\nBody.\n---\n{exact_recap_header}\nLeaked recap")
+        self.assertEqual(stripped, "# Doc\n\nBody.")
 
     def test_chunk_transcript_respects_word_limit_and_sentence_boundaries(self):
         text = "One two. Three four five. Six."
