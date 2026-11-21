@@ -781,6 +781,7 @@ class TestOudeCLI(unittest.TestCase):
         gitignore_text = (self.target_dir / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("_gm-materials/", gitignore_text)
         self.assertIn(".agents/context/catalog.json", gitignore_text)
+        self.assertIn(".agents/context/rolling_glossary.md", gitignore_text)
 
         tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
         self.assertIn("drive_dir: .", tier1_text)
@@ -803,20 +804,26 @@ class TestOudeCLI(unittest.TestCase):
         gitignore_path = self.target_dir / ".gitignore"
         config_path = self.target_dir / "_config.yml"
 
-        # Case 1: .gitignore missing _gm-materials/ and .agents/context/catalog.json (and no trailing newline)
+        # Case 1: .gitignore missing _gm-materials/, .agents/context/catalog.json, and .agents/context/rolling_glossary.md (and no trailing newline)
         gitignore_path.write_text("_site/", encoding="utf-8")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
         self.assertEqual(
             gitignore_path.read_text(encoding="utf-8"),
-            "_site/\n_gm-materials/\n.agents/context/catalog.json\n",
+            "_site/\n_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n",
         )
         self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
         self.assertTrue(
             cli._has_gitignore_entry(
                 "_site/\r\n.agents/context/catalog.json\r\n",
                 ".agents/context/catalog.json",
+            )
+        )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "_site/\r\n.agents/context/rolling_glossary.md\r\n",
+                ".agents/context/rolling_glossary.md",
             )
         )
         self.assertFalse(
@@ -826,8 +833,30 @@ class TestOudeCLI(unittest.TestCase):
             ),
             "dotted entries must be regex-escaped (no wildcard false positive)",
         )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\r\n_agents/context/rolling_glossaryXmd\r\n",
+                ".agents/context/rolling_glossary.md",
+            ),
+            "dotted entries must be regex-escaped (no wildcard false positive)",
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
+
+        # Case 1b: pre-v0.9.0 .gitignore missing only .agents/context/rolling_glossary.md
+        gitignore_path.write_text(
+            "_gm-materials/\n.agents/context/catalog.json\n", encoding="utf-8"
+        )
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertIn(".gitignore is missing .agents/context/rolling_glossary.md", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+        self.assertEqual(
+            gitignore_path.read_text(encoding="utf-8"),
+            "_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n",
+        )
 
         # Case 2: _config.yml inline and block exclude variants
         exclude_cases = [
@@ -1193,6 +1222,54 @@ class TestOudeCLI(unittest.TestCase):
             text=True,
         )
         self.assertNotEqual(ls_res.returncode, 0, "catalog.json should no longer be tracked in Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_detects_and_untracks_git_tracked_rolling_glossary(self):
+        """Verify doctor detects git-tracked rolling_glossary.md and --fix untracks it cleanly."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+            encoding="utf-8",
+        )
+
+        rg_path = self.target_dir / ".agents" / "context" / "rolling_glossary.md"
+        rg_path.write_text("# Rolling Campaign Glossary\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "add", "-f", ".agents/context/rolling_glossary.md"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "commit", "-m", "track rolling glossary"],
+            check=True,
+            capture_output=True,
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(".agents/context/rolling_glossary.md is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Untracked derived .agents/context/rolling_glossary.md", fake_out.getvalue())
+
+        self.assertTrue(rg_path.is_file(), "rolling_glossary.md should remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", ".agents/context/rolling_glossary.md"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(ls_res.returncode, 0, "rolling_glossary.md should no longer be tracked in Git index")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
