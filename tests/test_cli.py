@@ -1211,6 +1211,34 @@ class TestOudeCLI(unittest.TestCase):
             self.assertEqual(has_entry_lastmod, "false", "catalog.json entries should not carry 'lastmod'")
             self.assertEqual(has_site_lastmod, "true", "in-memory site.data.lastmod must remain populated")
 
+    def test_data_extractor_strips_whitespace_trimmed_comments_from_summary(self):
+        """Verify DataExtractor.extract strips {%- comment -%} blocks so stub summaries stay nil."""
+        if not shutil.which("ruby"):
+            self.skipTest("ruby executable not found on host system")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vault = Path(tmpdir)
+            (vault / "directory").mkdir(parents=True)
+            (vault / "directory" / "stub.md").write_text(
+                "---\ntitle: Stub\n---\n\n"
+                "{% include header_directories.md %}\n"
+                "{%- comment -%}\nHidden GM crosslink text.\n{%- endcomment -%}\n",
+                encoding="utf-8",
+            )
+            ruby_script = (
+                "require 'json'\n"
+                "load File.join(ARGV[0], 'jekyll/_plugins/data_extractor.rb')\n"
+                "res = OudeMechanismen::DataExtractor.extract(ARGV[1], write_catalog: false)\n"
+                "puts JSON.generate(res[:catalog]['entries'].first['summary'])\n"
+            )
+            res = subprocess.run(
+                ["ruby", "-I", str(REPO_ROOT / "lib"), "-e", ruby_script, str(REPO_ROOT), str(vault)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(json.loads(res.stdout.strip()), None)
+
     def test_doctor_passes_with_advisory_when_catalog_missing_and_fails_when_corrupt(self):
         """Verify doctor treats missing catalog.json as an advisory local cache but fails on corrupt JSON."""
         with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \

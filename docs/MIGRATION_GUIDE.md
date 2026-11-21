@@ -64,7 +64,7 @@ oude audit                  # coverage & gap report
 bundle exec jekyll build    # Tier 1 local catalogue cache compiles with zero errors (use bundle3.3 on Debian 13 if unlinked)
 ```
 
-Verify all four `_gm-materials/` exclusion layers from ADR 003 hold: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths (audited by `oude doctor --fix`). Also confirm `.agents/context/catalog.json` and `.agents/context/rolling_glossary.md` are gitignored and untracked (if upgrading manually from an older vault where either was committed, run `git rm --cached .agents/context/catalog.json .agents/context/rolling_glossary.md`, and ensure any local `.git/hooks/pre-commit` script does **not** stage `catalog.json`).
+Verify all four `_gm-materials/` exclusion layers from ADR 003 hold: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths (audited by `oude doctor --fix`). Also confirm `.agents/context/catalog.json` and `.agents/context/rolling_glossary.md` are gitignored and untracked (if upgrading manually from an older vault where either was committed, run `git rm --cached --ignore-unmatch .agents/context/catalog.json .agents/context/rolling_glossary.md`, and ensure any local `.git/hooks/pre-commit` script does **not** stage either derived cache).
 
 ## Step 6 — Commit and clone on the secondary workstation
 

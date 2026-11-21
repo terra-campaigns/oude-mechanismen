@@ -572,81 +572,57 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
     repo_root = repo_root.resolve()
     unillustrated: List[Dict[str, Any]] = []
     include_paths, exclude_paths = lint_wiki.load_tier1_config(repo_root)
-    seen: Set[Path] = set()
 
-    for folder in include_paths:
-        target = (repo_root / folder).resolve()
-        if not target.is_relative_to(repo_root):
+    for resolved in lint_wiki.iter_content_files(
+        repo_root, include_paths, exclude_paths, include_root_index=False
+    ):
+        # Jekyll ignores underscore-prefixed files as unpublished partials/scratch notes.
+        if resolved.name.startswith("_"):
             continue
-        if target.is_dir():
-            candidates = sorted(target.rglob("*.md"))
-        elif target.is_file() and target.suffix.lower() == ".md":
-            candidates = [target]
-        else:
+        rel_posix = resolved.relative_to(repo_root).as_posix()
+
+        try:
+            text = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
 
-        for md_file in candidates:
-            resolved = md_file.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
+        fm_match = lint_wiki.FRONT_MATTER_RE.match(text)
+        if not fm_match:
+            continue
+        try:
+            fm = yaml.safe_load(fm_match.group(1))
+        except yaml.YAMLError as exc:
+            print(f"Warning: Failed to parse front matter in {rel_posix}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(fm, dict):
+            continue
 
-            if md_file.name.startswith((".", "_")):
-                continue
+        raw_title = fm.get("title")
+        title = str(raw_title).strip() if raw_title is not None and str(raw_title).strip() else resolved.stem
+        raw_type = fm.get("type")
+        ent_type = str(raw_type).strip() if raw_type is not None and str(raw_type).strip() else "Note"
 
-            try:
-                rel_path = resolved.relative_to(repo_root)
-            except ValueError:
-                continue
-            if lint_wiki._has_skipped_segment(rel_path):
-                continue
+        explicit_badge: Optional[str] = None
+        non_badge_images: List[str] = []
+        for img in lint_wiki.extract_front_matter_images(fm):
+            b_m = BADGE_PATH_RE.match(img)
+            if b_m:
+                if explicit_badge is None:
+                    explicit_badge = b_m.group(1)
+            else:
+                non_badge_images.append(img)
 
-            rel_posix = rel_path.as_posix()
-            if lint_wiki.is_excluded(rel_posix, exclude_paths):
-                continue
+        if non_badge_images:
+            continue
 
-            try:
-                text = resolved.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-
-            fm_match = lint_wiki.FRONT_MATTER_RE.match(text)
-            if not fm_match:
-                continue
-            try:
-                fm = yaml.safe_load(fm_match.group(1))
-            except yaml.YAMLError as exc:
-                print(f"Warning: Failed to parse front matter in {rel_posix}: {exc}", file=sys.stderr)
-                continue
-            if not isinstance(fm, dict):
-                continue
-
-            raw_title = fm.get("title")
-            title = str(raw_title).strip() if raw_title is not None and str(raw_title).strip() else md_file.stem
-            raw_type = fm.get("type")
-            ent_type = str(raw_type).strip() if raw_type is not None and str(raw_type).strip() else "Note"
-
-            explicit_badge: Optional[str] = None
-            non_badge_images: List[str] = []
-            for img in lint_wiki.extract_front_matter_images(fm):
-                b_m = BADGE_PATH_RE.match(img)
-                if b_m:
-                    if explicit_badge is None:
-                        explicit_badge = b_m.group(1)
-                else:
-                    non_badge_images.append(img)
-
-            if non_badge_images:
-                continue
-
-            badge_name = explicit_badge or (ent_type if ent_type in DYNAMIC_FALLBACK_BADGE_TYPES else None)
-            unillustrated.append({
-                "path": rel_posix,
-                "title": title,
-                "type": ent_type,
-                "badge": badge_name or "none",
-                "status": "fallback_badge" if badge_name else "missing_images",
-            })
+        badge_name = explicit_badge or (ent_type if ent_type in DYNAMIC_FALLBACK_BADGE_TYPES else None)
+        unillustrated.append({
+            "path": rel_posix,
+            "title": title,
+            "type": ent_type,
+            "badge": badge_name or "none",
+            "status": "fallback_badge" if badge_name else "missing_images",
+        })
 
     return unillustrated
 

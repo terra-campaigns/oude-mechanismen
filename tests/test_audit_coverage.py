@@ -225,23 +225,23 @@ class TestAuditCoverage(unittest.TestCase):
             "  - campaigns # inline comment\n"
             "  - directory/\n"
             "exclude_paths:\n"
-            "  - campaigns/Anthology/\n"
-            "  - campaigns/FailedExports\n"
-            "  - directory/FoldedBelow\n"
+            "  - campaigns/Archive/\n"
+            "  - campaigns/Drafts\n"
+            "  - directory/Hidden\n"
             "  - directory/draft.md\n",
             encoding="utf-8",
         )
-        self._write_note("campaigns/Anthology/old.md", "title: Old Story\ntype: session")
-        self._write_note("campaigns/FailedExports/broken.md", "title: Broken\ntype: session")
-        self._write_note("directory/FoldedBelow/entity.md", "title: Folded\ntype: location")
+        self._write_note("campaigns/Archive/old.md", "title: Old Story\ntype: session")
+        self._write_note("campaigns/Drafts/broken.md", "title: Broken\ntype: session")
+        self._write_note("directory/Hidden/entity.md", "title: Hidden\ntype: location")
         self._write_note("directory/draft.md", "title: Draft\ntype: location")
         # Sibling prefix directory must NOT be excluded by prefix-boundary check
-        self._write_note("campaigns/AnthologyExtra/ep1.md", "title: Ep 1\ntype: session")
+        self._write_note("campaigns/ArchiveExtra/ep1.md", "title: Ep 1\ntype: session")
         self._write_note("directory/Active/inn.md", "title: The Inn\ntype: location")
 
         entries = audit_coverage.audit_unillustrated_entries(self.repo_root)
         paths = [e["path"] for e in entries]
-        self.assertEqual(paths, ["campaigns/AnthologyExtra/ep1.md", "directory/Active/inn.md"])
+        self.assertEqual(paths, ["campaigns/ArchiveExtra/ep1.md", "directory/Active/inn.md"])
 
     def test_audit_unillustrated_entries_yaml_image_and_images_variants(self):
         (self.context_dir / "tier1_sources.yml").write_text(

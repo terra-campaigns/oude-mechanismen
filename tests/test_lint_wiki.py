@@ -739,15 +739,54 @@ class TestRollingGlossary(LintWikiTestCase):
     def test_load_tier1_config_honours_empty_exclude_paths_and_normalises_rel_paths(self):
         self._write(
             ".agents/context/tier1_sources.yml",
-            "include_paths:\n  - ././campaigns/\nexclude_paths: []\n",
+            "include_paths:\n  - ././campaigns/\n  - .\nexclude_paths: []\n",
         )
+        # Root _TODO.md is excluded by DEFAULT_EXCLUDE_PATHS, so retaining it proves exclude_paths: [] works.
+        self._write("_TODO.md", note_content("Root Scratch"))
         self._write("campaigns/_TODO.md", note_content("Scratch Notes"))
         include_paths, exclude_paths = lint_wiki.load_tier1_config(self.root)
-        self.assertEqual(include_paths, ["campaigns"])
+        self.assertEqual(include_paths, ["campaigns", "."])
         self.assertEqual(exclude_paths, [])
         files = lint_wiki.iter_content_files(self.root, include_paths, exclude_paths)
         rels = {f.relative_to(self.root).as_posix() for f in files}
+        self.assertIn("_TODO.md", rels)
         self.assertIn("campaigns/_TODO.md", rels)
+
+    def test_targeted_scan_resolves_parent_traversal_symlinks_and_skips_md_dirs(self):
+        # Parent traversal ('campaigns/..') and symlinks must still enforce skipped/excluded rules.
+        self._write("_TODO.md", note_content("Ignored").replace("Prose sentence number 1.", "See [x](nope.md)."))
+        self._write(
+            "_gm-materials/digests/secret.md",
+            note_content("Secret").replace("Prose sentence number 1.", "See [x](nope.md)."),
+        )
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "## Broken\n",
+        )
+        (self.root / "campaigns" / "subdir.md").mkdir()  # directory ending in .md must not crash
+
+        traversal = lint_wiki.lint_wiki(self.root, paths=["campaigns/.."])
+        self.assertIn("rolling-glossary", traversal.checks_skipped)
+        self.assertEqual(self._findings(traversal, "dead-link"), [])
+        self.assertEqual(self._findings(traversal, "rolling-glossary"), [])
+
+        # Symlinked alias to the vault root must also enforce skipped segments and exclusions.
+        alias_dir = Path(self.temp_dir.name) / "vault_alias"
+        alias_dir.symlink_to(self.root)
+        aliased = lint_wiki.lint_wiki(self.root, paths=[str(alias_dir)])
+        self.assertIn("rolling-glossary", aliased.checks_skipped)
+        self.assertEqual(self._findings(aliased, "dead-link"), [])
+        self.assertEqual(self._findings(aliased, "rolling-glossary"), [])
+
+    def test_front_matter_eof_without_trailing_newline_and_crlf_link_offsets(self):
+        fm, body, fm_lines = lint_wiki.parse_front_matter("---\ntitle: EOF Only\n---")
+        self.assertEqual(fm.get("title"), "EOF Only")
+        self.assertEqual(body, "")
+        self.assertEqual(fm_lines, 2)
+
+        crlf_note = "---\r\ntitle: CRLF Note\r\nparent: Index\r\n---\r\n\r\nSee [x](missing.md).\r\n"
+        links = lint_wiki.extract_links(crlf_note)
+        self.assertEqual(links, [(6, "missing.md", False)])
 
 if __name__ == "__main__":
     unittest.main()

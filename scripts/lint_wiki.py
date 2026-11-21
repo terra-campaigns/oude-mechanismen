@@ -153,25 +153,42 @@ def _has_skipped_segment(rel_path: Path) -> bool:
     return any(part.startswith(".") or part in SKIPPED_DIR_SEGMENTS for part in rel_path.parts)
 
 
-def iter_content_files(root: Path, include_paths: List[str], exclude_paths: List[str]) -> List[Path]:
-    """Enumerate Tier 1 markdown notes plus the root index.md."""
+def iter_content_files(
+    root: Path,
+    include_paths: List[str],
+    exclude_paths: List[str],
+    include_root_index: bool = True,
+) -> List[Path]:
+    """Enumerate Tier 1 markdown notes matching include/exclude rules."""
     resolved_root = root.resolve()
     files: List[Path] = []
     for inc in include_paths:
         base = (resolved_root / inc).resolve()
-        if not base.is_relative_to(resolved_root) or not base.is_dir():
+        if not base.is_relative_to(resolved_root):
             continue
-        for md in sorted(base.rglob("*.md")):
-            rel_path = md.relative_to(resolved_root)
+        if base.is_dir():
+            candidates = sorted(base.rglob("*.md"))
+        elif base.is_file() and base.suffix.lower() == ".md":
+            candidates = [base]
+        else:
+            continue
+        for md in candidates:
+            md_resolved = md.resolve()
+            if not md_resolved.is_file():
+                continue
+            try:
+                rel_path = md_resolved.relative_to(resolved_root)
+            except ValueError:
+                continue
             if _has_skipped_segment(rel_path):
                 continue
-            rel = rel_path.as_posix()
-            if is_excluded(rel, exclude_paths):
+            if is_excluded(rel_path.as_posix(), exclude_paths):
                 continue
-            files.append(md)
-    index = resolved_root / "index.md"
-    if index.is_file():
-        files.append(index)
+            files.append(md_resolved)
+    if include_root_index:
+        index = (resolved_root / "index.md").resolve()
+        if index.is_file() and not is_excluded("index.md", exclude_paths):
+            files.append(index)
     return sorted(set(files))
 
 
@@ -673,7 +690,7 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
                     line=current_line,
                     message=(
                         f"rolling glossary entry '{current_term}' has a pending canonical definition — "
-                        f"fill '- Definition:' in {rel} or promote to a Tier 1 note"
+                        f"fill '- Definition:' in {rel}, or promote to a Tier 1 note and remove the glossary entry"
                     ),
                 )
             )
@@ -720,11 +737,16 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
             p = Path(raw)
             if not p.is_absolute():
                 candidate = root / p
-                p = candidate if candidate.exists() else Path(raw).resolve()
+                p = candidate.resolve() if candidate.exists() else Path(raw).resolve()
+            else:
+                p = p.resolve()
             if p.is_dir():
                 for md in sorted(p.rglob("*.md")):
+                    md_resolved = md.resolve()
+                    if not md_resolved.is_file():
+                        continue
                     try:
-                        rel_path = md.relative_to(root)
+                        rel_path = md_resolved.relative_to(root)
                     except ValueError:
                         rel_path = None
                     if rel_path is not None:
@@ -732,12 +754,12 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                             continue
                         if is_excluded(rel_path.as_posix(), exclude_paths):
                             continue
-                    files.append(md)
+                    files.append(md_resolved)
             elif p.is_file():
                 files.append(p)
             else:
                 raise FileNotFoundError(f"path not found: {raw}")
-        files = sorted(set(f.resolve() for f in files))
+        files = sorted(set(files))
         rg_targeted = rg_resolved in files
         tier1_files = [p for p in files if p != rg_resolved]
         report = WikiReport(root=str(root), mode="targeted", files_scanned=len(files))
