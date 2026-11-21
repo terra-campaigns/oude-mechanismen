@@ -110,7 +110,7 @@ def mask_markdown_noise(raw_content: str) -> List[Tuple[int, str]]:
         newlines = match.group(0).count("\n")
         return "\n" * newlines
 
-    joined = re.sub(r"\{%\s*comment\s*%\}.*?\{%\s*endcomment\s*%\}", _mask_block, joined, flags=re.DOTALL)
+    joined = re.sub(r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}", _mask_block, joined, flags=re.DOTALL)
 
     # 3. Mask multiline Dataview blocks: ```dataview ... ```
     joined = re.sub(r"```(?:dataview|dataviewjs)\b.*?```", _mask_block, joined, flags=re.DOTALL)

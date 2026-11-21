@@ -5,7 +5,7 @@ scripts/lint_wiki.py — Deterministic structural wiki linter (Gate 3).
 Machine-readable replacement for the LLM-based lint-wiki skill. Scans the
 campaign vault for structural health issues: dead internal links, orphan
 pages, empty stubs, unused images, deprecated front matter hooks, catalogue
-drift, missing front matter, and duplicate titles.
+drift, missing front matter, duplicate titles, and rolling-glossary entries.
 
 Usage:
   python3 scripts/lint_wiki.py                          # full repo scan (text report)
@@ -46,12 +46,13 @@ LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\
 # Scheme-bearing targets (http:, mailto:, ...) are external, not internal links.
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
-FRONT_MATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
+FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n(.*)|\Z)", re.DOTALL)
 LIQUID_COMMENT_RE = re.compile(
     r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}",
     re.DOTALL,
 )
 PENDING_GLOSSARY_DEFINITION = "Pending canonical definition."
+SKIPPED_DIR_SEGMENTS = frozenset({"_site", "vendor", "_plugins", "_gm-materials"})
 
 
 @dataclass
@@ -93,17 +94,52 @@ class WikiReport:
 # ---------------------------------------------------------------------------
 
 
+def normalise_rel_path(raw: Any) -> str:
+    """Normalise a vault-relative config path for prefix comparison."""
+    cleaned = str(raw).strip().replace("\\", "/").rstrip("/")
+    if cleaned == ".":
+        return "."
+    return re.sub(r"^(?:\./+)+", "", cleaned).lstrip("/")
+
+
 def load_tier1_config(root: Path) -> Tuple[List[str], List[str]]:
-    """Load include/exclude paths from .agents/context/tier1_sources.yml."""
+    """Load include/exclude paths from .agents/context/tier1_sources.yml.
+
+    Warns to stderr and falls back to defaults on read or YAML parse errors so
+    structural linters and audits still run when the config file is malformed.
+    """
     config_path = root / ".agents" / "context" / "tier1_sources.yml"
+    include = list(DEFAULT_INCLUDE_PATHS)
+    exclude = list(DEFAULT_EXCLUDE_PATHS)
     if not config_path.is_file():
-        return list(DEFAULT_INCLUDE_PATHS), list(DEFAULT_EXCLUDE_PATHS)
+        return include, exclude
     try:
-        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError):
-        return list(DEFAULT_INCLUDE_PATHS), list(DEFAULT_EXCLUDE_PATHS)
-    include = [str(p).rstrip("/") for p in (cfg.get("include_paths") or DEFAULT_INCLUDE_PATHS)]
-    exclude = [str(p).rstrip("/") for p in (cfg.get("exclude_paths") or DEFAULT_EXCLUDE_PATHS)]
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        print(f"Warning: Failed to parse {config_path}: {exc}", file=sys.stderr)
+        return include, exclude
+    if not isinstance(cfg, dict):
+        return include, exclude
+
+    raw_include = cfg.get("include_paths")
+    if isinstance(raw_include, list):
+        normalised = [
+            normalise_rel_path(p)
+            for p in raw_include
+            if p is not None and normalise_rel_path(p)
+        ]
+        if normalised:
+            include = normalised
+
+    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
+        raw_exclude = cfg["exclude_paths"]
+        if isinstance(raw_exclude, list):
+            exclude = [
+                normalise_rel_path(p)
+                for p in raw_exclude
+                if p is not None and normalise_rel_path(p)
+            ]
+
     return include, exclude
 
 
@@ -112,19 +148,28 @@ def is_excluded(rel_posix: str, exclude_paths: List[str]) -> bool:
     return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
 
 
+def _has_skipped_segment(rel_path: Path) -> bool:
+    """Return True if any path segment is hidden (dot-prefixed) or an engine/build folder."""
+    return any(part.startswith(".") or part in SKIPPED_DIR_SEGMENTS for part in rel_path.parts)
+
+
 def iter_content_files(root: Path, include_paths: List[str], exclude_paths: List[str]) -> List[Path]:
     """Enumerate Tier 1 markdown notes plus the root index.md."""
+    resolved_root = root.resolve()
     files: List[Path] = []
     for inc in include_paths:
-        base = root / inc
-        if not base.is_dir():
+        base = (resolved_root / inc).resolve()
+        if not base.is_relative_to(resolved_root) or not base.is_dir():
             continue
         for md in sorted(base.rglob("*.md")):
-            rel = md.relative_to(root).as_posix()
+            rel_path = md.relative_to(resolved_root)
+            if _has_skipped_segment(rel_path):
+                continue
+            rel = rel_path.as_posix()
             if is_excluded(rel, exclude_paths):
                 continue
             files.append(md)
-    index = root / "index.md"
+    index = resolved_root / "index.md"
     if index.is_file():
         files.append(index)
     return sorted(set(files))
@@ -135,8 +180,8 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str, int]:
     match = FRONT_MATTER_RE.match(text)
     if not match:
         return {}, text, 0
-    fm_raw, body = match.group(1), match.group(2)
-    fm_line_count = text[: match.start(2)].count("\n")  # lines before the body
+    fm_raw, body = match.group(1), match.group(2) or ""
+    fm_line_count = text[: match.start(2)].count("\n") if match.group(2) is not None else text.count("\n")
     try:
         fm = yaml.safe_load(fm_raw) or {}
     except yaml.YAMLError:
@@ -144,6 +189,25 @@ def parse_front_matter(text: str) -> Tuple[Dict[str, Any], str, int]:
     if not isinstance(fm, dict):
         fm = {}
     return fm, body, fm_line_count
+
+
+def extract_front_matter_images(fm: Dict[str, Any]) -> List[str]:
+    """Collect non-empty image paths from YAML front matter `image` and `images` fields."""
+    collected: List[str] = []
+    for key in ("image", "images"):
+        val = fm.get(key)
+        if isinstance(val, str):
+            stripped = val.strip()
+            if stripped:
+                collected.append(stripped)
+        elif isinstance(val, list):
+            for item in val:
+                if item is None or isinstance(item, (dict, list)):
+                    continue
+                stripped = str(item).strip()
+                if stripped:
+                    collected.append(stripped)
+    return collected
 
 
 def extract_links(text: str) -> List[Tuple[int, str, bool]]:
@@ -332,15 +396,7 @@ def check_unused_images(
     for path in files:
         text = path.read_text(encoding="utf-8", errors="replace")
         fm, _, _ = parse_front_matter(text)
-        fm_images = []
-        if isinstance(fm.get("image"), str):
-            fm_images.append(fm["image"])
-        images = fm.get("images")
-        if isinstance(images, str):
-            fm_images.append(images)
-        elif isinstance(images, list):
-            fm_images.extend(str(i) for i in images)
-        for target in fm_images:
+        for target in extract_front_matter_images(fm):
             raw_targets.append(target)
             resolved = resolve_target(root, path, target)
             if resolved is not None:
@@ -615,7 +671,10 @@ def check_rolling_glossary(root: Path, findings: List[Finding]) -> None:
                     severity="WARN",
                     file=rel,
                     line=current_line,
-                    message=f"rolling glossary entry '{current_term}' has a pending canonical definition",
+                    message=(
+                        f"rolling glossary entry '{current_term}' has a pending canonical definition — "
+                        f"fill '- Definition:' in {rel} or promote to a Tier 1 note"
+                    ),
                 )
             )
         canon = catalog_titles.get(current_term.lower())
@@ -665,11 +724,14 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
             if p.is_dir():
                 for md in sorted(p.rglob("*.md")):
                     try:
-                        md_rel = md.relative_to(root).as_posix()
+                        rel_path = md.relative_to(root)
                     except ValueError:
-                        md_rel = None
-                    if md_rel and is_excluded(md_rel, exclude_paths):
-                        continue
+                        rel_path = None
+                    if rel_path is not None:
+                        if _has_skipped_segment(rel_path):
+                            continue
+                        if is_excluded(rel_path.as_posix(), exclude_paths):
+                            continue
                     files.append(md)
             elif p.is_file():
                 files.append(p)
@@ -677,27 +739,29 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                 raise FileNotFoundError(f"path not found: {raw}")
         files = sorted(set(f.resolve() for f in files))
         rg_targeted = rg_resolved in files
+        tier1_files = [p for p in files if p != rg_resolved]
         report = WikiReport(root=str(root), mode="targeted", files_scanned=len(files))
         report.checks_skipped = ["orphan", "unused-image", "catalogue", "duplicate-title"]
         if not rg_targeted:
             report.checks_skipped.append("rolling-glossary")
     else:
         files = iter_content_files(root, include_paths, exclude_paths)
+        tier1_files = files
         report = WikiReport(root=str(root), mode="full", files_scanned=len(files))
 
     f = report.findings
-    check_dead_links(root, files, f)
+    check_dead_links(root, tier1_files, f)
     if report.mode == "full":
-        check_orphans(root, files, f)
-        check_unused_images(root, files, f)
-        check_catalogue(root, files, exclude_paths, f)
-    check_stubs(root, files, f)
-    check_deprecated_hooks(root, files, f)
-    check_front_matter(root, files, f)
+        check_orphans(root, tier1_files, f)
+        check_unused_images(root, tier1_files, f)
+        check_catalogue(root, tier1_files, exclude_paths, f)
+    check_stubs(root, tier1_files, f)
+    check_deprecated_hooks(root, tier1_files, f)
+    check_front_matter(root, tier1_files, f)
     if report.mode == "full" or rg_targeted:
         check_rolling_glossary(root, f)
     if report.mode == "full":
-        check_duplicate_titles(root, files, f)
+        check_duplicate_titles(root, tier1_files, f)
     return report
 
 

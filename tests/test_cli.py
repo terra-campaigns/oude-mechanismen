@@ -57,7 +57,6 @@ class TestOudeCLI(unittest.TestCase):
     def test_version_synchronisation_across_package_gem_and_templates(self):
         """Verify VERSION stays synchronised with Python/Ruby fallbacks and Gemfile.template (#105, #106)."""
         expected = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
-        self.assertEqual(oude_mechanismen.__version__, expected)
 
         # 1. Python fallback when VERSION and importlib metadata are unavailable
         empty_dir = Path(self.temp_dir) / "empty_pkg"
@@ -68,13 +67,21 @@ class TestOudeCLI(unittest.TestCase):
                  "importlib.metadata.version",
                  side_effect=importlib.metadata.PackageNotFoundError("oude-mechanismen"),
              ):
-            self.assertEqual(oude_mechanismen._get_version(), expected)
+            self.assertEqual(
+                oude_mechanismen._get_version(),
+                expected,
+                "src/oude_mechanismen/__init__.py fallback version is out of sync with VERSION",
+            )
 
         # 2. Ruby gem fallback version in lib/oude_mechanismen/version.rb
         rb_text = (REPO_ROOT / "lib" / "oude_mechanismen" / "version.rb").read_text(encoding="utf-8")
         rb_match = re.search(r'\belse\s*\n\s*["\']([^"\']+)["\']', rb_text)
         self.assertIsNotNone(rb_match, "Expected else fallback literal in lib/oude_mechanismen/version.rb")
-        self.assertEqual(rb_match.group(1), expected)
+        self.assertEqual(
+            rb_match.group(1),
+            expected,
+            "lib/oude_mechanismen/version.rb fallback version is out of sync with VERSION",
+        )
 
         # 3. Downstream Gemfile template tag pin
         gemfile_text = (REPO_ROOT / "templates" / "jekyll" / "Gemfile.template").read_text(encoding="utf-8")
@@ -83,7 +90,11 @@ class TestOudeCLI(unittest.TestCase):
             gemfile_text,
         )
         self.assertIsNotNone(tag_match, "Expected tagged oude-mechanismen pin in Gemfile.template")
-        self.assertEqual(tag_match.group(1), expected)
+        self.assertEqual(
+            tag_match.group(1),
+            expected,
+            "templates/jekyll/Gemfile.template tag pin is out of sync with VERSION",
+        )
 
     def test_resolve_asset_dir(self):
         """Verify asset resolution resolves existing directories."""

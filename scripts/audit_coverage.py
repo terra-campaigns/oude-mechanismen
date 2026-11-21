@@ -31,6 +31,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lint_wiki  # noqa: E402
+
 
 def find_repo_root(custom_dir: Optional[str] = None) -> Path:
     """Detect the campaign repository root directory."""
@@ -558,86 +561,17 @@ def audit_untapped_factions(
     return audit
 
 
-DEFAULT_TIER1_INCLUDE_PATHS = ["campaigns", "directory", "systems", "statblocks", "trading"]
-DEFAULT_TIER1_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
+# Entity types that receive a dynamic type badge in jekyll/_includes/connected_to.html
+# when their front matter specifies no images.
 DYNAMIC_FALLBACK_BADGE_TYPES = frozenset({"people", "faction", "location", "creature"})
-FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 BADGE_PATH_RE = re.compile(r"^(?:.*/)?imgs/badges/([^/?#]+)\.png(?:[?#].*)?$", re.IGNORECASE)
-
-
-def _normalise_rel_path(raw: Any) -> str:
-    """Normalise a vault-relative config path for prefix comparison."""
-    cleaned = str(raw).strip().replace("\\", "/")
-    return re.sub(r"^\./+", "", cleaned).lstrip("/").rstrip("/")
-
-
-def _load_tier1_paths(repo_root: Path) -> Tuple[List[str], List[str]]:
-    """Load include_paths and exclude_paths from tier1_sources.yml via yaml.safe_load."""
-    tier1_cfg = repo_root / ".agents" / "context" / "tier1_sources.yml"
-    include_paths = list(DEFAULT_TIER1_INCLUDE_PATHS)
-    exclude_paths = list(DEFAULT_TIER1_EXCLUDE_PATHS)
-    if not tier1_cfg.is_file():
-        return include_paths, exclude_paths
-
-    try:
-        cfg = yaml.safe_load(tier1_cfg.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        print(f"Warning: Failed to parse {tier1_cfg}: {exc}", file=sys.stderr)
-        return include_paths, exclude_paths
-
-    if not isinstance(cfg, dict):
-        return include_paths, exclude_paths
-
-    raw_include = cfg.get("include_paths")
-    if isinstance(raw_include, list):
-        normalised = [_normalise_rel_path(p) for p in raw_include if p is not None and _normalise_rel_path(p)]
-        if normalised:
-            include_paths = normalised
-    elif isinstance(raw_include, str) and _normalise_rel_path(raw_include):
-        include_paths = [_normalise_rel_path(raw_include)]
-
-    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
-        raw_exclude = cfg["exclude_paths"]
-        if isinstance(raw_exclude, list):
-            exclude_paths = [
-                _normalise_rel_path(p) for p in raw_exclude if p is not None and _normalise_rel_path(p)
-            ]
-        elif isinstance(raw_exclude, str):
-            norm = _normalise_rel_path(raw_exclude)
-            exclude_paths = [norm] if norm else []
-
-    return include_paths, exclude_paths
-
-
-def _is_excluded_path(rel_posix: str, exclude_paths: List[str]) -> bool:
-    """Mirror data_extractor.rb / lint_wiki.py path-prefix exclusion semantics."""
-    return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
-
-
-def _extract_front_matter_images(fm: Dict[str, Any]) -> List[str]:
-    """Collect non-empty image paths from YAML front matter `image` and `images` fields."""
-    collected: List[str] = []
-    for key in ("image", "images"):
-        val = fm.get(key)
-        if isinstance(val, str):
-            stripped = val.strip()
-            if stripped:
-                collected.append(stripped)
-        elif isinstance(val, list):
-            for item in val:
-                if item is None or isinstance(item, (dict, list)):
-                    continue
-                stripped = str(item).strip()
-                if stripped:
-                    collected.append(stripped)
-    return collected
 
 
 def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
     """Scan Tier 1 markdown notes for missing illustrations or fallback badges."""
     repo_root = repo_root.resolve()
     unillustrated: List[Dict[str, Any]] = []
-    include_paths, exclude_paths = _load_tier1_paths(repo_root)
+    include_paths, exclude_paths = lint_wiki.load_tier1_config(repo_root)
     seen: Set[Path] = set()
 
     for folder in include_paths:
@@ -664,11 +598,11 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
                 rel_path = resolved.relative_to(repo_root)
             except ValueError:
                 continue
-            if any(part.startswith(".") for part in rel_path.parts):
+            if lint_wiki._has_skipped_segment(rel_path):
                 continue
 
             rel_posix = rel_path.as_posix()
-            if _is_excluded_path(rel_posix, exclude_paths):
+            if lint_wiki.is_excluded(rel_posix, exclude_paths):
                 continue
 
             try:
@@ -676,12 +610,13 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
             except OSError:
                 continue
 
-            fm_match = FRONT_MATTER_RE.match(text)
+            fm_match = lint_wiki.FRONT_MATTER_RE.match(text)
             if not fm_match:
                 continue
             try:
                 fm = yaml.safe_load(fm_match.group(1))
-            except yaml.YAMLError:
+            except yaml.YAMLError as exc:
+                print(f"Warning: Failed to parse front matter in {rel_posix}: {exc}", file=sys.stderr)
                 continue
             if not isinstance(fm, dict):
                 continue
@@ -693,7 +628,7 @@ def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
 
             explicit_badge: Optional[str] = None
             non_badge_images: List[str] = []
-            for img in _extract_front_matter_images(fm):
+            for img in lint_wiki.extract_front_matter_images(fm):
                 b_m = BADGE_PATH_RE.match(img)
                 if b_m:
                     if explicit_badge is None:
@@ -896,7 +831,7 @@ def main() -> None:
     parser.add_argument("--drive-dir", help="Path to campaign storage directory.")
     parser.add_argument("--campaign-dir", help="Subfolder under campaigns/ (e.g. campaigns/UVG24XX).")
     parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in hops (default: 2).")
-    parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries displaying fallback badges.")
+    parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries (fallback badges and missing images).")
     parser.add_argument("--json", action="store_true", help="Output results as JSON.")
     parser.add_argument("--report-path", help="Save markdown report to specific file path.")
 
@@ -913,10 +848,10 @@ def main() -> None:
                 print("All notes across included paths have custom illustrations!")
             else:
                 print(f"Discovered {len(unillustrated)} unillustrated entries:\n")
-                print(f"{'Path':<45} {'Title':<30} {'Badge':<15}")
-                print("-" * 92)
+                print(f"{'Path':<45} {'Title':<30} {'Badge':<15} {'Status':<15}")
+                print("-" * 108)
                 for u in unillustrated:
-                    print(f"{u['path']:<45} {u['title']:<30} {u['badge']:<15}")
+                    print(f"{u['path']:<45} {u['title']:<30} {u['badge']:<15} {u['status']:<15}")
         return
 
     drive_dir = resolve_drive_dir(repo_root, args.drive_dir)

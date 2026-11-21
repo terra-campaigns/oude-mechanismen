@@ -717,13 +717,37 @@ class TestRollingGlossary(LintWikiTestCase):
         self.assertEqual(self._findings(regular, "rolling-glossary"), [])
         self.assertFalse(regular.has_failures())
 
+        # Directory scan at root skips .agents/ so rolling_glossary is not accidentally swept in.
+        dot_scan = lint_wiki.lint_wiki(self.root, paths=["."])
+        self.assertIn("rolling-glossary", dot_scan.checks_skipped)
+        self.assertEqual(self._findings(dot_scan, "rolling-glossary"), [])
+
+        # Minimal explicitly targeted glossary must NOT emit a spurious stub warning.
+        self._write(
+            ".agents/context/rolling_glossary.md",
+            "## Broken\n",
+        )
         explicit = lint_wiki.lint_wiki(
             self.root, paths=[".agents/context/rolling_glossary.md"]
         )
         self.assertNotIn("rolling-glossary", explicit.checks_skipped)
+        self.assertEqual(self._findings(explicit, "stub"), [])
         rg = self._findings(explicit, "rolling-glossary")
         self.assertEqual(len(rg), 1)
         self.assertEqual(rg[0].severity, "FAIL")
+
+    def test_load_tier1_config_honours_empty_exclude_paths_and_normalises_rel_paths(self):
+        self._write(
+            ".agents/context/tier1_sources.yml",
+            "include_paths:\n  - ././campaigns/\nexclude_paths: []\n",
+        )
+        self._write("campaigns/_TODO.md", note_content("Scratch Notes"))
+        include_paths, exclude_paths = lint_wiki.load_tier1_config(self.root)
+        self.assertEqual(include_paths, ["campaigns"])
+        self.assertEqual(exclude_paths, [])
+        files = lint_wiki.iter_content_files(self.root, include_paths, exclude_paths)
+        rels = {f.relative_to(self.root).as_posix() for f in files}
+        self.assertIn("campaigns/_TODO.md", rels)
 
 if __name__ == "__main__":
     unittest.main()

@@ -308,6 +308,20 @@ class TestAuditCoverage(unittest.TestCase):
             entries = audit_coverage.audit_unillustrated_entries(self.repo_root)
         self.assertEqual([e["path"] for e in entries], ["directory/good.md"])
         self.assertIn("Warning: Failed to parse", stderr_buf.getvalue())
+        self.assertIn("directory/bad_fm.md", stderr_buf.getvalue())
+
+    def test_audit_unillustrated_entries_skips_engine_dirs_on_dot_include_and_nested_yaml(self):
+        (self.context_dir / "tier1_sources.yml").write_text(
+            "include_paths:\n  - .\nexclude_paths: []\n", encoding="utf-8"
+        )
+        for skipped in ("_gm-materials/digests/secret.md", "_site/index.md", "vendor/readme.md", "_plugins/note.md"):
+            self._write_note(skipped, "title: Ignored\ntype: location")
+        # Nested dict/list elements inside images: must not crash or count as valid image strings
+        self._write_note("directory/nested_images.md", "title: Nested\nimages:\n  - [nested]\n  - {bad: true}")
+        self._write_note("directory/normal.md", "title: Normal\ntype: location")
+
+        paths = [e["path"] for e in audit_coverage.audit_unillustrated_entries(self.repo_root)]
+        self.assertEqual(paths, ["directory/nested_images.md", "directory/normal.md"])
 
 
 if __name__ == "__main__":
