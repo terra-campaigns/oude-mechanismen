@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **`oude digest --validate` enforces the full `digest-book` SKILL.md invariant set (`#73`)**: FAIL on broken/escaping `related:` frontmatter paths, `[[wikilinks]]` outside code fences, absolute `source_pdf` paths, non-string `pages:`, and `pages:` / `[p. N]` / `[pp. A–B]` citations outside `1..total_pages` when `--manifest` is supplied; WARN on orphan notes unreachable from `_index.md`.
+- **`oude audit` summary now counts unillustrated entries (`#21` pilot)**: one `Unillustrated Entries` line with fallback-badge vs missing-image split, so the per-note table no longer reads as the whole signal.
 
 ---
 
