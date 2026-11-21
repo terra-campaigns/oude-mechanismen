@@ -31,6 +31,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lint_wiki  # noqa: E402
+
 
 def find_repo_root(custom_dir: Optional[str] = None) -> Path:
     """Detect the campaign repository root directory."""
@@ -558,79 +561,68 @@ def audit_untapped_factions(
     return audit
 
 
+# Entity types that receive a dynamic type badge in jekyll/_includes/connected_to.html
+# when their front matter specifies no images.
+DYNAMIC_FALLBACK_BADGE_TYPES = frozenset({"people", "faction", "location", "creature"})
+BADGE_PATH_RE = re.compile(r"^(?:.*/)?imgs/badges/([^/?#]+)\.png(?:[?#].*)?$", re.IGNORECASE)
+
+
 def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
-    """Scan campaign markdown notes for missing illustrations or fallback badges."""
+    """Scan Tier 1 markdown notes for missing illustrations or fallback badges."""
+    repo_root = repo_root.resolve()
     unillustrated: List[Dict[str, Any]] = []
+    include_paths, exclude_paths = lint_wiki.load_tier1_config(repo_root)
 
-    # Check tier1_sources.yml include_paths if present, otherwise default folders
-    tier1_cfg = repo_root / ".agents" / "context" / "tier1_sources.yml"
-    include_paths = ["directory", "campaigns", "systems"]
-    if tier1_cfg.exists():
+    for resolved in lint_wiki.iter_content_files(
+        repo_root, include_paths, exclude_paths, include_root_index=False
+    ):
+        # Jekyll ignores underscore-prefixed files as unpublished partials/scratch notes.
+        if resolved.name.startswith("_"):
+            continue
+        rel_posix = resolved.relative_to(repo_root).as_posix()
+
         try:
-            content = tier1_cfg.read_text(encoding="utf-8")
-            m = re.search(r"include_paths:\s*\n((?:[ \t]*-[ \t]*.*\n?)*)", content)
-            if m:
-                paths = [re.sub(r"^[ \t]*-[ \t]*", "", line).strip() for line in m.group(1).splitlines() if line.strip()]
-                if paths:
-                    include_paths = paths
-        except Exception:
-            pass
-
-    for folder in include_paths:
-        target_dir = repo_root / folder
-        if not target_dir.exists():
+            text = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
 
-        for md_file in sorted(target_dir.rglob("*.md")):
-            if md_file.name.startswith((".", "_")):
-                continue
+        fm_match = lint_wiki.FRONT_MATTER_RE.match(text)
+        if not fm_match:
+            continue
+        try:
+            fm = yaml.safe_load(fm_match.group(1))
+        except yaml.YAMLError as exc:
+            print(f"Warning: Failed to parse front matter in {rel_posix}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(fm, dict):
+            continue
 
-            try:
-                text = md_file.read_text(encoding="utf-8", errors="replace")
-                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", text, re.DOTALL)
-                if not fm_match:
-                    continue
-                fm_text = fm_match.group(1)
+        raw_title = fm.get("title")
+        title = str(raw_title).strip() if raw_title is not None and str(raw_title).strip() else resolved.stem
+        raw_type = fm.get("type")
+        ent_type = str(raw_type).strip() if raw_type is not None and str(raw_type).strip() else "Note"
 
-                title_m = re.search(r"^title:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
-                title = title_m.group(1).strip() if title_m else md_file.stem
-                type_m = re.search(r"^type:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
-                ent_type = type_m.group(1).strip() if type_m else "Note"
+        explicit_badge: Optional[str] = None
+        non_badge_images: List[str] = []
+        for img in lint_wiki.extract_front_matter_images(fm):
+            b_m = BADGE_PATH_RE.match(img)
+            if b_m:
+                if explicit_badge is None:
+                    explicit_badge = b_m.group(1)
+            else:
+                non_badge_images.append(img)
 
-                # Check images front-matter field
-                img_match = re.search(r"^images:[ \t]*\r?\n((?:[ \t]*-[ \t]*.*\r?\n?)*)", fm_text, re.MULTILINE)
-                is_unillustrated = False
-                badge_name = None
+        if non_badge_images:
+            continue
 
-                if not img_match:
-                    is_unillustrated = True
-                else:
-                    lines = [line.strip() for line in img_match.group(1).splitlines() if line.strip()]
-                    if not lines:
-                        is_unillustrated = True
-                    else:
-                        badge_pattern = r"^-[ \t]*[/a-zA-Z0-9_\-\.]*imgs/badges/([a-zA-Z0-9_\-\.]+)\.png"
-                        non_badge_images = []
-                        for line in lines:
-                            b_m = re.match(badge_pattern, line)
-                            if b_m:
-                                badge_name = b_m.group(1)
-                            else:
-                                non_badge_images.append(line)
-                        if not non_badge_images:
-                            is_unillustrated = True
-
-                if is_unillustrated:
-                    rel_path = str(md_file.relative_to(repo_root))
-                    unillustrated.append({
-                        "path": rel_path,
-                        "title": title,
-                        "type": ent_type,
-                        "badge": badge_name or "none",
-                        "status": "fallback_badge" if badge_name else "missing_images",
-                    })
-            except Exception:
-                continue
+        badge_name = explicit_badge or (ent_type if ent_type in DYNAMIC_FALLBACK_BADGE_TYPES else None)
+        unillustrated.append({
+            "path": rel_posix,
+            "title": title,
+            "type": ent_type,
+            "badge": badge_name or "none",
+            "status": "fallback_badge" if badge_name else "missing_images",
+        })
 
     return unillustrated
 
@@ -815,7 +807,7 @@ def main() -> None:
     parser.add_argument("--drive-dir", help="Path to campaign storage directory.")
     parser.add_argument("--campaign-dir", help="Subfolder under campaigns/ (e.g. campaigns/UVG24XX).")
     parser.add_argument("--radius", type=int, default=2, help="Proximity search radius in hops (default: 2).")
-    parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries displaying fallback badges.")
+    parser.add_argument("--unillustrated", action="store_true", help="List unillustrated entries (fallback badges and missing images).")
     parser.add_argument("--json", action="store_true", help="Output results as JSON.")
     parser.add_argument("--report-path", help="Save markdown report to specific file path.")
 
@@ -832,10 +824,10 @@ def main() -> None:
                 print("All notes across included paths have custom illustrations!")
             else:
                 print(f"Discovered {len(unillustrated)} unillustrated entries:\n")
-                print(f"{'Path':<45} {'Title':<30} {'Badge':<15}")
-                print("-" * 92)
+                print(f"{'Path':<45} {'Title':<30} {'Badge':<15} {'Status':<15}")
+                print("-" * 108)
                 for u in unillustrated:
-                    print(f"{u['path']:<45} {u['title']:<30} {u['badge']:<15}")
+                    print(f"{u['path']:<45} {u['title']:<30} {u['badge']:<15} {u['status']:<15}")
         return
 
     drive_dir = resolve_drive_dir(repo_root, args.drive_dir)

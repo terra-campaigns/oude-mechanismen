@@ -19,8 +19,8 @@ python3 scripts/lint_wiki.py campaigns/ directory/foo.md   # targeted scan of sp
 python3 scripts/lint_wiki.py --strict  # treat WARN findings as failures (exit 1)
 ```
 
-- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), and duplicate titles.
-- Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (orphans, unused images, catalogue), which are reported under `checks_skipped`.
+- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), duplicate titles, and `.agents/context/rolling_glossary.md` entries (`rolling-glossary`).
+- Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (`orphan`, `unused-image`, `catalogue`, `duplicate-title`, and `rolling-glossary` unless `.agents/context/rolling_glossary.md` is explicitly targeted), which are reported under `checks_skipped`.
 - Exit code is 1 on any FAIL finding (or any finding under `--strict`), 0 when clean, 2 on usage errors.
 
 Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, `.git/`, or `_gm-materials/`.
@@ -37,6 +37,7 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 - **catalogue (FAIL/WARN):** missing local `catalog.json` cache is `WARN` (run `bundle exec jekyll build` or `oude doctor --fix` to generate); invalid JSON or `sha` mismatches when present are `FAIL`; unindexed notes, stale entries, and null summaries are `WARN`.
 - **front-matter (FAIL/WARN):** missing `title`/`parent` in `campaigns/`, `directory/`, `systems/`; non-default `layout` outside the exempt pages.
 - **duplicate-title (FAIL):** identical `title:` values cause navigation confusion in Just the Docs.
+- **rolling-glossary (FAIL/WARN):** entries in `.agents/context/rolling_glossary.md` with a missing definition line or a casing conflict against published `catalog.json` titles are `FAIL`; entries carrying `- Definition: Pending canonical definition.` are `WARN` until defined, or promoted to a Tier 1 note and removed from the glossary.
 
 ## Output format
 
@@ -57,6 +58,7 @@ Command: `oude lint-wiki --format json`
 - X deprecated hooks
 - X catalogue / front matter issues
 - X duplicate titles
+- X rolling-glossary issues
 
 ## Findings
 

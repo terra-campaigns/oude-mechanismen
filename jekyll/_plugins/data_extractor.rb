@@ -221,7 +221,7 @@ module OudeMechanismen
           end
 
           # Extract clean first prose paragraph for summary
-          clean_body = body.gsub(/{%\s*comment\s*%}.*?{%\s*endcomment\s*%}/m, '')
+          clean_body = body.gsub(/{%-?\s*comment\s*-?%}.*?{%-?\s*endcomment\s*-?%}/m, '')
           clean_body = clean_body.gsub(/{%.*?%}/m, '').gsub(/\{\{.*?\}\}/m, '')
           clean_body = clean_body.gsub(/\{:\s*\..*?\s*\}/, '')
 

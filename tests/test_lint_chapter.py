@@ -271,6 +271,9 @@ LIST FROM [[]]
 ```
 - [index](../../directory/index.md)
 {% endcomment %}
+{%- comment -%}
+Whitespace-trimmed Liquid comment should also be masked.
+{%- endcomment -%}
 <!-- HTML comment block -->
 
 ## Heading One

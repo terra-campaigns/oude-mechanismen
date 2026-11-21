@@ -37,11 +37,12 @@ PROMPT_BOUNDARY_RE = re.compile(
 OLLAMA_STOP_SEQUENCES: List[str] = [
     "\n---\n### Session Glossary:",
     "\n---\n### Active Decisions",
-    "\n---\n### GM Recap Anchor:",
+    "\n---\n### GM Recap Anchor",
     "\n---\n### Verbatim Session Transcript:",
     "\n---\n### Chunk",
     "### Session Glossary:",
-    "### GM Recap Anchor:",
+    "### Active Decisions",
+    "### GM Recap Anchor",
     "### Verbatim Session Transcript:",
     "### Chunk",
 ]
