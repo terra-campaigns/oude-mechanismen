@@ -171,6 +171,27 @@ class TestAuditCoverage(unittest.TestCase):
         output = audit_coverage.format_markdown_report(report)
         self.assertNotIn("Google Drive", output)
 
+    def test_format_markdown_report_summarises_unillustrated_counts(self):
+        report = {
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "repo_root": str(self.repo_root),
+            "drive_audit": {
+                "drive_accessible": True,
+                "indexed_sources": [],
+                "unindexed_files": [],
+                "missing_digests": [],
+            },
+            "location": {"latest_episode": None, "raw_region": "Unknown"},
+            "route_graph_available": False,
+            "unillustrated_entries": [
+                {"path": "a.md", "title": "A", "type": "Note", "badge": "b.png", "status": "fallback_badge"},
+                {"path": "b.md", "title": "B", "type": "Note", "badge": "none", "status": "missing_images"},
+                {"path": "c.md", "title": "C", "type": "Note", "badge": "none", "status": "missing_images"},
+            ],
+        }
+        output = audit_coverage.format_markdown_report(report)
+        self.assertIn("- **Unillustrated Entries:** 3 (1 with fallback badge, 2 missing image)", output)
+
 
 if __name__ == "__main__":
     unittest.main()
