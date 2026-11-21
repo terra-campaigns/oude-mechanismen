@@ -10,6 +10,3 @@ gem "oude-mechanismen", git: "https://github.com/terra-campaigns/oude-mechanisme
 # Standard GitHub Pages plugins
 gem "jekyll-relative-links"
 gem "jekyll-redirect-from"
-
-# WEBrick server for Ruby 3+
-gem "webrick"
