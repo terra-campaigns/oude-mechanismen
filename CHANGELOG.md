@@ -29,7 +29,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`oude digest --validate` enforces the full `digest-book` SKILL.md invariant set (`#73`)**: FAIL on broken/escaping `related:` frontmatter paths, `[[wikilinks]]` outside code fences, absolute `source_pdf` paths, non-string `pages:`, and `pages:` / `[p. N]` / `[pp. A–B]` citations outside `1..total_pages` when `--manifest` is supplied; WARN on orphan notes unreachable from `_index.md`.
 - **`oude audit` summary now counts unillustrated entries (`#21` pilot)**: one `Unillustrated Entries` line with fallback-badge vs missing-image split, so the per-note table no longer reads as the whole signal.
 
+## [0.8.0] - 2026-11-20
+
+### Added
+
+- **New `crosslink-tiers` skill (`#70`, PR `#85`)**: scans Tier 1 notes (`catalog.json`) and Tier 3 digest notes (`references.json` / `_gm-materials/digests/`) for cross-tier related entities and inserts relative Markdown links inside `{% comment %} ... {% endcomment %}` blocks — visible in Obsidian graph view, hidden from the published Jekyll site. `data_extractor.rb` and `lint_wiki.py` gained `_gm-materials`-safe link guards so digest paths never leak into the published catalogue or rendered pages.
+- **Python e2e suites + all-content/all-agents architectural evaluation (`#32`, `#34`, PR `#86`)**: `tests/test_e2e_jekyll.py` (real `bundle exec jekyll build` of a fixture vault) and `tests/test_e2e_wheel.py` (`uv build` + clean-venv install outside the checkout, `resolve_asset_dir` checks), wired into the CI `validate` job; `docs/designs/005_all_content_all_agents_architectural_evaluation.md` records the evaluation that confirmed progressive retrieval (`catalog.json`/`references.json`/`lookup-context`) supersedes the legacy `/all-content.html` monolith.
+- **Headless integration coverage for the packaged dynamic gem (`#23`; `#34`'s fixture-build and wheel-smoke suites landed separately on `develop`)**: `tests/test_dynamic_gem.rb` (`JekyllHeadlessTest`) builds the gemspec, validates the built `.gem` archive and its isolated scratch-`GEM_HOME` install/load, and runs a headless `jekyll build` of `tests/fixtures/vault/` driven by the installed gem (rendering, in-memory includes, `data_extractor.rb` catalogue). Runs in the CI `validate` job; details in `tests/README.md`.
+- **Scribe-session cluster (`#26`, `#27`, `#28`)**: `scripts/scribe_session.py` now supports GM recap anchors (`--recap` or auto-discovered `<slug>_recap.md`, validated schema with level-1 title, injected as a `### GM Recap Anchor:` prompt section that is stripped from outputs like other Tier 0 boundaries), chunked extraction (`--chunk-size` words, sentence-boundary chunks each lint-validated before the next, merged via a link-graph-prioritised pass from the new pure `scripts/link_graph.py` module), and a rolling session add-on glossary (`--rolling-glossary`/`--no-rolling-glossary`; session-new terms derived from the transcript via link-graph candidates, canon titles excluded, merged into `.agents/context/rolling_glossary.md` with dedupe and first-definition-wins conflict resolution). The rolling glossary is indexed into `.agents/context/catalog.json` by `jekyll/_plugins/data_extractor.rb` (type `glossary`, tier 2) for progressive retrieval; both files are gitignored local caches.
+- **Linter support (`#26`, `#27`, `#28`)**: `scripts/lint_chapter.py` gains `--chunk` (independent chunk validation via shared `lint_chunk_text`, also called per chunk inside `scribe_session.py`'s chunked passes) and canon name/ledger validation against the rolling glossary (`canon-name-casing` with word boundaries, `ledger-entry-numeric` warnings); `scripts/lint_wiki.py` gains a type-safe `rolling-glossary` check validating definitions and flagging casing conflicts with published catalog titles. `.agents/context/rolling_glossary.md` and `catalog.json` are gitignored local caches.
+- **Published-canon delivery policy (package #91: `#20`, `#18`)**: prep-session is documented as paper-notebook-centric delivery with a strict no-read-aloud-boxes rule (#20; no change to scribe input types); episode cross-references must be narrative-anchored markdown links, with `lint_chapter.py` (Gate 1, the episode-authoring lint) emitting a `mechanical-parenthetical` WARN for `(See Episode N)` forms (#18); narrative links are indexed in `catalog.json` via `links_out`/`links_in` as before.
+
 ---
+
+---
+
+## [0.7.3] - 2026-11-20
+
+### Fixed
+
+- **Flat digest stubs no longer co-indexed with nested wikis (`#74`, PR `#79`)**: `compile_references()` in `scripts/generate_digests.py` detects a legacy flat `<slug>.md` left alongside a nested `<slug>/` wiki at any depth, emits `[WARN]` naming both paths, and excludes the stub from `.agents/context/references.json` (the nested wiki supersedes it).
+- **Dependabot no longer opens inverted downgrade PRs for the git-pinned engine in campaign vaults (`#76`, PR `#81`)**: vaults scaffold `.github/dependabot.yml` (via `oude init` / `bin/init_vault.sh`) with a bundler `ignore` rule for `oude-mechanismen`; `oude doctor` warns when a git-sourced Gemfile pin lacks the rule and `--fix` adds it idempotently with duplicate-key-safe YAML validation.
+
+### Changed
+
+- **Two-branch release flow (`#77`, PR `#80`, follow-up `#82`)**: `develop` is the integration branch and default PR base for feature/fix work; `main` is release-only (release-cut PRs with `VERSION` bump + dated changelog + `vX.Y.Z` tag after merge). Enforced by active GitHub rulesets (`main-release-only`, `protect-develop`) committed in `.github/rulesets/` and verified by a push-only `rulesets` CI job; CI runs on both branches.
 
 ## [0.7.2] - 2026-11-19
 
@@ -341,9 +365,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...HEAD
+[0.7.3]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...v0.7.3
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.0...HEAD
 [0.9.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...v0.9.0
-[0.7.2]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...v0.7.2
+[0.8.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.3...v0.8.0
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
 [0.2.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.1.0...v0.2.0
