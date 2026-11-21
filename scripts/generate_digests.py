@@ -1035,19 +1035,25 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
             return f"broken relative link '{raw_target}'", None
         return None, link_resolved
 
-    def page_numbers(spec: str) -> List[int]:
-        """Expand a 'pages' spec like '14-18, 23' into individual page numbers."""
-        nums: List[int] = []
+    def out_of_range_pages(spec: str, total: int) -> List[int]:
+        """Return page numbers in a 'pages' spec like '14-18, 23' outside 1..total without expanding ranges."""
+        bad: List[int] = []
         for part in spec.split(","):
             part = part.strip()
             m = PAGE_RANGE_RE.match(part)
             if m:
-                nums.extend(range(int(m.group(1)), int(m.group(2)) + 1))
+                lo, hi = int(m.group(1)), int(m.group(2))
+                if lo > hi or lo < 1:
+                    bad.append(lo)
+                elif hi > total:
+                    bad.append(hi)
             elif part.isdigit():
-                nums.append(int(part))
+                n = int(part)
+                if n < 1 or n > total:
+                    bad.append(n)
             else:
-                nums.append(-1)  # unparseable token counts as out of range
-        return nums
+                bad.append(-1)  # unparseable token counts as out of range
+        return bad
 
     errors: List[str] = []
     total_lines = 0
@@ -1086,7 +1092,9 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                         elif resolved is not None:
                             link_targets[resolved_md].append(resolved)
             pages_spec = loaded.get("pages")
-            if isinstance(pages_spec, str) and pages_spec.strip():
+            if pages_spec is not None and not (isinstance(pages_spec, str) and pages_spec.strip()):
+                errors.append(f"{rel}:1: frontmatter 'pages' must be a non-empty string like '14-18'")
+            elif isinstance(pages_spec, str) and pages_spec.strip():
                 page_refs.append((rel, 1, pages_spec))
 
         fm_end_line = fm_prefix.count("\n")
@@ -1115,7 +1123,7 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
 
     if total_pages is not None:
         for rel, line_no, spec in page_refs:
-            out_of_range = [n for n in page_numbers(spec) if n < 1 or n > total_pages]
+            out_of_range = out_of_range_pages(spec, total_pages)
             if out_of_range:
                 errors.append(f"{rel}:{line_no}: page citation '{spec}' out of range 1..{total_pages} (book has {total_pages} page(s))")
     index_file = digest_dir / "_index.md"

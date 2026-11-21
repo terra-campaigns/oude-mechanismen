@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Template cleanup (`#92`)**: dropped the redundant `gem "webrick"` pin from `templates/jekyll/Gemfile.template` (transitive via `jekyll ~> 4.4.1`), added `"TASKS.md"` to `exclude:` and pruned retired `"sync.sh"` / unscaffolded `"bin"` from `templates/jekyll/_config.yml.template`, and refreshed the stale `_data/` description and legacy runner names in `templates/AGENTS.md.template`.
 
+### Changed
+
+- **`oude digest --validate` enforces the full `digest-book` SKILL.md invariant set (`#73`)**: FAIL on broken/escaping `related:` frontmatter paths, `[[wikilinks]]` outside code fences, absolute `source_pdf` paths, non-string `pages:`, and `pages:` / `[p. N]` / `[pp. A–B]` citations outside `1..total_pages` when `--manifest` is supplied; WARN on orphan notes unreachable from `_index.md`.
+
 ---
 
 ## [0.7.2] - 2026-11-19

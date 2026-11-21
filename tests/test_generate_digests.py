@@ -742,7 +742,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5, oops"\n---\n\n# Book\n\nCites [p. 5] and [pp. 1–3].\n',
+            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5, oops"\n---\n\n# Book\n\nCites [p. 5], [pp. 4-2], and [pp. 1–3].\n',
             encoding="utf-8",
         )
         manifest = Path(self.temp_dir.name) / "manifest.json"
@@ -754,6 +754,7 @@ class TestExtractAndValidate(unittest.TestCase):
         out = buf.getvalue()
         self.assertIn("page citation '3-5, oops' out of range", out)
         self.assertIn("page citation '5' out of range", out)
+        self.assertIn("page citation '4-2' out of range", out)
         self.assertNotIn("'1–3' out of range", out)
 
     def test_validate_rejects_absolute_source_pdf(self):
@@ -768,6 +769,21 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir)
         self.assertEqual(rc, 1)
         self.assertIn("'source_pdf' must be a portable relative path or basename", buf.getvalue())
+
+    def test_validate_rejects_non_string_pages_frontmatter(self):
+        digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
+        note = self._write_valid_note(digest_dir)
+        note.write_text(
+            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: [3, 25]\n---\n\n# Book\n\nIntro.\n",
+            encoding="utf-8",
+        )
+        manifest = Path(self.temp_dir.name) / "manifest.json"
+        manifest.write_text(json.dumps({"total_pages": 20, "slices": []}), encoding="utf-8")
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
+        self.assertEqual(rc, 1)
+        self.assertIn("frontmatter 'pages' must be a non-empty string", buf.getvalue())
 
     def test_validate_handles_link_titles_and_url_encoded_spaces(self):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
