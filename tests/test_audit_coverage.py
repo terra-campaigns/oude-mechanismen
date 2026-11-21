@@ -192,6 +192,23 @@ class TestAuditCoverage(unittest.TestCase):
         output = audit_coverage.format_markdown_report(report)
         self.assertIn("- **Unillustrated Entries:** 3 (1 with fallback badge, 2 missing image)", output)
 
+    def test_proximity_gaps_follow_route_graph_connections(self):
+        """Regression test for #29: route_graph.json drives audit proximity analysis."""
+        graph = {
+            "stations": {"A": {"num": 1}, "B": {"num": 2}, "C": {"num": 3}},
+            "connections": [
+                {"origin": "A", "destination": "B", "weeks": 2, "direction": "East", "terrain": "road"},
+                {"origin": "B", "destination": "C", "weeks": 1, "direction": "North", "terrain": "trail"},
+            ],
+        }
+        gaps = audit_coverage.calculate_proximity_gaps("A", graph, {}, max_hops=2)
+        self.assertEqual([g["station"] for g in gaps], ["B", "C"])
+        self.assertEqual(gaps[0]["hops"], 1)
+        self.assertEqual(gaps[1]["total_weeks"], 3)
+        # Without the graph's connections nothing is reachable.
+        empty = audit_coverage.calculate_proximity_gaps("A", {"stations": {"A": {}}}, {}, max_hops=2)
+        self.assertEqual(empty, [])
+
 
 if __name__ == "__main__":
     unittest.main()
