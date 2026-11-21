@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **Template cleanup (`#92`)**: dropped the redundant `gem "webrick"` pin from `templates/jekyll/Gemfile.template` (transitive via `jekyll ~> 4.4.1`), added `"TASKS.md"` to `exclude:` and pruned retired `"sync.sh"` / unscaffolded `"bin"` from `templates/jekyll/_config.yml.template`, and refreshed the stale `_data/` description and legacy runner names in `templates/AGENTS.md.template`.
+- **Legacy root scripts removed (`#52` Occam's razor pass)**: deleted deprecated `sync.sh` and `bin/init_vault.sh` (superseded by ADR 001/002 gem + `oude` CLI), their shell-syntax CI step, and `tests/test_init_vault.py` (init behaviour covered by `tests/test_cli.py`, with auto-branch-deletion coverage re-added there); dropped stale per-file version stamps from `jekyll/_includes/`.
 
 ### Changed
 
