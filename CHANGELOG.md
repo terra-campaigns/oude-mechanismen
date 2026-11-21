@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linter support (`#26`, `#27`, `#28`)**: `scripts/lint_chapter.py` gains `--chunk` (independent chunk validation via shared `lint_chunk_text`, also called per chunk inside `scribe_session.py`'s chunked passes) and canon name/ledger validation against the rolling glossary (`canon-name-casing` with word boundaries, `ledger-entry-numeric` warnings); `scripts/lint_wiki.py` gains a type-safe `rolling-glossary` check validating definitions and flagging casing conflicts with published catalog titles. `.agents/context/rolling_glossary.md` and `catalog.json` are gitignored local caches.
 - **Published-canon delivery policy (package #91: `#20`, `#18`)**: prep-session is documented as paper-notebook-centric delivery with a strict no-read-aloud-boxes rule (#20; no change to scribe input types); episode cross-references must be narrative-anchored markdown links, with `lint_chapter.py` (Gate 1, the episode-authoring lint) emitting a `mechanical-parenthetical` WARN for `(See Episode N)` forms (#18); narrative links are indexed in `catalog.json` via `links_out`/`links_in` as before.
 
+### Removed
+
+- **Template cleanup (`#92`)**: dropped the redundant `gem "webrick"` pin from `templates/jekyll/Gemfile.template` (transitive via `jekyll ~> 4.4.1`), added `"TASKS.md"` to `exclude:` and pruned retired `"sync.sh"` / unscaffolded `"bin"` from `templates/jekyll/_config.yml.template`, and refreshed the stale `_data/` description and legacy runner names in `templates/AGENTS.md.template`.
+
 ---
 
 ## [0.7.2] - 2026-11-19
