@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import sys
@@ -208,6 +210,104 @@ class TestAuditCoverage(unittest.TestCase):
         # Without the graph's connections nothing is reachable.
         empty = audit_coverage.calculate_proximity_gaps("A", {"stations": {"A": {}}}, {}, max_hops=2)
         self.assertEqual(empty, [])
+
+    def _write_note(self, rel_path: str, front_matter: str, body: str = "Body.\n") -> Path:
+        p = self.repo_root / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"---\n{front_matter.strip()}\n---\n\n{body}", encoding="utf-8")
+        return p
+
+    def test_audit_unillustrated_entries_honours_exclude_paths_and_prefix_boundaries(self):
+        # Issue #110: YAML parsing of tier1_sources.yml + exclude_paths filtering.
+        (self.context_dir / "tier1_sources.yml").write_text(
+            "drive_dir: .\n"
+            "include_paths:\n"
+            "  - campaigns # inline comment\n"
+            "  - directory/\n"
+            "exclude_paths:\n"
+            "  - campaigns/Anthology/\n"
+            "  - campaigns/FailedExports\n"
+            "  - directory/FoldedBelow\n"
+            "  - directory/draft.md\n",
+            encoding="utf-8",
+        )
+        self._write_note("campaigns/Anthology/old.md", "title: Old Story\ntype: session")
+        self._write_note("campaigns/FailedExports/broken.md", "title: Broken\ntype: session")
+        self._write_note("directory/FoldedBelow/entity.md", "title: Folded\ntype: location")
+        self._write_note("directory/draft.md", "title: Draft\ntype: location")
+        # Sibling prefix directory must NOT be excluded by prefix-boundary check
+        self._write_note("campaigns/AnthologyExtra/ep1.md", "title: Ep 1\ntype: session")
+        self._write_note("directory/Active/inn.md", "title: The Inn\ntype: location")
+
+        entries = audit_coverage.audit_unillustrated_entries(self.repo_root)
+        paths = [e["path"] for e in entries]
+        self.assertEqual(paths, ["campaigns/AnthologyExtra/ep1.md", "directory/Active/inn.md"])
+
+    def test_audit_unillustrated_entries_yaml_image_and_images_variants(self):
+        (self.context_dir / "tier1_sources.yml").write_text(
+            "include_paths:\n  - directory\nexclude_paths: []\n", encoding="utf-8"
+        )
+        # Illustrated variants (all should be excluded from unillustrated list)
+        self._write_note("directory/scalar_image.md", 'title: S1\nimage: "/imgs/s1.png"')
+        self._write_note("directory/inline_images.md", 'title: S2\nimages: ["/imgs/s2.png"]')
+        self._write_note("directory/scalar_images.md", "title: S3\nimages: /imgs/s3.png")
+        self._write_note("directory/block_images.md", "title: S4\nimages:\n  - /imgs/s4.png")
+        self._write_note(
+            "directory/custom_plus_badge.md",
+            "title: S5\nimages:\n  - /imgs/badges/people.png\n  - /imgs/portrait.png",
+        )
+        # Unillustrated variants
+        self._write_note("directory/empty_list.md", "title: E1\nimages: []")
+        self._write_note("directory/null_images.md", "title: E2\nimages: null")
+        self._write_note("directory/omitted.md", "title: E3")
+
+        entries = audit_coverage.audit_unillustrated_entries(self.repo_root)
+        self.assertEqual(
+            [e["path"] for e in entries],
+            ["directory/empty_list.md", "directory/null_images.md", "directory/omitted.md"],
+        )
+
+    def test_audit_unillustrated_entries_fallback_badge_classification(self):
+        (self.context_dir / "tier1_sources.yml").write_text(
+            "include_paths:\n  - directory\n  - campaigns\nexclude_paths: []\n", encoding="utf-8"
+        )
+        # Explicit badge in image: or images:
+        self._write_note(
+            "directory/explicit_badge.md",
+            "title: Explicit\ntype: session\nimage: /imgs/badges/custom.png",
+        )
+        # Dynamic fallback badge types (matching connected_to.html) when images are empty/omitted
+        for entity_type in ("people", "faction", "location", "creature"):
+            self._write_note(
+                f"directory/{entity_type}_note.md",
+                f"title: {entity_type.title()} Note\ntype: {entity_type}",
+            )
+        # Types without dynamic fallback badges -> missing_images
+        self._write_note("campaigns/ep1.md", "title: Episode 1\ntype: session")
+        self._write_note("directory/untyped.md", "title: Untyped")
+
+        by_path = {e["path"]: e for e in audit_coverage.audit_unillustrated_entries(self.repo_root)}
+        self.assertEqual(by_path["directory/explicit_badge.md"]["status"], "fallback_badge")
+        self.assertEqual(by_path["directory/explicit_badge.md"]["badge"], "custom")
+        for entity_type in ("people", "faction", "location", "creature"):
+            rec = by_path[f"directory/{entity_type}_note.md"]
+            self.assertEqual(rec["status"], "fallback_badge")
+            self.assertEqual(rec["badge"], entity_type)
+        self.assertEqual(by_path["campaigns/ep1.md"]["status"], "missing_images")
+        self.assertEqual(by_path["campaigns/ep1.md"]["badge"], "none")
+        self.assertEqual(by_path["directory/untyped.md"]["status"], "missing_images")
+        self.assertEqual(by_path["directory/untyped.md"]["badge"], "none")
+
+    def test_audit_unillustrated_entries_handles_malformed_yaml_gracefully(self):
+        (self.context_dir / "tier1_sources.yml").write_text("include_paths: [broken\n", encoding="utf-8")
+        self._write_note("directory/bad_fm.md", "title: [unclosed\n")
+        self._write_note("directory/good.md", "title: Good\ntype: location")
+
+        stderr_buf = io.StringIO()
+        with contextlib.redirect_stderr(stderr_buf):
+            entries = audit_coverage.audit_unillustrated_entries(self.repo_root)
+        self.assertEqual([e["path"] for e in entries], ["directory/good.md"])
+        self.assertIn("Warning: Failed to parse", stderr_buf.getvalue())
 
 
 if __name__ == "__main__":

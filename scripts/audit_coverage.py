@@ -558,79 +558,160 @@ def audit_untapped_factions(
     return audit
 
 
-def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
-    """Scan campaign markdown notes for missing illustrations or fallback badges."""
-    unillustrated: List[Dict[str, Any]] = []
+DEFAULT_TIER1_INCLUDE_PATHS = ["campaigns", "directory", "systems", "statblocks", "trading"]
+DEFAULT_TIER1_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
+DYNAMIC_FALLBACK_BADGE_TYPES = frozenset({"people", "faction", "location", "creature"})
+FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+BADGE_PATH_RE = re.compile(r"^(?:.*/)?imgs/badges/([^/?#]+)\.png(?:[?#].*)?$", re.IGNORECASE)
 
-    # Check tier1_sources.yml include_paths if present, otherwise default folders
+
+def _normalise_rel_path(raw: Any) -> str:
+    """Normalise a vault-relative config path for prefix comparison."""
+    cleaned = str(raw).strip().replace("\\", "/")
+    return re.sub(r"^\./+", "", cleaned).lstrip("/").rstrip("/")
+
+
+def _load_tier1_paths(repo_root: Path) -> Tuple[List[str], List[str]]:
+    """Load include_paths and exclude_paths from tier1_sources.yml via yaml.safe_load."""
     tier1_cfg = repo_root / ".agents" / "context" / "tier1_sources.yml"
-    include_paths = ["directory", "campaigns", "systems"]
-    if tier1_cfg.exists():
-        try:
-            content = tier1_cfg.read_text(encoding="utf-8")
-            m = re.search(r"include_paths:\s*\n((?:[ \t]*-[ \t]*.*\n?)*)", content)
-            if m:
-                paths = [re.sub(r"^[ \t]*-[ \t]*", "", line).strip() for line in m.group(1).splitlines() if line.strip()]
-                if paths:
-                    include_paths = paths
-        except Exception:
-            pass
+    include_paths = list(DEFAULT_TIER1_INCLUDE_PATHS)
+    exclude_paths = list(DEFAULT_TIER1_EXCLUDE_PATHS)
+    if not tier1_cfg.is_file():
+        return include_paths, exclude_paths
+
+    try:
+        cfg = yaml.safe_load(tier1_cfg.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        print(f"Warning: Failed to parse {tier1_cfg}: {exc}", file=sys.stderr)
+        return include_paths, exclude_paths
+
+    if not isinstance(cfg, dict):
+        return include_paths, exclude_paths
+
+    raw_include = cfg.get("include_paths")
+    if isinstance(raw_include, list):
+        normalised = [_normalise_rel_path(p) for p in raw_include if p is not None and _normalise_rel_path(p)]
+        if normalised:
+            include_paths = normalised
+    elif isinstance(raw_include, str) and _normalise_rel_path(raw_include):
+        include_paths = [_normalise_rel_path(raw_include)]
+
+    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
+        raw_exclude = cfg["exclude_paths"]
+        if isinstance(raw_exclude, list):
+            exclude_paths = [
+                _normalise_rel_path(p) for p in raw_exclude if p is not None and _normalise_rel_path(p)
+            ]
+        elif isinstance(raw_exclude, str):
+            norm = _normalise_rel_path(raw_exclude)
+            exclude_paths = [norm] if norm else []
+
+    return include_paths, exclude_paths
+
+
+def _is_excluded_path(rel_posix: str, exclude_paths: List[str]) -> bool:
+    """Mirror data_extractor.rb / lint_wiki.py path-prefix exclusion semantics."""
+    return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
+
+
+def _extract_front_matter_images(fm: Dict[str, Any]) -> List[str]:
+    """Collect non-empty image paths from YAML front matter `image` and `images` fields."""
+    collected: List[str] = []
+    for key in ("image", "images"):
+        val = fm.get(key)
+        if isinstance(val, str):
+            stripped = val.strip()
+            if stripped:
+                collected.append(stripped)
+        elif isinstance(val, list):
+            for item in val:
+                if item is None or isinstance(item, (dict, list)):
+                    continue
+                stripped = str(item).strip()
+                if stripped:
+                    collected.append(stripped)
+    return collected
+
+
+def audit_unillustrated_entries(repo_root: Path) -> List[Dict[str, Any]]:
+    """Scan Tier 1 markdown notes for missing illustrations or fallback badges."""
+    repo_root = repo_root.resolve()
+    unillustrated: List[Dict[str, Any]] = []
+    include_paths, exclude_paths = _load_tier1_paths(repo_root)
+    seen: Set[Path] = set()
 
     for folder in include_paths:
-        target_dir = repo_root / folder
-        if not target_dir.exists():
+        target = (repo_root / folder).resolve()
+        if not target.is_relative_to(repo_root):
+            continue
+        if target.is_dir():
+            candidates = sorted(target.rglob("*.md"))
+        elif target.is_file() and target.suffix.lower() == ".md":
+            candidates = [target]
+        else:
             continue
 
-        for md_file in sorted(target_dir.rglob("*.md")):
+        for md_file in candidates:
+            resolved = md_file.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+
             if md_file.name.startswith((".", "_")):
                 continue
 
             try:
-                text = md_file.read_text(encoding="utf-8", errors="replace")
-                fm_match = re.match(r"^---\r?\n(.*?)\r?\n---", text, re.DOTALL)
-                if not fm_match:
-                    continue
-                fm_text = fm_match.group(1)
-
-                title_m = re.search(r"^title:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
-                title = title_m.group(1).strip() if title_m else md_file.stem
-                type_m = re.search(r"^type:[ \t]*[\"']?(.*?)[\"']?$", fm_text, re.MULTILINE)
-                ent_type = type_m.group(1).strip() if type_m else "Note"
-
-                # Check images front-matter field
-                img_match = re.search(r"^images:[ \t]*\r?\n((?:[ \t]*-[ \t]*.*\r?\n?)*)", fm_text, re.MULTILINE)
-                is_unillustrated = False
-                badge_name = None
-
-                if not img_match:
-                    is_unillustrated = True
-                else:
-                    lines = [line.strip() for line in img_match.group(1).splitlines() if line.strip()]
-                    if not lines:
-                        is_unillustrated = True
-                    else:
-                        badge_pattern = r"^-[ \t]*[/a-zA-Z0-9_\-\.]*imgs/badges/([a-zA-Z0-9_\-\.]+)\.png"
-                        non_badge_images = []
-                        for line in lines:
-                            b_m = re.match(badge_pattern, line)
-                            if b_m:
-                                badge_name = b_m.group(1)
-                            else:
-                                non_badge_images.append(line)
-                        if not non_badge_images:
-                            is_unillustrated = True
-
-                if is_unillustrated:
-                    rel_path = str(md_file.relative_to(repo_root))
-                    unillustrated.append({
-                        "path": rel_path,
-                        "title": title,
-                        "type": ent_type,
-                        "badge": badge_name or "none",
-                        "status": "fallback_badge" if badge_name else "missing_images",
-                    })
-            except Exception:
+                rel_path = resolved.relative_to(repo_root)
+            except ValueError:
                 continue
+            if any(part.startswith(".") for part in rel_path.parts):
+                continue
+
+            rel_posix = rel_path.as_posix()
+            if _is_excluded_path(rel_posix, exclude_paths):
+                continue
+
+            try:
+                text = resolved.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            fm_match = FRONT_MATTER_RE.match(text)
+            if not fm_match:
+                continue
+            try:
+                fm = yaml.safe_load(fm_match.group(1))
+            except yaml.YAMLError:
+                continue
+            if not isinstance(fm, dict):
+                continue
+
+            raw_title = fm.get("title")
+            title = str(raw_title).strip() if raw_title is not None and str(raw_title).strip() else md_file.stem
+            raw_type = fm.get("type")
+            ent_type = str(raw_type).strip() if raw_type is not None and str(raw_type).strip() else "Note"
+
+            explicit_badge: Optional[str] = None
+            non_badge_images: List[str] = []
+            for img in _extract_front_matter_images(fm):
+                b_m = BADGE_PATH_RE.match(img)
+                if b_m:
+                    if explicit_badge is None:
+                        explicit_badge = b_m.group(1)
+                else:
+                    non_badge_images.append(img)
+
+            if non_badge_images:
+                continue
+
+            badge_name = explicit_badge or (ent_type if ent_type in DYNAMIC_FALLBACK_BADGE_TYPES else None)
+            unillustrated.append({
+                "path": rel_posix,
+                "title": title,
+                "type": ent_type,
+                "badge": badge_name or "none",
+                "status": "fallback_badge" if badge_name else "missing_images",
+            })
 
     return unillustrated
 
