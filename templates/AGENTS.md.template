@@ -21,7 +21,7 @@ Common folders:
 - `imgs/`: images used by markdown pages and galleries.
 - `_includes/`: reusable Jekyll snippets.
 - `_sass/`: Just the Docs theme customisation.
-- `_data/`: generated JSON used by includes, backlinks, galleries, and metadata.
+- `_data/`: theme data files; engine link, gallery, and metadata extraction runs in-memory via the `oude-mechanismen` gem.
 - `.obsidian/`: Obsidian vault settings. Avoid changing unless explicitly asked.
 
 ## Writing Style
@@ -35,7 +35,7 @@ Common folders:
 - When uncertainty exists, mark it rather than invent continuity.
 - No read-aloud blocks: never generate boxed narrative text (`> Table Read-Aloud`), scripted monologues, or descriptive paragraphs meant to be read to players.
 - Notebook-centric delivery: the GM writes prep notes into a physical notebook. Provide the minimum word count necessary: 1-line sensory cues, 1-line tactical facts, and sharp, bulleted player choices.
-- Pre-Flight Publishing Audit Gate (Pre-PR Only): To preserve LLM context and prevent unnecessary token consumption, the full 3-Gate Pre-Publishing Audit (Gate 1: `oude lint` or `scripts/lint_chapter.py`; Gate 2: `review-style`; Gate 3: `oude lint-wiki` (`scripts/lint_wiki.py`), surfaced by the `lint-wiki` skill) must NOT be executed on routine intermediate commits. It is strictly mandatory immediately prior to requesting final operator review or drafting a Pull Request (`gh pr create`), and whenever an operator asks "What is left before publishing?" or "Is this session ready to publish?". The agent MUST execute the 3-Gate Audit and emit the standardised Pre-Publishing Readiness Scorecard before declaring readiness. Declaring publication readiness on the basis of Git, CI, or Jekyll build status alone is strictly prohibited. Deterministic Gates 1 and 3 (`oude lint`, `oude lint-wiki`) execute locally with zero token consumption and may be run at any time.
+- Pre-Flight Publishing Audit Gate (Pre-PR Only): To preserve LLM context and prevent unnecessary token consumption, the full 3-Gate Pre-Publishing Audit (Gate 1: `oude lint`; Gate 2: `review-style`; Gate 3: `oude lint-wiki`, surfaced by the `lint-wiki` skill) must NOT be executed on routine intermediate commits. It is strictly mandatory immediately prior to requesting final operator review or drafting a Pull Request (`gh pr create`), and whenever an operator asks "What is left before publishing?" or "Is this session ready to publish?". The agent MUST execute the 3-Gate Audit and emit the standardised Pre-Publishing Readiness Scorecard before declaring readiness. Declaring publication readiness on the basis of Git, CI, or Jekyll build status alone is strictly prohibited. Deterministic Gates 1 and 3 (`oude lint`, `oude lint-wiki`) execute locally with zero token consumption and may be run at any time.
 
 ## Campaign Canon & Canon Hierarchy
 
