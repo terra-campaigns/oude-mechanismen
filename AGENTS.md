@@ -136,7 +136,7 @@ When searching for lore, locations, NPCs, or mechanics:
 
 ## 5. Legacy Synchronisation & Version Stamping
 
-- **Deprecated Template Sync (`sync.sh`)**: `sync.sh` is formally deprecated and its `MANAGED_FILES` list is empty. Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and deprecated `all-content.md` downstream.
+- **Retired Template Sync (`sync.sh`)**: the legacy `sync.sh` and `bin/init_vault.sh` scripts have been removed from this repo (see `docs/reviews/002_occam_razor_evaluation_052.md`). Jekyll plugins and includes are served in-memory by the `oude-mechanismen` RubyGem (ADR 001), Python tooling and skills are distributed globally via `oude` / `uv` (ADR 002), and `oude doctor --fix` removes legacy `.agents/scripts/` runners, shadowing `_plugins/`, `_includes/`, and deprecated `all-content.md` downstream.
 - **Version Stamping**: Dynamic static site generation via `oude-mechanismen` records the authoritative active engine version directly into `.agents/context/catalog.json`. The legacy `.agents/.engine-version` file is formally deprecated and audited by `oude doctor`.
 
 ---

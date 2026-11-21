@@ -66,14 +66,6 @@ jobs:
       - name: Run headless dynamic-gem integration test (issue #23)
         run: ruby tests/test_dynamic_gem.rb
 
-      - name: Validate Shell scripts syntax
-        run: |
-          bash -n sync.sh
-          bash -n bin/init_vault.sh
-          if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck -s bash sync.sh bin/init_vault.sh
-          fi
-
       - name: Validate Markdown headings blank line rule
         run: |
           python3 - << 'PY'

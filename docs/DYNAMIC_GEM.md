@@ -66,14 +66,13 @@ Campaign vaults pin the engine with a git tag in the `Gemfile` (see `templates/j
 
 Until the gem is published to a registry — the future alternative, which makes Dependabot compare real semver — vaults must exclude the engine from Dependabot:
 
-- `oude init` (and `bin/init_vault.sh`) scaffold `.github/dependabot.yml` from `templates/github/dependabot.yml.template`, whose bundler update carries an `ignore` rule for all `oude-mechanismen` versions. Existing files are never clobbered.
+- `oude init` scaffolds `.github/dependabot.yml` from `templates/github/dependabot.yml.template`, whose bundler update carries an `ignore` rule for all `oude-mechanismen` versions. Existing files are never clobbered.
 - `oude doctor` warns when a git-pinned `Gemfile` lacks that ignore rule, and `oude doctor --fix` creates or patches `.github/dependabot.yml` idempotently, preserving unrelated entries.
 - Bump the engine manually by editing the `tag:` in the `Gemfile` (see [Updating the engine](#updating-the-engine)) and re-run `oude doctor`.
 
 ## Deprecations
 
-- `sync.sh` is **deprecated**; gem-served Jekyll assets (ADR 001), `oude` CLI distribution (ADR 002), and `oude doctor --fix` replace template syncing.
-- `bin/init_vault.sh` is **deprecated** in favour of `oude init <target>`; retained temporarily while legacy references and tests (`tests/test_init_vault.py`) remain.
+- `sync.sh` and `bin/init_vault.sh` were removed from the engine repo in favour of gem-served Jekyll assets (ADR 001), `oude` CLI distribution (ADR 002), `oude init <target>`, and `oude doctor --fix`.
 - `.agents/scripts/*.py` runner wrappers are legacy and removed by `oude doctor --fix`; call the `oude` CLI directly.
 
 ## Troubleshooting
