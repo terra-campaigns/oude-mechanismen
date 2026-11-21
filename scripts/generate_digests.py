@@ -1045,6 +1045,8 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 nums.extend(range(int(m.group(1)), int(m.group(2)) + 1))
             elif part.isdigit():
                 nums.append(int(part))
+            else:
+                nums.append(-1)  # unparseable token counts as out of range
         return nums
 
     errors: List[str] = []

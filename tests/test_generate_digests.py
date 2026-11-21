@@ -742,7 +742,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5"\n---\n\n# Book\n\nCites [p. 5] and [pp. 1–3].\n',
+            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5, oops"\n---\n\n# Book\n\nCites [p. 5] and [pp. 1–3].\n',
             encoding="utf-8",
         )
         manifest = Path(self.temp_dir.name) / "manifest.json"
@@ -752,7 +752,7 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
         self.assertEqual(rc, 1)
         out = buf.getvalue()
-        self.assertIn("page citation '3-5' out of range", out)
+        self.assertIn("page citation '3-5, oops' out of range", out)
         self.assertIn("page citation '5' out of range", out)
         self.assertNotIn("'1–3' out of range", out)
 
