@@ -124,6 +124,8 @@ The engine operates on a strict **Three-Tier Canon Hierarchy**:
 - **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
 - **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
 
+- **Route graph (optional)**: `.agents/context/route_graph.json` (scaffolded from `templates/route_graph.json.template`) encodes station topology — stations, aliases, connections, `station_lore` — and is consumed only by `scripts/audit_coverage.py` for the *Geographic Proximity & Destination Gaps* section of `oude audit`. It is not canon and not part of progressive retrieval; when absent, the audit simply skips that section (audit findings on issue #29).
+
 ### Low-Token Progressive Retrieval Protocol
 
 When searching for lore, locations, NPCs, or mechanics:
