@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-21
+
 ### Fixed
 
 - **Rolling-glossary text reporting and targeted-mode gating (`#102`)**: `render_text_report()` in `scripts/lint_wiki.py` now renders `rolling-glossary` (and any unexpected check keys) in both the summary bullets and findings tables, whilst `lint_wiki()` skips `check_rolling_glossary()` in targeted mode unless `.agents/context/rolling_glossary.md` is explicitly targeted.
@@ -370,10 +372,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[0.7.3]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...v0.7.3
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.3...v0.8.0
+[0.7.3]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.6.0...v0.7.0
 [0.2.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.1.0...v0.2.0
