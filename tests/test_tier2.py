@@ -383,6 +383,7 @@ class TestSchemaValidation(Tier2TestCase):
             actors=["sigisfarne"],
             opinions=[{"actor": "sigisfarne", "vote": 0, "shifted": False, "stance": "Meh."}],
         )
+        self.write_ruling(fm)
         payload, diagnostics, _ = self.compile(write=False)
         self.assertEqual(self.fails(diagnostics), [])
         self.assertNotIn("opinions", payload["entries"][0])
@@ -569,6 +570,7 @@ class TestLoadActiveRulingsText(Tier2TestCase):
         self.assertEqual(lines, [
             "- **R-001 — First:** One.",
             "- **R-002 — Second:** Two.",
+            "- **R-004 — Test Ruling:** The sky is red.",
         ])
 
     def test_ignores_stale_cache(self):
