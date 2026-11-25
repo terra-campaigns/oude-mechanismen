@@ -792,7 +792,7 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     rg_resolved = (root / ".agents" / "context" / "rolling_glossary.md").resolve()
     rg_targeted = False
     rulings_targeted = False
-    rulings_rel = (Path("_gm-materials") / "rulings").as_posix()
+    rulings_rel = tier2.RULINGS_REL_DIR.as_posix()
 
     if paths:
         files: List[Path] = []

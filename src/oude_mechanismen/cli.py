@@ -604,11 +604,14 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         gm_tracked = subprocess.run(
             ["git", "-C", str(vault), "ls-files", "-z", "--", "_gm-materials/"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
         )
         if gm_tracked.returncode == 0:
             # -z emits NUL-separated raw paths with no C-quoting, so non-ASCII
-            # filenames survive intact for both the WARN text and `git rm --cached`.
+            # filenames survive intact for both the WARN text and `git rm --cached`;
+            # errors="surrogateescape" keeps invalid-UTF-8 bytes from crashing the
+            # decode under POSIX locales.
             for rel in sorted(p for p in gm_tracked.stdout.split("\0") if p):
                 if rel in DERIVED_CACHE_FILES:
                     continue  # already reported via the DERIVED_CACHE_FILES loop above
@@ -616,7 +619,8 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                     untrack = subprocess.run(
                         ["git", "-C", str(vault), "rm", "--cached", "--quiet", "--", rel],
                         capture_output=True,
-                        text=True,
+                        encoding="utf-8",
+                        errors="surrogateescape",
                     )
                     if untrack.returncode == 0:
                         print(f"  ✓ Untracked {rel} from Git index (kept on disk)")

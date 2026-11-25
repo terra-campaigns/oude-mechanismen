@@ -39,6 +39,7 @@ Common folders:
 
 ## Campaign Canon & Canon Hierarchy
 
+- **Tier 0 (raw session media, local disk only):** Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git, Obsidian Sync, and all networked storage for player privacy.
 - **Tier 1 canon** is the published campaign notes (listed in `.agents/context/tier1_sources.yml` and indexed locally in the gitignored `.agents/context/catalog.json` cache; notes may carry an optional explicit `id:` front matter used for Tier 2 joins). These notes are strong canon.
 - **Tier 2 canon** is Project Memory, visible conversation, structured GM rulings and faction-turn records in `<drive_dir>/_gm-materials/rulings/` (indexed in the derived `<drive_dir>/_gm-materials/.cache/tier2.json`, compiled via `oude tier2`), and archival session notes in `<drive_dir>/_gm-materials/session-summaries/`.
 - **Tier 3 canon** is reference material and structured digests in `<drive_dir>/_gm-materials/digests/` (indexed in `.agents/context/references.json`) plus unplayed session prep in `<drive_dir>/_gm-materials/session-preps/`. Raw sourcebook PDFs stay outside the vault on local disk. It should be used as influence and possibility, not as automatic canon.

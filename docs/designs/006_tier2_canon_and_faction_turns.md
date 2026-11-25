@@ -19,7 +19,7 @@ This design introduces a structured Markdown format for Tier 2 rulings and facti
 This design formalises the separation between **narrative authority (Canon Tiers 0–3)** and **physical storage / privacy boundaries (Storage Pillars 0–3 from [ADR 003](../adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md))**:
 
 * **Tier 0 — Raw Table Evidence (Pillar 0, `~/Private/rpg-sessions/`):** Raw session recordings and verbatim transcripts. Exposed at the table, kept strictly local on disk for player privacy.
-* **Tier 1 — Verified Exposed Canon (Pillar 1, public Git: `include_paths` from `.agents/context/tier1_sources.yml` — template default in `templates/tier1_sources.yml.template`: `campaigns/`, `directory/`, `systems/` for campaign rules and subsystems, and `trading/`; engine code fallback when the YAML file is absent: additionally `statblocks/` per `jekyll/_plugins/data_extractor.rb:186` and `scripts/lint_wiki.py:34`):** GM-verified, player-facing published notes, including published common world knowledge ("who is the king?"). Outranks all other tiers; changing it is a retcon.
+* **Tier 1 — Verified Exposed Canon (Pillar 1, public Git: `include_paths` from `.agents/context/tier1_sources.yml` — template default in `templates/tier1_sources.yml.template`: `campaigns/`, `directory/`, `systems/` for campaign rules and subsystems, and `trading/`; engine code fallback when the YAML file is absent: additionally `statblocks/` per `jekyll/_plugins/data_extractor.rb:186` and `scripts/tier2.py:49-50`):** GM-verified, player-facing published notes, including published common world knowledge ("who is the king?"). Outranks all other tiers; changing it is a retcon.
 * **Tier 2 — Behind-the-Screen Working Canon & Unverified Records (Pillar 2, `_gm-materials/`, plus the gitignored derived `.agents/context/rolling_glossary.md`):** Confirmed behind-the-screen GM rulings and faction-turn records (`_gm-materials/rulings/`) plus AI-extracted, not line-by-line GM-verified session notes (`_gm-materials/session-summaries/`), alongside `.agents/context/rolling_glossary.md` (unverified session-new terminology awaiting promotion to Tier 1). Outranked by Tier 1; outranks Tier 3.
 * **Tier 3 — Defined Campaign Influences & Unplayed Prep (Pillar 2, `_gm-materials/`):** Distilled reference wikis (`_gm-materials/digests/`) and unplayed session preparation notes (`_gm-materials/session-preps/`). Commercial sourcebook PDFs (Pillar 3) sit outside Tier 3 as an external inspiration archive until distilled into the campaign's defined influence scope.
 
@@ -71,7 +71,7 @@ Running live campaigns (`charged`, `hostile`) with `oude-mechanismen` exposed fi
 
 ## Open Questions
 
-None. All architectural and operational decisions from brainstorming, [003_goldfish_review_117.md](../reviews/003_goldfish_review_117.md), and [consolidated_review_report.md](../reviews/egm-review-006/consolidated_review_report.md) are resolved in the Technical Plan below.
+None. All architectural and operational decisions from brainstorming, [003_goldfish_review_117.md](../reviews/003_goldfish_review_117.md), and [004_design_006_egm_review.md](../reviews/004_design_006_egm_review.md) are resolved in the Technical Plan below.
 
 ## Critical User Journeys (CUJs)
 
@@ -369,7 +369,7 @@ All Tier 2 consumers cut over in the same PR as the tooling:
 
 ## Detailed Implementation Plan
 
-All changes ship in a single PR targeting `develop` (per [AGENTS.md §8](../../AGENTS.md#L163-L165)) so code, templates, skills, documentation, and tests cut over atomically. No changes to `pyproject.toml` are required because `[tool.hatch.build.targets.wheel.force-include]` already bundles the entire `scripts/` directory.
+All changes ship in a single PR targeting `develop` (per [AGENTS.md §8](../../AGENTS.md)) so code, templates, skills, documentation, and tests cut over atomically. No changes to `pyproject.toml` are required because `[tool.hatch.build.targets.wheel.force-include]` already bundles the entire `scripts/` directory.
 
 ### Target Files to Create/Modify
 
