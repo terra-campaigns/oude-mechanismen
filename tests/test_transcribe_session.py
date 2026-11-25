@@ -201,5 +201,72 @@ class TestFindDriveDirErrorPropagation(unittest.TestCase):
             transcribe_session.find_drive_dir(self.repo_root)
 
 
+
+
+class TestActiveRulingsInGlossary(unittest.TestCase):
+    """Design 006: build_dynamic_glossary ingests active Tier 2 rulings via tier2.load_active_rulings_text."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="oude_tier2_test_")
+        self.repo_root = (Path(self.test_dir) / "test_campaign").resolve()
+        self.repo_root.mkdir()
+        (self.repo_root / ".agents" / "context").mkdir(parents=True)
+        (self.repo_root / "_config.yml").write_text("title: Test Campaign\n", encoding="utf-8")
+        self.out_glossary = self.repo_root / "glossary.md"
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def _write_ruling(self, rel: str, text: str) -> None:
+        path = self.repo_root / "_gm-materials" / "rulings" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_active_rulings_included_when_rulings_dir_exists(self):
+        self._write_ruling(
+            "R-001_tribute.md",
+            "---\nid: R-001\ntitle: Tribute\ndate: 2026-11-01\nkind: faction-turn\nstatus: active\n"
+            "fact: The Piot Chants pay tribute.\nentities: []\nactors: [piot_chant]\n"
+            "opinions:\n  - actor: piot_chant\n    vote: 1\n    shifted: false\n    stance: Go.\n"
+            "---\n\nNarrative.\n",
+        )
+        content, _nouns = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("## 5. Active Tier 2 Table Rulings & Decisions", content)
+        self.assertIn("- **R-001 — Tribute:** The Piot Chants pay tribute.", content)
+
+    def test_non_active_rulings_excluded_and_stale_cache_ignored(self):
+        self._write_ruling(
+            "R-001_old.md",
+            "---\nid: R-001\ntitle: Old\ndate: 2026-11-01\nkind: ruling\nstatus: superseded\n"
+            "fact: Old fact.\nentities: []\n---\n\nB.\n",
+        )
+        self._write_ruling(
+            "R-002_new.md",
+            "---\nid: R-002\ntitle: New\ndate: 2026-11-02\nkind: ruling\nstatus: active\n"
+            "supersedes: [R-001]\nfact: New fact.\nentities: []\n---\n\nB.\n",
+        )
+        # A stale derived cache claiming a bogus active ruling must be ignored.
+        cache = self.repo_root / "_gm-materials" / ".cache" / "tier2.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"schema_version": 1, "entries": [
+            {"id": "R-999", "title": "Stale", "status": "active", "fact": "Stale fact."}
+        ]}), encoding="utf-8")
+        content, _ = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("New fact.", content)
+        self.assertNotIn("Old fact.", content)
+        self.assertNotIn("Stale fact.", content)
+
+    def test_read_only_legacy_decisions_fallback_when_rulings_absent(self):
+        decisions = self.repo_root / ".agents" / "context" / "decisions.md"
+        decisions.write_text("- Decision: Legacy ruling stays.\n", encoding="utf-8")
+        content, _ = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("Legacy ruling stays.", content)
+
 if __name__ == "__main__":
     unittest.main()

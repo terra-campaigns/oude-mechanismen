@@ -148,6 +148,73 @@ class TestScribeSession(unittest.TestCase):
         self.assertIn("Android", ctx["glossary"])
         self.assertIn("hydraulic fluid", ctx["decisions"])
 
+    def test_read_context_files_prefers_rulings_over_legacy_decisions(self):
+        """Design 006: _gm-materials/rulings/ active rulings win; decisions.md is fallback only."""
+        rulings = self.repo_root / "_gm-materials" / "rulings"
+        rulings.mkdir(parents=True)
+        (rulings / "R-001_tribute.md").write_text(
+            "---\n"
+            "id: R-001\n"
+            "title: Tribute\n"
+            "date: 2026-11-01\n"
+            "kind: faction-turn\n"
+            "status: active\n"
+            "fact: The Piot Chants pay tribute to Sigisfarne.\n"
+            "entities: []\n"
+            "actors: [piot_chant]\n"
+            "opinions:\n"
+            "  - actor: piot_chant\n"
+            "    vote: 1\n"
+            "    shifted: false\n"
+            "    stance: Push it.\n"
+            "---\n"
+            "\n"
+            "Narrative body.\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "transcript_path": str(self.transcript_file),
+            "glossary_path": str(self.glossary_file),
+        }
+        ctx = scribe_session.read_context_files(self.repo_root, manifest)
+        self.assertIn("- **R-001 — Tribute:** The Piot Chants pay tribute to Sigisfarne.", ctx["decisions"])
+        self.assertNotIn("hydraulic fluid", ctx["decisions"], "legacy decisions.md must be ignored when rulings exist")
+
+    def test_read_context_files_ignores_non_active_rulings(self):
+        """Only status: active rulings are ingested; superseded/retracted/promoted are skipped."""
+        rulings = self.repo_root / "_gm-materials" / "rulings"
+        rulings.mkdir(parents=True)
+        base = (
+            "date: 2026-11-01\nkind: ruling\nentities: []\n"
+        )
+        (rulings / "R-001_old.md").write_text(
+            "---\nid: R-001\ntitle: Old\nstatus: superseded\n" + base + "fact: Old fact.\n---\n\nB.\n",
+            encoding="utf-8",
+        )
+        (rulings / "R-002_new.md").write_text(
+            "---\nid: R-002\ntitle: New\nstatus: active\nsupersedes: [R-001]\n" + base + "fact: New fact.\n---\n\nB.\n",
+            encoding="utf-8",
+        )
+        (rulings / "R-003_gone.md").write_text(
+            "---\nid: R-003\ntitle: Gone\nstatus: retracted\nretraction_reason: Withdrawn.\n" + base + "fact: Gone fact.\n---\n\nB.\n",
+            encoding="utf-8",
+        )
+        manifest = {"transcript_path": str(self.transcript_file), "glossary_path": str(self.glossary_file)}
+        ctx = scribe_session.read_context_files(self.repo_root, manifest)
+        self.assertIn("New fact.", ctx["decisions"])
+        self.assertNotIn("Old fact.", ctx["decisions"])
+        self.assertNotIn("Gone fact.", ctx["decisions"])
+
+    def test_read_context_files_malformed_ruling_raises_value_error(self):
+        """A malformed ruling under _gm-materials/rulings/ must fail loudly, never be skipped."""
+        rulings = self.repo_root / "_gm-materials" / "rulings"
+        rulings.mkdir(parents=True)
+        (rulings / "R-001_bad.md").write_text("---\nid: R-1\n---\n\nB.\n", encoding="utf-8")
+        manifest = {"transcript_path": str(self.transcript_file), "glossary_path": str(self.glossary_file)}
+        with self.assertRaises(ValueError):
+            scribe_session.read_context_files(self.repo_root, manifest)
+
+
     @patch("scribe_session.query_ollama_stream")
     def test_extract_tactical_facts(self, mock_query):
         """Verify extract_tactical_facts threads keep_alive, stop sequences, and de-personalisation mandate."""

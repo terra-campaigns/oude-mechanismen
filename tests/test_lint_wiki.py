@@ -12,12 +12,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 # Ensure repo root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lint_wiki
 import scribe_session
+import tier2  # noqa: E402
 
 
 def note_content(title: str, prose_lines: int = 4, extra_fm: str = "") -> str:
@@ -787,6 +790,185 @@ class TestRollingGlossary(LintWikiTestCase):
         crlf_note = "---\r\ntitle: CRLF Note\r\nparent: Index\r\n---\r\n\r\nSee [x](missing.md).\r\n"
         links = lint_wiki.extract_links(crlf_note)
         self.assertEqual(links, [(6, "missing.md", False)])
+
+
+
+def ruling_file_text(fm: dict, body: str = "Narrative body.\n") -> str:
+    """Serialise a ruling front-matter dict into Markdown file text."""
+    return "---\n" + yaml.safe_dump(fm, sort_keys=False) + "---\n\n" + body
+
+
+class TestDuplicateIds(LintWikiTestCase):
+    """Tier 1 optional `id:` grammar (front-matter) and uniqueness (duplicate-id)."""
+
+    def test_optional_id_omitted_is_clean(self):
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "duplicate-id"), [])
+        self.assertEqual([f for f in self._findings(report, "front-matter") if "'id'" in f.message], [])
+
+    def test_valid_id_passes_full_scan(self):
+        self._write("directory/alpha.md", note_content("Alpha", extra_fm="id: alpha"))
+        self._write_catalog(["campaigns/arc/ep001.md", "directory/place.md", "directory/alpha.md"])
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "duplicate-id"), [])
+        self.assertEqual([f for f in self._findings(report, "front-matter") if "'id'" in f.message], [])
+
+    def test_invalid_id_grammar_is_front_matter_fail(self):
+        self._write("directory/bad.md", note_content("Bad", extra_fm="id: Bad Slug!"))
+        report = lint_wiki.lint_wiki(self.root)
+        fm = [f for f in self._findings(report, "front-matter") if "'id'" in f.message]
+        self.assertEqual(len(fm), 1)
+        self.assertEqual(fm[0].severity, "FAIL")
+        self.assertIn("Bad Slug!", fm[0].message)
+
+    def test_duplicate_id_is_fail_listing_all_paths(self):
+        self._write("directory/alpha.md", note_content("Alpha One", extra_fm="id: alpha"))
+        self._write("directory/beta.md", note_content("Beta", extra_fm="id: alpha"))
+        report = lint_wiki.lint_wiki(self.root)
+        dups = self._findings(report, "duplicate-id")
+        self.assertEqual(len(dups), 1)
+        self.assertEqual(dups[0].severity, "FAIL")
+        self.assertIn("directory/alpha.md", dups[0].file)
+        self.assertIn("directory/beta.md", dups[0].file)
+
+    def test_targeted_mode_validates_grammar_but_skips_duplicate_check(self):
+        self._write("directory/alpha.md", note_content("Alpha One", extra_fm="id: alpha"))
+        self._write("directory/beta.md", note_content("Beta", extra_fm="id: alpha"))
+        report = lint_wiki.lint_wiki(self.root, paths=["directory/alpha.md", "directory/beta.md"])
+        self.assertEqual(self._findings(report, "duplicate-id"), [])
+        self.assertIn("duplicate-id", report.checks_skipped)
+        # Grammar is still validated in targeted mode.
+        self._write("directory/bad.md", note_content("Bad", extra_fm="id: NOPE"))
+        report2 = lint_wiki.lint_wiki(self.root, paths=["directory/bad.md"])
+        self.assertTrue(any("'id'" in f.message for f in self._findings(report2, "front-matter")))
+
+
+class TestRulings(LintWikiTestCase):
+    """check_rulings() integration (Design 006): validation, cache freshness, targeted mode."""
+
+    def _write_ruling(self, fm: dict = None, filename: str = None, raw: str = None) -> Path:
+        fm = fm or {
+            "id": "R-001",
+            "title": "Test Ruling",
+            "date": "2026-11-01",
+            "kind": "ruling",
+            "status": "active",
+            "fact": "The sky is red.",
+            "entities": [],
+        }
+        text = raw if raw is not None else ruling_file_text(fm)
+        rel = filename or f"{fm.get('id', 'R-000')}_slug.md"
+        return self._write(f"_gm-materials/rulings/{rel}", text)
+
+    def test_clean_skip_when_rulings_dir_absent(self):
+        # Simulates public CI runners where _gm-materials/ is absent.
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rulings"), [])
+
+    def test_clean_skip_when_rulings_dir_empty(self):
+        (self.root / "_gm-materials" / "rulings").mkdir(parents=True)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rulings"), [])
+
+    def test_absent_cache_is_warn_not_fail(self):
+        self._write_ruling()
+        report = lint_wiki.lint_wiki(self.root)
+        rulings = self._findings(report, "rulings")
+        self.assertEqual(len(rulings), 1)
+        self.assertEqual(rulings[0].severity, "WARN")
+        self.assertIn("absent", rulings[0].message)
+        self.assertFalse(report.has_failures())
+
+    def test_fresh_cache_passes_clean(self):
+        self._write_ruling()
+        tier2.compile_tier2_index(self.root, write=True)
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertEqual(self._findings(report, "rulings"), [])
+
+    def test_corrupt_cache_is_fail(self):
+        self._write_ruling()
+        self._write("_gm-materials/.cache/tier2.json", "{corrupt")
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and "valid JSON" in f.message for f in self._findings(report, "rulings")))
+
+    def test_unknown_schema_version_is_fail(self):
+        self._write_ruling()
+        self._write("_gm-materials/.cache/tier2.json", json.dumps({"schema_version": 99, "entries": []}))
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and "schema_version" in f.message for f in self._findings(report, "rulings")))
+
+    def test_ruling_sha_drift_is_stale_fail(self):
+        path = self._write_ruling()
+        tier2.compile_tier2_index(self.root, write=True)
+        path.write_text(path.read_text(encoding="utf-8") + "\nExtra narrative line.\n", encoding="utf-8")
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and "stale" in f.message for f in self._findings(report, "rulings")))
+
+    def test_extra_on_disk_ruling_is_stale_fail(self):
+        self._write_ruling()
+        tier2.compile_tier2_index(self.root, write=True)
+        self._write_ruling(fm={"id": "R-002", "title": "Second", "date": "2026-11-02", "kind": "ruling",
+                               "status": "active", "fact": "Two.", "entities": []})
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and "stale" in f.message for f in self._findings(report, "rulings")))
+
+    def test_catalog_sha_drift_is_stale_fail(self):
+        self._write_ruling()
+        tier2.compile_tier2_index(self.root, write=True)
+        self._write(".agents/context/catalog.json", json.dumps({"entries": [{"path": "x.md", "id": None}]}))
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and "stale" in f.message for f in self._findings(report, "rulings")))
+
+    def test_invalid_ruling_is_fail_under_rulings_check(self):
+        self._write_ruling(raw="---\nid: R-1\ntitle: T\n---\n\nBody.\n")
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "FAIL" and f.check == "rulings" for f in report.findings))
+        self.assertTrue(report.has_failures())
+
+    def test_legacy_decisions_coexistence_is_warn(self):
+        self._write_ruling()
+        self._write(".agents/context/decisions.md", "- Decision: legacy\n")
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertTrue(any(f.severity == "WARN" and "decisions.md" in f.message for f in self._findings(report, "rulings")))
+
+    def test_targeted_rulings_dir_runs_check_rulings(self):
+        self._write_ruling()
+        report = lint_wiki.lint_wiki(self.root, paths=["_gm-materials/rulings"])
+        self.assertEqual(report.mode, "targeted")
+        self.assertNotIn("rulings", report.checks_skipped)
+        self.assertNotIn("duplicate-id", report.checks_skipped)
+        self.assertEqual(report.files_scanned, 1)
+        # Ruling files are scanned but kept out of Tier 1 file-level checks.
+        self.assertEqual(self._findings(report, "stub"), [])
+        self.assertTrue(any("absent" in f.message for f in self._findings(report, "rulings")))
+
+    def test_targeted_single_ruling_file_runs_check_rulings(self):
+        self._write_ruling()
+        report = lint_wiki.lint_wiki(self.root, paths=["_gm-materials/rulings/R-001_slug.md"])
+        self.assertNotIn("rulings", report.checks_skipped)
+        self.assertTrue(self._findings(report, "rulings"))
+
+    def test_targeted_non_rulings_path_skips_rulings_and_duplicate_id(self):
+        self._write_ruling()
+        report = lint_wiki.lint_wiki(self.root, paths=["campaigns/arc/ep001.md"])
+        self.assertIn("rulings", report.checks_skipped)
+        self.assertIn("duplicate-id", report.checks_skipped)
+        self.assertEqual(self._findings(report, "rulings"), [])
+
+    def test_report_order_includes_duplicate_id_and_rulings(self):
+        report = lint_wiki.WikiReport(
+            root=str(self.root),
+            mode="full",
+            files_scanned=0,
+            findings=[
+                lint_wiki.Finding(check="rulings", severity="WARN", file="x", message="r"),
+                lint_wiki.Finding(check="duplicate-id", severity="FAIL", file="y", message="d"),
+            ],
+        )
+        rendered = lint_wiki.render_text_report(report)
+        self.assertIn("- 1 duplicate-id", rendered)
+        self.assertIn("- 1 rulings", rendered)
+        self.assertLess(rendered.index("duplicate-id"), rendered.index("## Rulings"))
 
 if __name__ == "__main__":
     unittest.main()
