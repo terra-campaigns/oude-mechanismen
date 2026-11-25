@@ -14,7 +14,7 @@ This repository contains the shared procedural engine, agent skills library, and
    - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git, Obsidian Sync, and all networked storage for player privacy.
    - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
    - **Tier 2 Canon (`_gm-materials/`):** De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), and acoustic glossaries (`<slug>_glossary.md`) in `_gm-materials/session-summaries/`; structured GM rulings and faction-turn records in `_gm-materials/rulings/`, compiled by `oude tier2` into the derived `_gm-materials/.cache/tier2.json`. The gitignored `.agents/context/rolling_glossary.md` also sits at Tier 2 until promoted.
-   - **Tier 3 Canon (`_gm-materials/digests/` & `_gm-materials/session-preps/`):** Distilled reference digests and unplayed session prep (`<slug>_prep.md`). Raw commercial sourcebook PDFs sit outside Tier 3 on local disk (ADR 003 Pillar 3).
+   - **Tier 3 Canon (`_gm-materials/digests/` & `_gm-materials/session-preps/`):** Distilled reference digests and unplayed session prep (`<slug>_prep.md`). Raw commercial sourcebook PDFs sit outside Tier 3 on local disk in [ADR 003](docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md) **Pillar 3** — the central static archive: local-disk-only storage, outside both Git and Obsidian Sync.
 
 ---
 
@@ -119,11 +119,11 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 
 ## 4. Canon & Context Architecture
 
-The engine operates on a strict **Three-Tier Canon Hierarchy**:
+The engine operates on a strict **Four-Tier Canon Hierarchy (Tiers 0–3)**:
 
 - **Tier 1 (Canonical Published Notes)**: Published markdown files indexed on build by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into the gitignored local cache `.agents/context/catalog.json`. This is hard canon. Notes may carry an optional explicit `id:` front-matter field (indexed as `"id"` in `catalog.json`, `null` when absent — never derived from the filename); grammar and uniqueness are enforced by `check_duplicate_ids()` in `scripts/lint_wiki.py`, and Tier 2 rulings join on it at compile time.
 - **Tier 2 (Behind-the-Screen Working Canon & Unverified Records)**: Structured GM rulings and faction-turn records in `_gm-materials/rulings/` (validated and compiled by `oude tier2` / `scripts/tier2.py` into the derived `_gm-materials/.cache/tier2.json`), synthesised archival GM session notes (`_gm-materials/session-summaries/`), and the gitignored `.agents/context/rolling_glossary.md` (which retains `tier: 2` in `catalog.json`). Outranked by published Tier 1 notes; outranks Tier 3.
-- **Tier 3 (Defined Campaign Influences & Unplayed Prep)**: Structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`, and unplayed session prep in `_gm-materials/session-preps/`. Raw commercial sourcebook PDFs sit outside Tier 3 on local disk (ADR 003 Pillar 3). Influence and inspiration, not automatic canon.
+- **Tier 3 (Defined Campaign Influences & Unplayed Prep)**: Structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`, and unplayed session prep in `_gm-materials/session-preps/`. Raw commercial sourcebook PDFs sit outside Tier 3 on local disk ([ADR 003 Pillar 3](docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md)). Influence and inspiration, not automatic canon.
 
 - **Route graph (optional)**: `.agents/context/route_graph.json` (scaffolded from `templates/route_graph.json.template`) encodes station topology — stations, aliases, connections, `station_lore` — and is consumed only by `scripts/audit_coverage.py` for the *Geographic Proximity & Destination Gaps* section of `oude audit`. It is not canon and not part of progressive retrieval; when absent, the audit simply skips that section (audit findings on issue #29).
 

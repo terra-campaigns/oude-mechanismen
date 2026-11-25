@@ -19,7 +19,7 @@ python3 scripts/lint_wiki.py campaigns/ directory/foo.md   # targeted scan of sp
 python3 scripts/lint_wiki.py --strict  # treat WARN findings as failures (exit 1)
 ```
 
-- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), duplicate titles, duplicate Tier 1 `id:` values (`duplicate-id`), Tier 2 ruling validation (`rulings`: schema/DAG checks over `_gm-materials/rulings/` plus `_gm-materials/.cache/tier2.json` freshness), and `.agents/context/rolling_glossary.md` entries (`rolling-glossary`).
+- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), duplicate titles, duplicate Tier 1 `id:` values (`duplicate-id`), Tier 2 ruling validation (`rulings`: schema and supersession-DAG (directed acyclic graph) checks over `_gm-materials/rulings/` plus `_gm-materials/.cache/tier2.json` freshness), and `.agents/context/rolling_glossary.md` entries (`rolling-glossary`).
 - Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (`orphan`, `unused-image`, `catalogue`, `duplicate-title`, `rolling-glossary` unless `.agents/context/rolling_glossary.md` is explicitly targeted, and `duplicate-id`/`rulings` unless a path resolves inside `_gm-materials/rulings/`), which are reported under `checks_skipped`.
 - Exit code is 1 on any FAIL finding (or any finding under `--strict`), 0 when clean, 2 on usage errors.
 

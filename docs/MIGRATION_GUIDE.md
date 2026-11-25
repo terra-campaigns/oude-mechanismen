@@ -101,16 +101,42 @@ Open `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000`) from a se
 
 ## Migrating Legacy `.agents/context/decisions.md`
 
-Older vaults keep confirmed table rulings as unstructured prose in the Git-tracked `.agents/context/decisions.md`. Design 006 retires that file in favour of structured rulings inside the git-ignored `_gm-materials/rulings/` (compiled by `oude tier2` into `_gm-materials/.cache/tier2.json`). Migrate manually:
+Older vaults keep confirmed table rulings as unstructured prose in the Git-tracked `.agents/context/decisions.md`. [Design 006](designs/006_tier2_canon_and_faction_turns.md) retires that file in favour of structured rulings inside the git-ignored `_gm-materials/rulings/` (compiled by `oude tier2` into `_gm-materials/.cache/tier2.json`). Migrate manually:
 
-1. Split the file: static style/procedure conventions move into `.agents/AGENTS.md`; mutable world-state rulings become one structured ruling file per decision under `_gm-materials/rulings/<id>_<slug>.md` (`id: R-001`, `title`, `date`, `kind: ruling`, `status: active`, `fact`, `entities`, optional `supersedes`/`opinions`; faction-turn outcomes use `kind: faction-turn` with non-empty `actors` and `opinions`).
+1. Split the file: static style/procedure conventions move into `.agents/AGENTS.md`; mutable world-state rulings become one structured ruling file per decision under `_gm-materials/rulings/<id>_<slug>.md`, with YAML front matter per the [Design 006 ruling schema](designs/006_tier2_canon_and_faction_turns.md#component-2-canonical-ruling-schema-_gm-materialsrulingsmd):
+
+   ```yaml
+   ---
+   id: R-001                 # ^R-[0-9]{3,}$, unique across _gm-materials/rulings/
+   title: Covert tribute route
+   date: 2026-11-01          # real-world ISO date YYYY-MM-DD
+   kind: faction-turn        # or `ruling`
+   status: active            # active | superseded | retracted | promoted
+   fact: The Iron Pots secretly tax the Sigisfarne road.
+   entities: [sigisfarne]    # Tier 1 slugs, joined against catalog.json ids
+   actors: [piot_chant, iron_pot_6_body]   # required non-empty for faction-turn
+   supersedes: []            # authored list of ruling IDs; superseded_by is derived
+   promoted_to: null         # required when status: promoted, null otherwise
+   retraction_reason: null   # required when status: retracted, null otherwise
+   turn:                     # optional freeform faction-turn metadata
+     active_actor: piot_chant
+     roll: 17
+   opinions:                 # required non-empty for faction-turn; each item is:
+     - actor: piot_chant     #   a slug listed in `actors`
+       vote: 1               #   integer -1, 0, or +1
+       shifted: true         #   boolean
+       stance: Push the tribute.   #   non-empty string
+   ---
+   ```
+
+   Status semantics: `active` and `superseded` rulings must not set `promoted_to` or `retraction_reason`; `promoted` requires a valid Tier 1 `promoted_to` path (existing `.md` inside `include_paths`, outside `_gm-materials/` and `.agents/`, not matching `exclude_paths`) and forbids `retraction_reason`; `retracted` requires a non-empty `retraction_reason`, forbids `promoted_to`, and must keep `supersedes: []`. Supersession edges must form a DAG (directed acyclic graph) with at most one active successor per target.
 2. Remove `.agents/context/decisions.md` once everything is moved (`oude lint-wiki` and `oude doctor` warn while both coexist; `oude doctor` never auto-deletes it).
 3. Validate and compile:
 
 ```bash
 oude doctor --fix        # refreshes .gitignore/_config.yml exclusions and untracks derived caches
 oude tier2               # validates _gm-materials/rulings/ and compiles _gm-materials/.cache/tier2.json
-oude lint-wiki           # Gate 3: schema, supersession DAG, duplicate Tier 1 ids, tier2.json freshness
+oude lint-wiki           # Gate 3: schema, supersession DAG (directed acyclic graph), duplicate Tier 1 ids, tier2.json freshness
 ```
 
 Already-pushed public Git history containing `.agents/context/decisions.md` in `charged`/`hostile` is accepted as-is; no history rewrite is performed. The read-only fallback in `scripts/tier2.py:load_active_rulings_text()` keeps un-migrated vaults working until the split completes.

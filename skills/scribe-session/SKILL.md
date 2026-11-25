@@ -12,6 +12,7 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 
 - **Zero-Friction Ingestion:** Accepts any standard audio or video container (`.mkv`, `.mp4`, `.m4a`, `.wav`, `.mp3`) or pre-transcribed `.txt` file.
 - **Dynamic Canon Grounding:** Dynamically queries `.agents/context/catalog.json`, active Tier 2 rulings (`_gm-materials/rulings/` via `_gm-materials/.cache/tier2.json`), and `.agents/AGENTS.md` to bias Whisper acoustic recognition and eliminate phonetic misspellings without manual glossary maintenance.
+- **`<drive_dir>` placeholder:** `<drive_dir>` denotes the campaign vault root configured via `drive_dir:` in `.agents/context/tier1_sources.yml` (default `.`), so `<drive_dir>/_gm-materials/` is the vault's own `_gm-materials/` directory.
 - **Three-Tier Storage Separation & Privacy Air-Gap:**
   1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
   2. *Tier 2 Canon (`<drive_dir>/_gm-materials/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), and acoustic glossaries (`<slug>_glossary.md`) in `_gm-materials/session-summaries/`, plus structured GM rulings and faction-turn records in `_gm-materials/rulings/` indexed by the derived `_gm-materials/.cache/tier2.json` (compiled via `oude tier2`).
