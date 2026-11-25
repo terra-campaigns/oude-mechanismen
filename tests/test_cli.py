@@ -1500,6 +1500,51 @@ class TestOudeCLI(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
+    def test_doctor_gm_materials_guard_handles_non_ascii_filenames(self):
+        """Non-ASCII ruling filenames are detected with the real path and --fix untracks them
+        (ls-files -z NUL split, no C-quoting)."""
+        self._write_healthy_vault()
+        rulings_rel = "_gm-materials/rulings/R-001_são-paulo.md"
+        rulings_path = self.target_dir / rulings_rel
+        rulings_path.parent.mkdir(parents=True, exist_ok=True)
+        rulings_path.write_text(
+            "---\n"
+            "id: R-001\n"
+            "title: São Paulo ruling\n"
+            "date: 2026-11-01\n"
+            "kind: ruling\n"
+            "status: active\n"
+            "fact: The sky is red.\n"
+            "entities: []\n"
+            "---\n\n"
+            "Narrative body.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", rulings_rel], check=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(f"{rulings_rel} is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn(f"Untracked {rulings_rel} from Git index", fake_out.getvalue())
+
+        self.assertTrue(rulings_path.is_file(), "ruling must remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "-z", "--", "_gm-materials/"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotIn(rulings_rel, ls_res.stdout.split("\0"), "ruling should no longer be tracked in the Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
     def test_doctor_gm_materials_guard_ignores_derived_cache_double_report(self):
         """A force-added _gm-materials/.cache/tier2.json is reported once via DERIVED_CACHE_FILES."""
         self._write_healthy_vault()

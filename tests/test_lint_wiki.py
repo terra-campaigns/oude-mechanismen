@@ -757,11 +757,12 @@ class TestRollingGlossary(LintWikiTestCase):
 
     def test_config_helpers_delegate_to_tier2_single_owner(self):
         self.assertIs(lint_wiki.load_tier1_config, tier2.load_tier1_config)
-        self.assertIs(lint_wiki.normalise_rel_path, tier2.normalise_rel_path)
         self.assertIs(lint_wiki.is_excluded, tier2.is_excluded)
         self.assertIs(lint_wiki.FRONT_MATTER_RE, tier2.FRONT_MATTER_RE)
-        self.assertEqual(lint_wiki.DEFAULT_INCLUDE_PATHS, tier2.DEFAULT_INCLUDE_PATHS)
-        self.assertEqual(lint_wiki.DEFAULT_EXCLUDE_PATHS, tier2.DEFAULT_EXCLUDE_PATHS)
+        # Dead aliases removed in the round-2 review: lint_wiki must not re-expose them.
+        self.assertFalse(hasattr(lint_wiki, "normalise_rel_path"))
+        self.assertFalse(hasattr(lint_wiki, "DEFAULT_INCLUDE_PATHS"))
+        self.assertFalse(hasattr(lint_wiki, "DEFAULT_EXCLUDE_PATHS"))
         # Single fallback convention: corrupt YAML warns on stderr and falls back to defaults.
         self._write(".agents/context/tier1_sources.yml", "include_paths: [unclosed\n")
         err = io.StringIO()

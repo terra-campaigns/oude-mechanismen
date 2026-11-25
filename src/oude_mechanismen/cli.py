@@ -602,12 +602,14 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
         # Tree-wide force-add guard: ANY tracked path under _gm-materials/ is private
         # GM material (rulings carry private actor opinions) and must never be committed.
         gm_tracked = subprocess.run(
-            ["git", "-C", str(vault), "ls-files", "--", "_gm-materials/"],
+            ["git", "-C", str(vault), "ls-files", "-z", "--", "_gm-materials/"],
             capture_output=True,
             text=True,
         )
         if gm_tracked.returncode == 0:
-            for rel in sorted(line.strip() for line in gm_tracked.stdout.splitlines() if line.strip()):
+            # -z emits NUL-separated raw paths with no C-quoting, so non-ASCII
+            # filenames survive intact for both the WARN text and `git rm --cached`.
+            for rel in sorted(p for p in gm_tracked.stdout.split("\0") if p):
                 if rel in DERIVED_CACHE_FILES:
                     continue  # already reported via the DERIVED_CACHE_FILES loop above
                 if fix:
@@ -764,7 +766,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
 
     ruling_files = tier2_mod.discover_ruling_files(vault)
     if ruling_files:
-        cache_rel = "_gm-materials/.cache/tier2.json"
+        cache_rel = tier2_mod.CACHE_REL_PATH.as_posix()
         needs_refresh = True
         state, detail, _expected, _diags = tier2_mod.cache_freshness(vault)
         if state == "absent":

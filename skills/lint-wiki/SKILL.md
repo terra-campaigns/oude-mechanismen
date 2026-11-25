@@ -39,7 +39,7 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 - **duplicate-title (FAIL):** identical `title:` values cause navigation confusion in Just the Docs.
 - **rolling-glossary (FAIL/WARN):** entries in `.agents/context/rolling_glossary.md` with a missing definition line or a casing conflict against published `catalog.json` titles are `FAIL`; entries carrying `- Definition: Pending canonical definition.` are `WARN` until defined, or promoted to a Tier 1 note and removed from the glossary.
 - **duplicate-id (FAIL):** two or more Tier 1 notes share the same explicit `id:` front matter; rename one. Invalid `id:` grammar is reported under `front-matter` (FAIL).
-- **rulings (FAIL/WARN):** schema, supersession-DAG, or `opinions` violations in `_gm-materials/rulings/*.md` are FAIL; an absent `_gm-materials/.cache/tier2.json` is WARN (run `oude tier2` or `oude doctor --fix`); a corrupt/unknown-schema or stale `tier2.json` (ruling `sha`, entry, `superseded_by`, or `catalog_sha` drift) is FAIL; coexistence of legacy `.agents/context/decisions.md` with non-empty `_gm-materials/rulings/` is WARN; unresolved entity/actor slugs and filename-prefix mismatches are WARN.
+- **rulings (FAIL/WARN):** schema, supersession-DAG, or `opinions` violations in `_gm-materials/rulings/*.md` are FAIL; an absent `_gm-materials/.cache/tier2.json` is WARN (run `oude tier2` or `oude doctor --fix`); a corrupt/unknown-schema or stale `tier2.json` (ruling `sha`, entry, `superseded_by`, or `catalog_sha` drift) is FAIL; coexistence of legacy `.agents/context/decisions.md` with an existing `_gm-materials/rulings/` directory (even when empty) is WARN; unresolved entity/actor slugs and filename-prefix mismatches are WARN.
 
 ## Output format
 

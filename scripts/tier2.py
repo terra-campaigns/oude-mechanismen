@@ -153,17 +153,6 @@ def load_tier1_config(root: Path) -> Tuple[List[str], List[str]]:
 
     return include, exclude
 
-
-def _load_include_paths(root: Path) -> List[str]:
-    """Load include_paths from .agents/context/tier1_sources.yml (engine fallback when absent)."""
-    return load_tier1_config(root)[0]
-
-
-# Public aliases: scripts/lint_wiki.py delegates to these single owners.
-normalise_rel_path = _normalise_rel_path
-load_include_paths = _load_include_paths
-
-
 def _valid_slug_list(value: Any) -> Optional[List[str]]:
     """Return the value when it is a list of valid slugs, else None."""
     if not isinstance(value, list):

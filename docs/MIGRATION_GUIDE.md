@@ -110,6 +110,7 @@ Older vaults keep confirmed table rulings as unstructured prose in the Git-track
    id: R-001                 # ^R-[0-9]{3,}$, unique across _gm-materials/rulings/
    title: Covert tribute route
    date: 2026-11-01          # real-world ISO date YYYY-MM-DD
+   in_world_date: "1025-12"  # optional freeform in-world campaign calendar label; omit or null when unused
    kind: faction-turn        # or `ruling`
    status: active            # active | superseded | retracted | promoted
    fact: The Iron Pots secretly tax the Sigisfarne road.

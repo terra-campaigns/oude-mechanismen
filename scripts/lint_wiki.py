@@ -34,10 +34,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tier2  # noqa: E402
 
-# Defaults live in scripts/tier2.py (single owner of tier1_sources.yml loading);
-# aliased here so existing importers keep working.
-DEFAULT_INCLUDE_PATHS = tier2.DEFAULT_INCLUDE_PATHS
-DEFAULT_EXCLUDE_PATHS = tier2.DEFAULT_EXCLUDE_PATHS
 
 # Front matter check scope (per lint-wiki skill §7).
 FRONT_MATTER_DIRS = {"campaigns", "directory", "systems"}
@@ -99,9 +95,8 @@ class WikiReport:
 # ---------------------------------------------------------------------------
 
 
-# Thin aliases: scripts/tier2.py owns path normalisation, tier1_sources.yml
-# loading (single stderr-warning fallback convention), and exclusion semantics.
-normalise_rel_path = tier2.normalise_rel_path
+# Thin aliases: scripts/tier2.py owns tier1_sources.yml loading (single
+# stderr-warning fallback convention) and exclusion semantics.
 load_tier1_config = tier2.load_tier1_config
 is_excluded = tier2.is_excluded
 

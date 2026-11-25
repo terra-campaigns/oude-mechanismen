@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for transcribe_session.py verifying the Three-Tier Storage Separation & Privacy Air-Gap.
+Unit tests for transcribe_session.py verifying the Four-Tier Storage Separation & Privacy Air-Gap.
 """
 
 import json

@@ -675,9 +675,10 @@ class TestLoadActiveRulingsText(Tier2TestCase):
         self.assertEqual(include, tier2.DEFAULT_INCLUDE_PATHS)
         self.assertEqual(exclude, tier2.DEFAULT_EXCLUDE_PATHS)
         self.assertIn("Warning", err.getvalue())
-        # Single-owner aliases used by lint_wiki.
-        self.assertIs(tier2.normalise_rel_path, tier2._normalise_rel_path)
-        self.assertIs(tier2.load_include_paths, tier2._load_include_paths)
+        # Dead public aliases were removed in the round-2 review; only the
+        # private helper and load_tier1_config remain as the single owner.
+        self.assertFalse(hasattr(tier2, "normalise_rel_path"))
+        self.assertFalse(hasattr(tier2, "load_include_paths"))
 
     def test_turn_validated_but_not_stored_on_parsed_ruling(self):
         fm = self.base_fm(
