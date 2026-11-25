@@ -755,6 +755,22 @@ class TestRollingGlossary(LintWikiTestCase):
         self.assertIn("_TODO.md", rels)
         self.assertIn("campaigns/_TODO.md", rels)
 
+    def test_config_helpers_delegate_to_tier2_single_owner(self):
+        self.assertIs(lint_wiki.load_tier1_config, tier2.load_tier1_config)
+        self.assertIs(lint_wiki.normalise_rel_path, tier2.normalise_rel_path)
+        self.assertIs(lint_wiki.is_excluded, tier2.is_excluded)
+        self.assertIs(lint_wiki.FRONT_MATTER_RE, tier2.FRONT_MATTER_RE)
+        self.assertEqual(lint_wiki.DEFAULT_INCLUDE_PATHS, tier2.DEFAULT_INCLUDE_PATHS)
+        self.assertEqual(lint_wiki.DEFAULT_EXCLUDE_PATHS, tier2.DEFAULT_EXCLUDE_PATHS)
+        # Single fallback convention: corrupt YAML warns on stderr and falls back to defaults.
+        self._write(".agents/context/tier1_sources.yml", "include_paths: [unclosed\n")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            include, exclude = lint_wiki.load_tier1_config(self.root)
+        self.assertEqual(include, tier2.DEFAULT_INCLUDE_PATHS)
+        self.assertEqual(exclude, tier2.DEFAULT_EXCLUDE_PATHS)
+        self.assertIn("Warning", err.getvalue())
+
     def test_targeted_scan_resolves_parent_traversal_symlinks_and_skips_md_dirs(self):
         # Parent traversal ('campaigns/..') and symlinks must still enforce skipped/excluded rules.
         self._write("_TODO.md", note_content("Ignored").replace("Prose sentence number 1.", "See [x](nope.md)."))
@@ -869,6 +885,16 @@ class TestRulings(LintWikiTestCase):
         (self.root / "_gm-materials" / "rulings").mkdir(parents=True)
         report = lint_wiki.lint_wiki(self.root)
         self.assertEqual(self._findings(report, "rulings"), [])
+
+    def test_empty_rulings_dir_with_legacy_decisions_warns(self):
+        """M4: existing-but-empty rulings/ + legacy decisions.md still yields a rulings WARN."""
+        (self.root / "_gm-materials" / "rulings").mkdir(parents=True)
+        self._write(".agents/context/decisions.md", "- Decision: legacy\n")
+        report = lint_wiki.lint_wiki(self.root)
+        rulings = self._findings(report, "rulings")
+        self.assertEqual(len(rulings), 1)
+        self.assertEqual(rulings[0].severity, "WARN")
+        self.assertIn("decisions.md", rulings[0].message)
 
     def test_absent_cache_is_warn_not_fail(self):
         self._write_ruling()

@@ -1458,6 +1458,67 @@ class TestOudeCLI(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
+
+    def test_doctor_detects_and_untracks_any_tracked_gm_materials_path(self):
+        """M3: tree-wide guard — force-added _gm-materials/rulings/*.md (private opinions)
+        and any other tracked path under _gm-materials/ is detected and --fix untracks it."""
+        self._write_healthy_vault()
+        self._write_valid_ruling()
+        notes_rel = "_gm-materials/session-summaries/ep_001_notes.md"
+        notes_path = self.target_dir / notes_rel
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text("# Session notes\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        rulings_rel = "_gm-materials/rulings/R-001_slug.md"
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", rulings_rel, notes_rel], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "commit", "-m", "leak gm materials"], check=True, capture_output=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            out = fake_out.getvalue()
+            self.assertIn(f"{rulings_rel} is tracked in Git", out)
+            self.assertIn(f"{notes_rel} is tracked in Git", out)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            out = fake_out.getvalue()
+            self.assertIn(f"Untracked {rulings_rel} from Git index", out)
+            self.assertIn(f"Untracked {notes_rel} from Git index", out)
+
+        for rel in (rulings_rel, notes_rel):
+            self.assertTrue((self.target_dir / rel).is_file(), f"{rel} must remain on disk after untracking")
+            ls_res = subprocess.run(
+                ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", rel],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(ls_res.returncode, 0, f"{rel} should no longer be tracked in the Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_gm_materials_guard_ignores_derived_cache_double_report(self):
+        """A force-added _gm-materials/.cache/tier2.json is reported once via DERIVED_CACHE_FILES."""
+        self._write_healthy_vault()
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        cache_rel = "_gm-materials/.cache/tier2.json"
+        cache_path = self.target_dir / cache_rel
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"schema_version": 1, "entries": []}), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", cache_rel], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "commit", "-m", "track cache"], check=True, capture_output=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            out = fake_out.getvalue()
+            self.assertEqual(out.count(f"{cache_rel} is tracked in Git"), 1, "derived cache must be reported exactly once")
+
     def test_doctor_empty_rulings_dir_produces_no_missing_index_warning(self):
         """An empty _gm-materials/rulings/ must stay silent (no unfixable WARN)."""
         self._write_healthy_vault()

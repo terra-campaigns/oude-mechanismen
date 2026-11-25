@@ -599,6 +599,35 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                     )
                     all_passed = False
 
+        # Tree-wide force-add guard: ANY tracked path under _gm-materials/ is private
+        # GM material (rulings carry private actor opinions) and must never be committed.
+        gm_tracked = subprocess.run(
+            ["git", "-C", str(vault), "ls-files", "--", "_gm-materials/"],
+            capture_output=True,
+            text=True,
+        )
+        if gm_tracked.returncode == 0:
+            for rel in sorted(line.strip() for line in gm_tracked.stdout.splitlines() if line.strip()):
+                if rel in DERIVED_CACHE_FILES:
+                    continue  # already reported via the DERIVED_CACHE_FILES loop above
+                if fix:
+                    untrack = subprocess.run(
+                        ["git", "-C", str(vault), "rm", "--cached", "--quiet", "--", rel],
+                        capture_output=True,
+                        text=True,
+                    )
+                    if untrack.returncode == 0:
+                        print(f"  ✓ Untracked {rel} from Git index (kept on disk)")
+                    else:
+                        print(f"  ✗ Failed to untrack {rel}: {untrack.stderr.strip()}")
+                        all_passed = False
+                else:
+                    print(
+                        f"  ⚠ {rel} is tracked in Git (private GM materials under _gm-materials/ must stay "
+                        f"gitignored; run `git rm --cached {rel}` or `oude doctor --fix`)"
+                    )
+                    all_passed = False
+
     for path, desc in [
         (vault / "Gemfile", "Bundler configuration (Gemfile)"),
         (vault / ".agents" / "AGENTS.md", "Agent instructions (.agents/AGENTS.md)"),
@@ -736,35 +765,27 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     ruling_files = tier2_mod.discover_ruling_files(vault)
     if ruling_files:
         cache_rel = "_gm-materials/.cache/tier2.json"
-        cache_path = vault / "_gm-materials" / ".cache" / "tier2.json"
         needs_refresh = True
-        if not cache_path.is_file():
+        state, detail, _expected, _diags = tier2_mod.cache_freshness(vault)
+        if state == "absent":
             print(f"  ⚠ {cache_rel} absent; run `oude tier2` or `oude doctor --fix`")
+        elif state == "corrupt":
+            print(f"  ✗ Corrupted {cache_rel}: {detail}")
+            all_passed = False
+        elif state == "wrong-schema":
+            print(f"  ✗ {cache_rel} is not a JSON object with schema_version {tier2_mod.SCHEMA_VERSION}")
+            all_passed = False
+        elif state == "invalid":
+            print(
+                "  ✗ _gm-materials/rulings/ contains invalid rulings "
+                "(run `oude tier2` or `oude lint-wiki` for diagnostics)"
+            )
+            all_passed = False
+        elif state == "stale":
+            print(f"  ⚠ {cache_rel} is stale; run `oude tier2` or `oude doctor --fix`")
         else:
-            try:
-                cache_data = json.loads(cache_path.read_text(encoding="utf-8"))
-                if not isinstance(cache_data, dict) or cache_data.get("schema_version") != tier2_mod.SCHEMA_VERSION:
-                    print(f"  ✗ {cache_rel} is not a JSON object with schema_version {tier2_mod.SCHEMA_VERSION}")
-                    all_passed = False
-                else:
-                    expected, diags, _ = tier2_mod.compile_tier2_index(vault, write=False)
-                    if any(d.severity == "FAIL" for d in diags):
-                        print(
-                            "  ✗ _gm-materials/rulings/ contains invalid rulings "
-                            "(run `oude tier2` or `oude lint-wiki` for diagnostics)"
-                        )
-                        all_passed = False
-                    elif expected is not None:
-                        expected_cmp = {k: v for k, v in expected.items() if k != "generated"}
-                        disk_cmp = {k: v for k, v in cache_data.items() if k != "generated"}
-                        if disk_cmp == expected_cmp:
-                            print(f"  ✓ Tier 2 rulings index fresh ({cache_rel})")
-                            needs_refresh = False
-                        else:
-                            print(f"  ⚠ {cache_rel} is stale; run `oude tier2` or `oude doctor --fix`")
-            except (OSError, ValueError) as exc:
-                print(f"  ✗ Corrupted {cache_rel}: {exc}")
-                all_passed = False
+            print(f"  ✓ Tier 2 rulings index fresh ({cache_rel})")
+            needs_refresh = False
         if fix and needs_refresh:
             res = _run_script("tier2.py", ["--root", str(vault)])
             if res == 0:

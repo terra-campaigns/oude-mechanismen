@@ -266,6 +266,13 @@ class TestCompilation(Tier2TestCase):
         self.assertEqual(self.fails(diagnostics), [])
         self.assertTrue(any("R-007_" in d.message for d in self.warns(diagnostics)))
 
+    def test_atomic_write_leaves_no_temp_files_behind(self):
+        self.write_ruling(self.base_fm())
+        self.catalog_with_sigisfarne()
+        self.compile()
+        cache_dir = self.root / "_gm-materials" / ".cache"
+        self.assertEqual([p.name for p in cache_dir.iterdir()], ["tier2.json"])
+
 
 class TestSchemaValidation(Tier2TestCase):
     """Front-matter schema validation (Component 2)."""
@@ -468,6 +475,21 @@ class TestSupersessionDAG(Tier2TestCase):
         fails = self.fails(diagnostics)
         self.assertTrue(any("R-002" in d.message and "R-003" in d.message for d in fails))
 
+    def test_deep_cycle_chain_fails_cleanly_without_recursion_error(self):
+        # A >1000-node supersession ring must produce a clean FAIL cycle diagnostic,
+        # never an uncaught RecursionError from the DFS.
+        n = 1100
+        for i in range(1, n + 1):
+            target = f"R-{i + 1:03d}" if i < n else "R-001"
+            self.write_ruling(
+                self.base_fm(id=f"R-{i:03d}", status="superseded", supersedes=[target], entities=[]),
+                filename=f"R-{i:03d}_slug.md",
+            )
+        _, diagnostics, _ = self.compile(write=False)
+        cycle_fails = [d for d in self.fails(diagnostics) if "cycle" in d.message]
+        self.assertTrue(cycle_fails, "deep ring must still be reported as a cycle")
+        self.assertTrue(any("R-001" in d.message for d in cycle_fails))
+
 
 class TestStatusMatrix(Tier2TestCase):
     """Status-to-partner-field matrix (Component 3 rule 4)."""
@@ -498,6 +520,19 @@ class TestStatusMatrix(Tier2TestCase):
             promoted_to="_gm-materials/rulings/R-001_slug.md", entities=[]))
         _, diagnostics, _ = self.compile(write=False)
         self.assertTrue(self.fails(diagnostics))
+
+    def test_promoted_to_excluded_path_rejected(self):
+        (self.root / "campaigns" / "_draft.md").write_text(
+            "---\ntitle: Draft\n---\n\nDraft body.\n", encoding="utf-8"
+        )
+        (self.root / ".agents" / "context" / "tier1_sources.yml").write_text(
+            "drive_dir: .\ninclude_paths:\n  - campaigns\n  - directory\nexclude_paths:\n  - campaigns/_draft.md\n",
+            encoding="utf-8",
+        )
+        self.write_ruling(self.base_fm(
+            id="R-001", status="promoted", promoted_to="campaigns/_draft.md", entities=[]))
+        _, diagnostics, _ = self.compile(write=False)
+        self.assertTrue(any("exclude_paths" in d.message for d in self.fails(diagnostics)))
 
     def test_promoted_may_retain_historical_supersedes(self):
         self.write_ruling(self.base_fm(id="R-001", status="superseded", entities=[]))
@@ -612,6 +647,51 @@ class TestLoadActiveRulingsText(Tier2TestCase):
         decisions.unlink()
         self.assertEqual(tier2.load_active_rulings_text(self.root), "")
 
+    def test_empty_rulings_dir_with_legacy_decisions_warns(self):
+        for f in (self.root / "_gm-materials" / "rulings").iterdir():
+            f.unlink()
+        decisions = self.root / ".agents" / "context" / "decisions.md"
+        decisions.write_text("- Decision: legacy\n", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            text = tier2.load_active_rulings_text(self.root)
+        self.assertEqual(text, "")
+        self.assertIn("WARN", err.getvalue())
+        self.assertIn("decisions.md", err.getvalue())
+        # Without legacy decisions.md the empty dir stays silent (fallback contract unchanged).
+        decisions.unlink()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(tier2.load_active_rulings_text(self.root), "")
+        self.assertNotIn("WARN", err.getvalue())
+
+    def test_load_tier1_config_warns_and_falls_back_on_parse_error(self):
+        (self.root / ".agents" / "context" / "tier1_sources.yml").write_text(
+            "include_paths: [unclosed\n", encoding="utf-8"
+        )
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            include, exclude = tier2.load_tier1_config(self.root)
+        self.assertEqual(include, tier2.DEFAULT_INCLUDE_PATHS)
+        self.assertEqual(exclude, tier2.DEFAULT_EXCLUDE_PATHS)
+        self.assertIn("Warning", err.getvalue())
+        # Single-owner aliases used by lint_wiki.
+        self.assertIs(tier2.normalise_rel_path, tier2._normalise_rel_path)
+        self.assertIs(tier2.load_include_paths, tier2._load_include_paths)
+
+    def test_turn_validated_but_not_stored_on_parsed_ruling(self):
+        fm = self.base_fm(
+            id="R-001",
+            kind="faction-turn",
+            actors=["piot_chant"],
+            opinions=[{"actor": "piot_chant", "vote": 1, "shifted": True, "stance": "Go."}],
+            turn={"roll": 17},
+        )
+        self.write_ruling(fm)
+        rulings, _, _, diagnostics = tier2.validate_rulings(self.root)
+        self.assertEqual(self.fails(diagnostics), [])
+        self.assertFalse(hasattr(rulings[0], "turn"), "write-only turn field must be dropped")
+
 
 class TestDiscoveryAndCatalog(Tier2TestCase):
     """Discovery and catalog-state helpers."""
@@ -629,12 +709,81 @@ class TestDiscoveryAndCatalog(Tier2TestCase):
         self.assertEqual(tier2.discover_ruling_files(self.root), [])
 
     def test_load_catalog_state_absent_and_unreadable(self):
-        ids, sha = tier2.load_catalog_state(self.root)
-        self.assertEqual(ids, {})
-        self.assertIsNone(sha)
+        ids, sha, diags = tier2.load_catalog_state(self.root)
+        self.assertEqual((ids, sha, diags), ({}, None, []))
+        # Present-but-corrupt catalog.json is a loud FAIL, never a silent ({}, None).
         (self.root / ".agents" / "context" / "catalog.json").write_text("{corrupt", encoding="utf-8")
-        ids, sha = tier2.load_catalog_state(self.root)
+        ids, sha, diags = tier2.load_catalog_state(self.root)
         self.assertEqual((ids, sha), ({}, None))
+        self.assertTrue(any(d.severity == "FAIL" and "not valid JSON" in d.message for d in diags))
+
+    def test_load_catalog_state_non_object_and_duplicate_ids(self):
+        (self.root / ".agents" / "context" / "catalog.json").write_text(json.dumps([1, 2]), encoding="utf-8")
+        ids, sha, diags = tier2.load_catalog_state(self.root)
+        self.assertEqual((ids, sha), ({}, None))
+        self.assertTrue(any(d.severity == "FAIL" and "not a JSON object" in d.message for d in diags))
+        self.write_catalog([
+            {"path": "directory/a.md", "id": "sigisfarne", "title": "A"},
+            {"path": "directory/b.md", "id": "sigisfarne", "title": "B"},
+        ])
+        ids, sha, diags = tier2.load_catalog_state(self.root)
+        self.assertEqual(ids, {"sigisfarne": "directory/b.md"})
+        self.assertIsNotNone(sha)
+        self.assertTrue(any(d.severity == "WARN" and "duplicate id 'sigisfarne'" in d.message for d in diags))
+
+    def test_corrupt_catalog_fails_compilation_loudly(self):
+        self.write_ruling(self.base_fm())
+        (self.root / ".agents" / "context" / "catalog.json").write_text("{corrupt", encoding="utf-8")
+        payload, diagnostics, _ = self.compile(write=False)
+        self.assertIsNone(payload)
+        self.assertTrue(any(d.severity == "FAIL" and "catalog.json" in d.message for d in diagnostics))
+
+
+class TestCacheFreshness(Tier2TestCase):
+    """Shared cache-freshness helper consumed by lint_wiki.check_rulings and oude doctor."""
+
+    def test_payload_without_generated(self):
+        payload = {"schema_version": 1, "generated": "2026-11-25T00:00:00+00:00", "entries": []}
+        self.assertEqual(
+            tier2.payload_without_generated(payload),
+            {"schema_version": 1, "entries": []},
+        )
+
+    def test_cache_freshness_states(self):
+        self.write_ruling(self.base_fm())
+        self.catalog_with_sigisfarne()
+        # Absent cache.
+        state, detail, expected, diags = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "absent")
+        self.assertIsNone(detail)
+        self.assertIsNotNone(expected)
+        self.assertEqual(self.fails(diags), [])
+        # Fresh after compiling.
+        self.compile()
+        state, _, _, _ = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "fresh")
+        # Stale after a ruling edit.
+        ruling_path = self.root / "_gm-materials" / "rulings" / "R-001_slug.md"
+        ruling_path.write_text(ruling_path.read_text(encoding="utf-8") + "\nExtra line.\n", encoding="utf-8")
+        state, _, _, _ = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "stale")
+        # Corrupt JSON.
+        cache = self.root / "_gm-materials" / ".cache" / "tier2.json"
+        cache.write_text("{corrupt", encoding="utf-8")
+        state, detail, _, _ = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "corrupt")
+        self.assertTrue(detail)
+        # Unknown schema version.
+        cache.write_text(json.dumps({"schema_version": 99, "entries": []}), encoding="utf-8")
+        state, _, _, _ = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "wrong-schema")
+        # Invalid rulings: freshness not evaluated, FAIL diagnostics surfaced.
+        cache.write_text(json.dumps({"schema_version": 1, "entries": []}), encoding="utf-8")
+        self.write_ruling(self.base_fm(id="R-2"))  # invalid id grammar
+        state, _, expected, diags = tier2.cache_freshness(self.root)
+        self.assertEqual(state, "invalid")
+        self.assertIsNone(expected)
+        self.assertTrue(self.fails(diags))
 
 
 if __name__ == "__main__":

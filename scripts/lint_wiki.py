@@ -20,7 +20,6 @@ under --strict), 0 otherwise.
 """
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -35,10 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import tier2  # noqa: E402
 
-# Defaults mirror jekyll/_plugins/data_extractor.rb so the linter and the
-# catalogue index agree on what constitutes Tier 1 content.
-DEFAULT_INCLUDE_PATHS = ["campaigns", "directory", "systems", "statblocks", "trading"]
-DEFAULT_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
+# Defaults live in scripts/tier2.py (single owner of tier1_sources.yml loading);
+# aliased here so existing importers keep working.
+DEFAULT_INCLUDE_PATHS = tier2.DEFAULT_INCLUDE_PATHS
+DEFAULT_EXCLUDE_PATHS = tier2.DEFAULT_EXCLUDE_PATHS
 
 # Front matter check scope (per lint-wiki skill §7).
 FRONT_MATTER_DIRS = {"campaigns", "directory", "systems"}
@@ -52,7 +51,7 @@ LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\
 # Scheme-bearing targets (http:, mailto:, ...) are external, not internal links.
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
-FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n(.*)|\Z)", re.DOTALL)
+FRONT_MATTER_RE = tier2.FRONT_MATTER_RE
 LIQUID_COMMENT_RE = re.compile(
     r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}",
     re.DOTALL,
@@ -100,58 +99,11 @@ class WikiReport:
 # ---------------------------------------------------------------------------
 
 
-def normalise_rel_path(raw: Any) -> str:
-    """Normalise a vault-relative config path for prefix comparison."""
-    cleaned = str(raw).strip().replace("\\", "/").rstrip("/")
-    if cleaned == ".":
-        return "."
-    return re.sub(r"^(?:\./+)+", "", cleaned).lstrip("/")
-
-
-def load_tier1_config(root: Path) -> Tuple[List[str], List[str]]:
-    """Load include/exclude paths from .agents/context/tier1_sources.yml.
-
-    Warns to stderr and falls back to defaults on read or YAML parse errors so
-    structural linters and audits still run when the config file is malformed.
-    """
-    config_path = root / ".agents" / "context" / "tier1_sources.yml"
-    include = list(DEFAULT_INCLUDE_PATHS)
-    exclude = list(DEFAULT_EXCLUDE_PATHS)
-    if not config_path.is_file():
-        return include, exclude
-    try:
-        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        print(f"Warning: Failed to parse {config_path}: {exc}", file=sys.stderr)
-        return include, exclude
-    if not isinstance(cfg, dict):
-        return include, exclude
-
-    raw_include = cfg.get("include_paths")
-    if isinstance(raw_include, list):
-        normalised = [
-            normalise_rel_path(p)
-            for p in raw_include
-            if p is not None and normalise_rel_path(p)
-        ]
-        if normalised:
-            include = normalised
-
-    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
-        raw_exclude = cfg["exclude_paths"]
-        if isinstance(raw_exclude, list):
-            exclude = [
-                normalise_rel_path(p)
-                for p in raw_exclude
-                if p is not None and normalise_rel_path(p)
-            ]
-
-    return include, exclude
-
-
-def is_excluded(rel_posix: str, exclude_paths: List[str]) -> bool:
-    """Mirror data_extractor.rb exclusion semantics on repo-relative paths."""
-    return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
+# Thin aliases: scripts/tier2.py owns path normalisation, tier1_sources.yml
+# loading (single stderr-warning fallback convention), and exclusion semantics.
+normalise_rel_path = tier2.normalise_rel_path
+load_tier1_config = tier2.load_tier1_config
+is_excluded = tier2.is_excluded
 
 
 def _has_skipped_segment(rel_path: Path) -> bool:
@@ -299,7 +251,7 @@ def prose_line_count(body: str) -> int:
 
 def content_sha(path: Path) -> str:
     """First 8 hex chars of the SHA-256 of the raw file, matching data_extractor.rb."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+    return tier2.sha8(path.read_bytes())
 
 
 def is_section_index(root: Path, path: Path) -> bool:
@@ -637,8 +589,6 @@ def check_duplicate_titles(
             )
 
 
-
-
 def check_duplicate_ids(
     root: Path,
     files: List[Path],
@@ -687,17 +637,19 @@ def check_rulings(root: Path, findings: List[Finding]) -> None:
     """Check 10: validate _gm-materials/rulings/ and the freshness of _gm-materials/.cache/tier2.json.
 
     Returns cleanly with zero findings when the rulings directory is absent
-    or empty (public CI runners, fresh vaults), so no unfixable WARN appears.
+    (public CI runners, fresh vaults). An existing-but-empty rulings directory
+    still emits a `rulings` WARN when legacy decisions.md coexists, so zero
+    Tier 2 canon in prompts never passes silently.
     """
-    if not tier2.discover_ruling_files(root):
+    if not (root / tier2.RULINGS_REL_DIR).is_dir():
         return
-    legacy = root / ".agents" / "context" / "decisions.md"
+    legacy = root / tier2.LEGACY_DECISIONS_REL_PATH
     if legacy.is_file():
         findings.append(
             Finding(
                 check="rulings",
                 severity="WARN",
-                file=".agents/context/decisions.md",
+                file=legacy.relative_to(root).as_posix() if legacy.is_relative_to(root) else str(legacy),
                 message=(
                     "legacy .agents/context/decisions.md coexists with _gm-materials/rulings/; move static "
                     "conventions to .agents/AGENTS.md and mutable world-state rulings into _gm-materials/rulings/, "
@@ -705,13 +657,14 @@ def check_rulings(root: Path, findings: List[Finding]) -> None:
                 ),
             )
         )
-    expected, diagnostics, _ = tier2.compile_tier2_index(root, write=False)
+    if not tier2.discover_ruling_files(root):
+        return
+    state, detail, _expected, diagnostics = tier2.cache_freshness(root)
     for d in diagnostics:
         findings.append(Finding(check="rulings", severity=d.severity, file=d.file, line=d.line, message=d.message))
 
     cache_rel = tier2.CACHE_REL_PATH.as_posix()
-    cache_path = root / tier2.CACHE_REL_PATH
-    if not cache_path.is_file():
+    if state == "absent":
         findings.append(
             Finding(
                 check="rulings",
@@ -720,15 +673,11 @@ def check_rulings(root: Path, findings: List[Finding]) -> None:
                 message=f"{cache_rel} absent; run `oude tier2` or `oude doctor --fix`",
             )
         )
-        return
-    try:
-        on_disk = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    elif state == "corrupt":
         findings.append(
-            Finding(check="rulings", severity="FAIL", file=cache_rel, message=f"{cache_rel} is not valid JSON: {exc}")
+            Finding(check="rulings", severity="FAIL", file=cache_rel, message=f"{cache_rel} is not valid JSON: {detail}")
         )
-        return
-    if not isinstance(on_disk, dict) or on_disk.get("schema_version") != tier2.SCHEMA_VERSION:
+    elif state == "wrong-schema":
         findings.append(
             Finding(
                 check="rulings",
@@ -737,19 +686,16 @@ def check_rulings(root: Path, findings: List[Finding]) -> None:
                 message=f"{cache_rel} is not a JSON object with schema_version {tier2.SCHEMA_VERSION}",
             )
         )
-        return
-    if expected is not None:
-        expected_cmp = {k: v for k, v in expected.items() if k != "generated"}
-        disk_cmp = {k: v for k, v in on_disk.items() if k != "generated"}
-        if disk_cmp != expected_cmp:
-            findings.append(
-                Finding(
-                    check="rulings",
-                    severity="FAIL",
-                    file=cache_rel,
-                    message=f"{cache_rel} is stale; run `oude tier2`",
-                )
+    elif state == "stale":
+        findings.append(
+            Finding(
+                check="rulings",
+                severity="FAIL",
+                file=cache_rel,
+                message=f"{cache_rel} is stale; run `oude tier2`",
             )
+        )
+
 
 # ---------------------------------------------------------------------------
 # Orchestration & rendering

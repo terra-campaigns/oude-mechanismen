@@ -6,7 +6,7 @@ Compiles structured GM rulings and faction-turn records from
 `_gm-materials/rulings/*.md` (YAML front matter + narrative body) into the
 entries-only derived index `_gm-materials/.cache/tier2.json`
 (`{schema_version, generated, catalog_sha, entries[]}`), validates the
-supersession DAG, left-joins entity/actor slugs against
+supersession DAG (directed acyclic graph), left-joins entity/actor slugs against
 `.agents/context/catalog.json`, and exposes `load_active_rulings_text()` for
 `scripts/transcribe_session.py` and `scripts/scribe_session.py`.
 
@@ -25,6 +25,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -46,9 +47,25 @@ LEGACY_DECISIONS_REL_PATH = Path(".agents") / "context" / "decisions.md"
 # Defaults mirror jekyll/_plugins/data_extractor.rb so promoted_to resolution
 # agrees with the Tier 1 catalogue on what constitutes published canon.
 DEFAULT_INCLUDE_PATHS = ["campaigns", "directory", "systems", "statblocks", "trading"]
+DEFAULT_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
 
 FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n(.*)|\Z)", re.DOTALL)
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def sha8(data: bytes) -> str:
+    """First 8 hex chars of the SHA-256 of raw bytes (matches data_extractor.rb)."""
+    return hashlib.sha256(data).hexdigest()[:8]
+
+
+def payload_without_generated(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of a tier2.json payload without the volatile `generated` timestamp."""
+    return {k: v for k, v in payload.items() if k != "generated"}
+
+
+def is_excluded(rel_posix: str, exclude_paths: List[str]) -> bool:
+    """Mirror data_extractor.rb exclusion semantics on repo-relative paths."""
+    return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
 
 
 @dataclass
@@ -77,7 +94,6 @@ class ParsedRuling:
     supersedes: List[str]
     promoted_to: Optional[str]
     retraction_reason: Optional[str]
-    turn: Optional[Dict[str, Any]]
     opinions: List[Dict[str, Any]]
     rel_path: str
     sha: str
@@ -103,23 +119,49 @@ def _normalise_rel_path(raw: Any) -> str:
     return re.sub(r"^(?:\./+)+", "", cleaned).lstrip("/")
 
 
-def _load_include_paths(root: Path) -> List[str]:
-    """Load include_paths from .agents/context/tier1_sources.yml (engine fallback when absent)."""
+def load_tier1_config(root: Path) -> Tuple[List[str], List[str]]:
+    """Load (include_paths, exclude_paths) from .agents/context/tier1_sources.yml.
+
+    Falls back to DEFAULT_INCLUDE_PATHS / DEFAULT_EXCLUDE_PATHS when the file is
+    absent, not a YAML mapping, or carries no usable list; read or YAML parse
+    errors print a stderr warning before falling back (the single fallback
+    convention shared by every consumer, including scripts/lint_wiki.py).
+    """
     config_path = root / ".agents" / "context" / "tier1_sources.yml"
+    include = list(DEFAULT_INCLUDE_PATHS)
+    exclude = list(DEFAULT_EXCLUDE_PATHS)
     if not config_path.is_file():
-        return list(DEFAULT_INCLUDE_PATHS)
+        return include, exclude
     try:
         cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError):
-        return list(DEFAULT_INCLUDE_PATHS)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        print(f"Warning: Failed to parse {config_path}: {exc}", file=sys.stderr)
+        return include, exclude
     if not isinstance(cfg, dict):
-        return list(DEFAULT_INCLUDE_PATHS)
-    raw = cfg.get("include_paths")
-    if isinstance(raw, list):
-        normalised = [n for p in raw if p is not None and (n := _normalise_rel_path(p))]
+        return include, exclude
+
+    raw_include = cfg.get("include_paths")
+    if isinstance(raw_include, list):
+        normalised = [n for p in raw_include if p is not None and (n := _normalise_rel_path(p))]
         if normalised:
-            return normalised
-    return list(DEFAULT_INCLUDE_PATHS)
+            include = normalised
+
+    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
+        raw_exclude = cfg["exclude_paths"]
+        if isinstance(raw_exclude, list):
+            exclude = [n for p in raw_exclude if p is not None and (n := _normalise_rel_path(p))]
+
+    return include, exclude
+
+
+def _load_include_paths(root: Path) -> List[str]:
+    """Load include_paths from .agents/context/tier1_sources.yml (engine fallback when absent)."""
+    return load_tier1_config(root)[0]
+
+
+# Public aliases: scripts/lint_wiki.py delegates to these single owners.
+normalise_rel_path = _normalise_rel_path
+load_include_paths = _load_include_paths
 
 
 def _valid_slug_list(value: Any) -> Optional[List[str]]:
@@ -147,7 +189,7 @@ def parse_ruling_file(root: Path, path: Path) -> Tuple[Optional[ParsedRuling], L
         diagnostics.append(Tier2Diagnostic("FAIL", rel_path, line, message))
 
     raw = path.read_bytes()
-    sha = hashlib.sha256(raw).hexdigest()[:8]
+    sha = sha8(raw)
     text = raw.decode("utf-8", errors="replace")
 
     match = FRONT_MATTER_RE.match(text)
@@ -308,7 +350,6 @@ def parse_ruling_file(root: Path, path: Path) -> Tuple[Optional[ParsedRuling], L
         supersedes=supersedes,
         promoted_to=promoted_to,
         retraction_reason=retraction_reason,
-        turn=turn,
         opinions=opinions,
         rel_path=rel_path,
         sha=sha,
@@ -316,20 +357,28 @@ def parse_ruling_file(root: Path, path: Path) -> Tuple[Optional[ParsedRuling], L
     return ruling, diagnostics
 
 
-def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str]]:
-    """Return ({id: path} for catalog entries with a non-empty string id, 8-char sha or None)."""
+def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str], List[Tier2Diagnostic]]:
+    """Return ({id: path} for catalog entries with a non-empty string id, 8-char sha or None, diagnostics).
+
+    An absent catalog.json yields ({}, None, []). A present-but-unparseable or
+    non-object catalog.json yields a FAIL diagnostic (the Tier 1 join source must
+    never fail silently) with ({}, None). Duplicate ids inside catalog.json emit a
+    WARN (the last entry wins).
+    """
     catalog_path = root / CATALOG_REL_PATH
     if not catalog_path.is_file():
-        return {}, None
+        return {}, None, []
+    rel = CATALOG_REL_PATH.as_posix()
     try:
         raw = catalog_path.read_bytes()
         data = json.loads(raw)
-    except (OSError, ValueError):
-        return {}, None
+    except (OSError, ValueError) as exc:
+        return {}, None, [Tier2Diagnostic("FAIL", rel, 1, f"{rel} is not valid JSON: {exc}")]
     if not isinstance(data, dict):
-        return {}, None
-    sha = hashlib.sha256(raw).hexdigest()[:8]
+        return {}, None, [Tier2Diagnostic("FAIL", rel, 1, f"{rel} is not a JSON object")]
+    sha = sha8(raw)
     id_to_path: Dict[str, str] = {}
+    diagnostics: List[Tier2Diagnostic] = []
     entries = data.get("entries", [])
     if isinstance(entries, list):
         for entry in entries:
@@ -339,11 +388,26 @@ def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str]]:
                 and entry["id"]
                 and isinstance(entry.get("path"), str)
             ):
+                if entry["id"] in id_to_path:
+                    diagnostics.append(
+                        Tier2Diagnostic(
+                            "WARN",
+                            rel,
+                            1,
+                            f"duplicate id '{entry['id']}' in {rel} entries; keeping the last path '{entry['path']}'",
+                        )
+                    )
                 id_to_path[entry["id"]] = entry["path"]
-    return id_to_path, sha
+    return id_to_path, sha, diagnostics
 
 
-def _check_promoted_to(root: Path, rel_path: str, promoted_to: str, include_paths: List[str]) -> Optional[str]:
+def _check_promoted_to(
+    root: Path,
+    rel_path: str,
+    promoted_to: str,
+    include_paths: List[str],
+    exclude_paths: List[str],
+) -> Optional[str]:
     """Validate a promoted_to vault-relative Tier 1 path; returns an error message or None."""
     resolved = (root / promoted_to).resolve()
     if not resolved.is_relative_to(root.resolve()):
@@ -355,6 +419,8 @@ def _check_promoted_to(root: Path, rel_path: str, promoted_to: str, include_path
         return f"'promoted_to' must point outside _gm-materials/ and .agents/: {promoted_to!r}"
     if not any(rel_posix == inc or rel_posix.startswith(f"{inc}/") for inc in include_paths):
         return f"'promoted_to' must match include_paths from tier1_sources.yml: {promoted_to!r}"
+    if is_excluded(rel_posix, exclude_paths):
+        return f"'promoted_to' must not match exclude_paths from tier1_sources.yml: {promoted_to!r}"
     return None
 
 
@@ -366,9 +432,10 @@ def validate_rulings(
 
     Returns (rulings, superseded_by map, per-ruling resolved_entities, diagnostics).
     """
-    if catalog_ids is None:
-        catalog_ids, _ = load_catalog_state(root)
     diagnostics: List[Tier2Diagnostic] = []
+    if catalog_ids is None:
+        catalog_ids, _, catalog_diags = load_catalog_state(root)
+        diagnostics.extend(catalog_diags)
     rulings: List[ParsedRuling] = []
     for path in discover_ruling_files(root):
         ruling, diags = parse_ruling_file(root, path)
@@ -404,34 +471,42 @@ def validate_rulings(
                     )
                 )
 
-    # Rule 2: DAG acyclicity via 3-colour DFS over supersedes edges.
+    # Rule 2: DAG (directed acyclic graph) acyclicity via iterative 3-colour DFS over
+    # supersedes edges; the explicit stack keeps deep chains from raising RecursionError.
     supersedes_map = {
         r.id: [t for t in r.supersedes if t in id_set and t != r.id] for r in valid
     }
     colour: Dict[str, int] = {rid: 0 for rid in id_set}  # 0=white, 1=gray, 2=black
-
-    def dfs(node: str, stack: List[str]) -> None:
-        colour[node] = 1
-        stack.append(node)
-        for nxt in supersedes_map.get(node, []):
-            if colour[nxt] == 1:
-                cycle = stack[stack.index(nxt):] + [nxt]
-                diagnostics.append(
-                    Tier2Diagnostic(
-                        "FAIL",
-                        by_id_valid[nxt].rel_path,
-                        1,
-                        "supersession cycle detected: " + " -> ".join(cycle),
+    for start in sorted(id_set):
+        if colour[start] != 0:
+            continue
+        colour[start] = 1
+        path_stack = [start]
+        frame: List[Tuple[str, int]] = [(start, 0)]
+        while frame:
+            node, idx = frame[-1]
+            neighbours = supersedes_map.get(node, [])
+            if idx < len(neighbours):
+                frame[-1] = (node, idx + 1)
+                nxt = neighbours[idx]
+                if colour[nxt] == 1:
+                    cycle = path_stack[path_stack.index(nxt):] + [nxt]
+                    diagnostics.append(
+                        Tier2Diagnostic(
+                            "FAIL",
+                            by_id_valid[nxt].rel_path,
+                            1,
+                            "supersession cycle detected: " + " -> ".join(cycle),
+                        )
                     )
-                )
-            elif colour[nxt] == 0:
-                dfs(nxt, stack)
-        stack.pop()
-        colour[node] = 2
-
-    for rid in sorted(id_set):
-        if colour[rid] == 0:
-            dfs(rid, [])
+                elif colour[nxt] == 0:
+                    colour[nxt] = 1
+                    path_stack.append(nxt)
+                    frame.append((nxt, 0))
+            else:
+                frame.pop()
+                path_stack.pop()
+                colour[node] = 2
 
     # Rule 3: target status alignment and orphaned superseded rulings.
     targeted = {t for r in valid for t in r.supersedes}
@@ -461,7 +536,7 @@ def validate_rulings(
             )
 
     # Rule 4: status-to-partner-field matrix.
-    include_paths = _load_include_paths(root)
+    include_paths, exclude_paths = load_tier1_config(root)
     for ruling in valid:
         if ruling.status in ("active", "superseded"):
             if ruling.promoted_to is not None:
@@ -488,7 +563,7 @@ def validate_rulings(
                     Tier2Diagnostic("FAIL", ruling.rel_path, 1, "status 'promoted' requires a non-empty 'promoted_to'")
                 )
             else:
-                problem = _check_promoted_to(root, ruling.rel_path, ruling.promoted_to, include_paths)
+                problem = _check_promoted_to(root, ruling.rel_path, ruling.promoted_to, include_paths, exclude_paths)
                 if problem:
                     diagnostics.append(Tier2Diagnostic("FAIL", ruling.rel_path, 1, problem))
         elif ruling.status == "retracted":
@@ -575,8 +650,9 @@ def compile_tier2_index(
     write=True and validation is clean, the cache is written atomically via a
     temp file + os.replace(), skipping the write when only `generated` differs.
     """
-    catalog_ids, catalog_sha = load_catalog_state(root)
+    catalog_ids, catalog_sha, catalog_diags = load_catalog_state(root)
     rulings, superseded_by, resolved, diagnostics = validate_rulings(root, catalog_ids)
+    diagnostics = catalog_diags + diagnostics
     overlaps = find_active_entity_overlaps(rulings)
     if any(d.severity == "FAIL" for d in diagnostics):
         return None, diagnostics, {}
@@ -617,17 +693,52 @@ def compile_tier2_index(
                 existing = json.loads(cache_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 existing = None
-            if isinstance(existing, dict):
-                existing_cmp = {k: v for k, v in existing.items() if k != "generated"}
-                payload_cmp = {k: v for k, v in payload.items() if k != "generated"}
-                if existing_cmp == payload_cmp:
-                    return payload, diagnostics, overlaps  # idempotent: skip rewrite
+            if isinstance(existing, dict) and payload_without_generated(existing) == payload_without_generated(payload):
+                return payload, diagnostics, overlaps  # idempotent: skip rewrite
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = cache_path.with_name(cache_path.name + ".tmp")
-        tmp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp_path, cache_path)
+        data = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+        fd, tmp_name = tempfile.mkstemp(dir=cache_path.parent, prefix=cache_path.name + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, cache_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
     return payload, diagnostics, overlaps
+
+
+def cache_freshness(root: Path) -> Tuple[str, Optional[str], Optional[Dict[str, Any]], List[Tier2Diagnostic]]:
+    """Classify the derived tier2 cache against a fresh in-memory compile.
+
+    Returns (state, detail, expected_payload, diagnostics) where state is one of
+    "absent", "corrupt", "wrong-schema", "invalid" (rulings carry FAIL diagnostics,
+    so freshness is not evaluated), "stale", or "fresh". detail carries the JSON
+    error text for "corrupt". expected_payload is the freshly compiled payload
+    (None when validation FAILed). Shared by scripts/lint_wiki.py and the
+    `oude doctor` block in src/oude_mechanismen/cli.py.
+    """
+    cache_path = root / CACHE_REL_PATH
+    expected, diagnostics, _ = compile_tier2_index(root, write=False)
+    if not cache_path.is_file():
+        return "absent", None, expected, diagnostics
+    try:
+        on_disk = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return "corrupt", str(exc), expected, diagnostics
+    if not isinstance(on_disk, dict) or on_disk.get("schema_version") != SCHEMA_VERSION:
+        return "wrong-schema", None, expected, diagnostics
+    if expected is None:
+        return "invalid", None, None, diagnostics
+    if payload_without_generated(on_disk) == payload_without_generated(expected):
+        return "fresh", None, expected, diagnostics
+    return "stale", None, expected, diagnostics
 
 
 def load_active_rulings_text(repo_root: Path) -> str:
@@ -637,10 +748,20 @@ def load_active_rulings_text(repo_root: Path) -> str:
     disk (never via the derived cache, so a stale tier2.json can never inject
     outdated canon); any FAIL diagnostic raises ValueError after printing all
     FAILs to stderr. When the rulings directory is absent, falls back
-    read-only to legacy `.agents/context/decisions.md` when present.
+    read-only to legacy `.agents/context/decisions.md` when present; an
+    existing-but-empty rulings directory with legacy decisions.md present
+    prints a stderr WARN (the fallback is not used while the directory exists).
     """
     rulings_dir = repo_root / RULINGS_REL_DIR
     if rulings_dir.is_dir():
+        if not discover_ruling_files(repo_root) and (repo_root / LEGACY_DECISIONS_REL_PATH).is_file():
+            print(
+                f"[WARN] {RULINGS_REL_DIR.as_posix()}/ exists but holds no ruling files; legacy "
+                f"{LEGACY_DECISIONS_REL_PATH.as_posix()} is present but not used while the rulings "
+                "directory exists — author a ruling file or remove the empty directory to restore "
+                "the legacy fallback",
+                file=sys.stderr,
+            )
         rulings, _, _, diagnostics = validate_rulings(repo_root)
         fails = [d for d in diagnostics if d.severity == "FAIL"]
         if fails:
@@ -670,7 +791,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         prog="tier2",
         description=(
             "Compile and validate Tier 2 rulings (_gm-materials/rulings/*.md) into the derived "
-            "index _gm-materials/.cache/tier2.json."
+            "index _gm-materials/.cache/tier2.json, enforcing the supersession DAG "
+            "(directed acyclic graph) invariants."
         ),
     )
     parser.add_argument(
