@@ -11,11 +11,12 @@ An air-gapped, decomposed pipeline to process a tabletop RPG session recording i
 ## Guiding Principles
 
 - **Zero-Friction Ingestion:** Accepts any standard audio or video container (`.mkv`, `.mp4`, `.m4a`, `.wav`, `.mp3`) or pre-transcribed `.txt` file.
-- **Dynamic Canon Grounding:** Dynamically queries `.agents/context/catalog.json`, `.agents/context/decisions.md`, and `.agents/AGENTS.md` to bias Whisper acoustic recognition and eliminate phonetic misspellings without manual glossary maintenance.
+- **Dynamic Canon Grounding:** Dynamically queries `.agents/context/catalog.json`, active Tier 2 rulings (`_gm-materials/rulings/` via `_gm-materials/.cache/tier2.json`), and `.agents/AGENTS.md` to bias Whisper acoustic recognition and eliminate phonetic misspellings without manual glossary maintenance.
 - **Three-Tier Storage Separation & Privacy Air-Gap:**
   1. *Tier 0 (Local Disk Air-Gap):* Raw audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from both Git and Google Drive for player privacy.
-  2. *Tier 2 Canon (`<drive_dir>/_gm-materials/session-summaries/` & `<drive_dir>/_gm-materials/session-preps/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`_gm-materials/session-preps/<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
-  3. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
+  2. *Tier 2 Canon (`<drive_dir>/_gm-materials/`):* De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), and acoustic glossaries (`<slug>_glossary.md`) in `_gm-materials/session-summaries/`, plus structured GM rulings and faction-turn records in `_gm-materials/rulings/` indexed by the derived `_gm-materials/.cache/tier2.json` (compiled via `oude tier2`).
+  3. *Tier 3 (Reference Digests & Unplayed Prep):* Distilled reference wikis in `_gm-materials/digests/` and unplayed session preparation in `_gm-materials/session-preps/` (`<slug>_prep.md`).
+  4. *Tier 1 Canon (Campaign Repository):* Canonical draft chapter files (`campaigns/<arc>/<num>.md`) and character dossiers (`directory/`).
 - **Gemini Chat Orchestration & Frontier Quality Gates:** The pipeline is kickstarted through Gemini chat (`scribe-session`). Gemini coordinates local execution, ingests clean de-personalised Tier 2 records, and drafts the canonical chapter and archival notes.
 - **Objective In-World Observer Perspective:** All archival GM notes are narrated from the perspective of an invisible, objective in-world observer witnessing events within the universe. Zero player meta-talk, zero table out-of-character banter, zero boxed read-aloud prose.
 - **The 2-4 Prose Architecture:** 2 to 4 subsections (`## Heading`), 2 to 4 paragraphs per subsection, 2 to 4 sentences per paragraph, and strictly **one sentence per line** within each paragraph.
@@ -58,7 +59,7 @@ The Gemini agent in chat reads the non-Tier-0 materials from `<drive_dir>/_gm-ma
 1. **De-personalised Tactical Facts:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_tactical_facts.md`.
 2. **De-personalised Sensory Textures:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_sensory_textures.md`.
 3. **Session Acoustic Glossary:** Read `<drive_dir>/_gm-materials/session-summaries/<slug>_glossary.md`.
-4. **Active Table Decisions (Tier 2):** Read `.agents/context/decisions.md`.
+4. **Active Tier 2 Rulings:** Read `_gm-materials/.cache/tier2.json` (filter to `status == "active"`; rebuild via `oude tier2` if absent or stale), opening the `_gm-materials/rulings/*.md` source files when private `opinions` or turn narrative are needed.
 5. **Campaign Specification:** Inspect `.agents/AGENTS.md` for style, cadence, vocabulary, and calibration examples.
 6. **Past Chapter Files:** Inspect the past 2–3 chapters (or as many as needed) to ground voice, style calibration, calendar progression, and narrative continuity.
 
@@ -77,7 +78,7 @@ Gemini in chat merges Pass 2A and Pass 2B into the canonical **8-section Archiva
   5. `## 4. Quests, Contracts & Objectives`: Corporate/patron directives, debts incurred/repaid, milestones.
   6. `## 5. Combat, Hazards & Encounters`: Adversaries, tactical decisions, environmental hazards, sustained physical trauma and psychological stress.
   7. `## 6. Loot, Trade & Inventory Ledger`: Credits, salvage, ammunition expended, gear damaged/acquired.
-  8. `## 7. Table Rulings & Candidate Tier 2 Decisions`: GM rulings and custom procedures to propose for `.agents/context/decisions.md`.
+  8. `## 7. Table Rulings & Candidate Tier 2 Decisions`: GM rulings and custom procedures to propose as structured ruling files in `_gm-materials/rulings/`.
   9. `## 8. Unresolved Hooks & Next Steps`: Active cliffhangers and immediate player intentions.
 - **Frontier Quality Gate 1:** Audit notes against previous sessions for continuity of ongoing debts and character states. Automated refinement loop (up to 3 iterations) if plot points or ledger entries are incomplete.
 - **Save File:** Write finalised notes to `<drive_dir>/_gm-materials/session-summaries/<slug>_session_notes.md` (Tier 2).
@@ -155,6 +156,7 @@ LIST without ID "["+ title + "](" + regexreplace(file.path, ".md", "") + ")" + "
    - Synchronises declared campaign markers (`stress`, `bends`, `charge`, `status`) in YAML front matter.
    - Leaves biographical markdown bodies, equipment tables, and notes completely untouched.
 3. **Present Diff to GM:** Display the reconciled YAML conditions diff for confirmation.
+4. **Promotion Check:** Inspect the active entries in `_gm-materials/.cache/tier2.json` whose `entities`/`resolved_entities` match entities appearing in the drafted chapter, and prompt the GM to mark any now-exposed rulings `status: promoted` with a `promoted_to: campaigns/...` path (private `opinions` stay in the ruling file), then run `oude tier2` to refresh the index.
 
 ---
 

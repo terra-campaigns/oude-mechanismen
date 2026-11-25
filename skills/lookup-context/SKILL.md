@@ -12,9 +12,9 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 
 ### 1. Consult Tier 1 & Tier 2 Indexes First
 
-- **Tier 1 (Catalogue):** Inspect the local `.agents/context/catalog.json` cache. Search the `entries` list for matches against `title`, `type`, `region`, or `parent`. If `catalog.json` is not yet generated (e.g. on a fresh clone), run `bundle exec jekyll build` (or `oude doctor --fix`) to build it, or fall back to targeted `rg` searches across `campaigns/`, `directory/`, and `systems/`.
-- **Tier 2 (Rulings Log & Session Records):**
-  - Inspect `.agents/context/decisions.md` to check if a table ruling or conversational decision has already been agreed with the GM.
+- **Tier 1 (Catalogue):** Inspect the local `.agents/context/catalog.json` cache. Search the `entries` list for matches against `title`, `type`, `region`, or `parent` (entries may also carry an explicit optional `id:` used for Tier 2 joins). If `catalog.json` is not yet generated (e.g. on a fresh clone), run `bundle exec jekyll build` (or `oude doctor --fix`) to build it, or fall back to targeted `rg` searches across `campaigns/`, `directory/`, and `systems/`.
+- **Tier 2 (Rulings Index & Session Records):**
+  - Inspect the local `_gm-materials/.cache/tier2.json` index (rebuild via `oude tier2` if absent or stale). Filter to `status == "active"` entries for current behind-the-screen world state; when you need private actor `opinions` or turn narrative, match `entities`/`actors`/`resolved_entities` and open the ruling file at its `path` under `_gm-materials/rulings/`.
   - When querying recent table events, party conditions, inventory/debts, or unresolved plot hooks, inspect recent synthesised session notes in `_gm-materials/session-summaries/*_session_notes.md`.
 
 ### 2. Targeted Reading
@@ -34,6 +34,6 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 
 - **Label Canon Tiers:** Always mark facts by their canon status:
   - **Tier 1 (Established Canon):** Drawn directly from published campaign notes.
-  - **Tier 2 (Agreed Rulings & Table Records):** Recorded in `.agents/context/decisions.md` or session notes (`_gm-materials/session-summaries/*_session_notes.md`).
-  - **Tier 3 (Influence / Possibility):** From reference PDFs and digests; not canon until adopted by the GM.
+  - **Tier 2 (Agreed Rulings & Table Records):** Structured rulings indexed in `_gm-materials/.cache/tier2.json` (sources in `_gm-materials/rulings/`) or session notes (`_gm-materials/session-summaries/*_session_notes.md`).
+  - **Tier 3 (Influence / Possibility):** From reference PDFs, digests (`_gm-materials/digests/`), and unplayed session prep (`_gm-materials/session-preps/`); not canon until adopted by the GM.
 - **Mark Gaps:** If an entity or fact is not found in the indexes, report it clearly as unestablished. Never invent lore or continuity without explicitly marking it as a proposal for the GM.

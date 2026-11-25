@@ -11,7 +11,7 @@ A structured, interactive procedure to prepare the next session of a campaign. T
 ## Guiding Principles
 
 - **Iterative and Conversational**: Do not dump all steps in a single monolithic response. Guide the GM through each step one at a time, presenting options, incorporating their steer, and refining before advancing to the next step.
-- **Canon Grounding**: Draw consistently from Tier 1 published notes (`campaigns/`, `directory/`), Tier 2 active rulings (`.agents/context/decisions.md`), and Tier 3 reference digests in `_gm-materials/digests/`.
+- **Canon Grounding**: Draw consistently from Tier 1 published notes (`campaigns/`, `directory/`), Tier 2 active rulings (indexed in `_gm-materials/.cache/tier2.json`, sources in `_gm-materials/rulings/`), and Tier 3 reference digests and unplayed prep in `_gm-materials/digests/` and `_gm-materials/session-preps/`.
 - **Setting Flavour**: Align tone, hazards, naming conventions, and aesthetics with the `## Campaign Specification` in `.agents/AGENTS.md`.
 - **Notebook-Centric Delivery, No Read-Aloud Text (#20)**: Prep is written for the GM's physical paper notebook used during session planning and play — ultra-terse bullet cues only. Never generate boxed narrative text (`> Table Read-Aloud`) or scripted monologue paragraphs; the GM improvises delivery from short descriptive cues. Deliver maximum operational density with minimum word count.
 
@@ -28,7 +28,7 @@ A structured, interactive procedure to prepare the next session of a campaign. T
   - Whenever the new date starts or crosses into a new in-world calendar month (e.g. month rollover or new monthly cycle), prompt and guide the GM to run a **Faction Turn**:
     1. Identify active regional factions, corporate cartels, rival expeditions, patrons, and dominant powers from `directory/` and Tier 1 notes.
     2. Adjudicate their off-screen goals, asset movements, supply hoarding, territorial shifts, or escalating conflicts.
-    3. Document and report the faction turn results directly into **Tier 2 lore** (`.agents/context/decisions.md` under `## Active Rulings` as `- **YYYY-MM-DD — Faction Turn (<Month Year>):** <summary of moves, asset shifts, and emerging consequences>`).
+    3. Document each resolved turn as one structured ruling file under `_gm-materials/rulings/<id>_<slug>.md` (`kind: faction-turn`, `status: active`, `fact`, `entities`, `actors`, optional freeform `turn` metadata, and `opinions`), then run `oude tier2` to refresh `_gm-materials/.cache/tier2.json` and review the printed active-entity overlap advisories for potential supersessions.
     4. Feed the resulting faction developments directly into character pressures (Step 1), uncommon encounters (Step 4), and local rumours (Step 6).
 
 ### Step 1 — PCS: Review Characters & Elevate Lore

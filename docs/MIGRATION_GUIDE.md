@@ -99,6 +99,22 @@ bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
 
 Open `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000`) from a secondary device — `.local` resolves via mDNS (`avahi-daemon` on Linux; Bonjour on macOS). On non-mDNS clients use `http://<host-ip>:4000`, where `<host-ip>` is the host's LAN address (`ip addr` on Linux, or your router's client list). Confirm pages, `relative_url` links, and gallery images render. One vault at a time on port `4000`.
 
+## Migrating Legacy `.agents/context/decisions.md`
+
+Older vaults keep confirmed table rulings as unstructured prose in the Git-tracked `.agents/context/decisions.md`. Design 006 retires that file in favour of structured rulings inside the git-ignored `_gm-materials/rulings/` (compiled by `oude tier2` into `_gm-materials/.cache/tier2.json`). Migrate manually:
+
+1. Split the file: static style/procedure conventions move into `.agents/AGENTS.md`; mutable world-state rulings become one structured ruling file per decision under `_gm-materials/rulings/<id>_<slug>.md` (`id: R-001`, `title`, `date`, `kind: ruling`, `status: active`, `fact`, `entities`, optional `supersedes`/`opinions`; faction-turn outcomes use `kind: faction-turn` with non-empty `actors` and `opinions`).
+2. Remove `.agents/context/decisions.md` once everything is moved (`oude lint-wiki` and `oude doctor` warn while both coexist; `oude doctor` never auto-deletes it).
+3. Validate and compile:
+
+```bash
+oude doctor --fix        # refreshes .gitignore/_config.yml exclusions and untracks derived caches
+oude tier2               # validates _gm-materials/rulings/ and compiles _gm-materials/.cache/tier2.json
+oude lint-wiki           # Gate 3: schema, supersession DAG, duplicate Tier 1 ids, tier2.json freshness
+```
+
+Already-pushed public Git history containing `.agents/context/decisions.md` in `charged`/`hostile` is accepted as-is; no history rewrite is performed. The read-only fallback in `scripts/tier2.py:load_active_rulings_text()` keeps un-migrated vaults working until the split completes.
+
 ## Troubleshooting
 
 | Symptom | Fix |
