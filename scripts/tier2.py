@@ -265,31 +265,27 @@ def parse_ruling_file(root: Path, path: Path) -> Tuple[Optional[ParsedRuling], L
             if not isinstance(item, dict):
                 fail(f"opinions[{idx}] must be a mapping, got {item!r}")
                 continue
+            ok = True
             actor = item.get("actor")
             if not isinstance(actor, str) or not SLUG_RE.match(actor):
                 fail(f"opinions[{idx}].actor must be a slug matching {SLUG_RE.pattern}, got {actor!r}")
+                ok = False
             elif actor not in actors:
                 fail(f"opinions[{idx}].actor '{actor}' is not listed in the ruling's 'actors'")
+                ok = False
             vote = item.get("vote")
             if isinstance(vote, bool) or not isinstance(vote, int) or vote not in (-1, 0, 1):
                 fail(f"opinions[{idx}].vote must be an integer in {{-1, 0, 1}}, got {vote!r}")
+                ok = False
             shifted = item.get("shifted")
             if not isinstance(shifted, bool):
                 fail(f"opinions[{idx}].shifted must be a boolean, got {shifted!r}")
+                ok = False
             stance = item.get("stance")
             if not isinstance(stance, str) or not stance.strip():
                 fail(f"opinions[{idx}].stance must be a non-empty string, got {stance!r}")
-            if (
-                isinstance(actor, str)
-                and SLUG_RE.match(actor)
-                and actor in actors
-                and not isinstance(vote, bool)
-                and isinstance(vote, int)
-                and vote in (-1, 0, 1)
-                and isinstance(shifted, bool)
-                and isinstance(stance, str)
-                and stance.strip()
-            ):
+                ok = False
+            if ok:
                 opinions.append(dict(item))
 
     if rid is not None and not path.name.startswith(f"{rid}_"):
