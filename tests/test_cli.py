@@ -399,7 +399,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_detects_deprecated_all_content_md_and_llm_content_plugin(self):
@@ -1136,7 +1137,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_fix_falls_back_to_bundle33(self):
@@ -1162,7 +1164,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle3.3", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_warns_when_vendor_dir_exists(self):
@@ -1544,6 +1547,60 @@ class TestOudeCLI(unittest.TestCase):
         self.assertNotIn(rulings_rel, ls_res.stdout.split("\0"), "ruling should no longer be tracked in the Git index")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_gm_materials_guard_prints_surrogate_paths_safely(self):
+        """Surrogate-escaped paths and stderr print safely under strict UTF-8 stdout while keeping raw paths for git rm."""
+        self._write_healthy_vault()
+        (self.target_dir / ".git").mkdir()
+        surrogate_rel = "_gm-materials/rulings/bad\udcffname.md"
+        rm_calls = []
+
+        def make_fake_run(rm_returncode=0, rm_stderr=""):
+            def fake_run(cmd, **kwargs):
+                if "ls-files" in cmd and "--error-unmatch" in cmd:
+                    return MagicMock(returncode=1, stdout="", stderr="")
+                if "ls-files" in cmd and "-z" in cmd:
+                    return MagicMock(returncode=0, stdout=f"{surrogate_rel}\0", stderr="")
+                if "rm" in cmd:
+                    rm_calls.append((cmd, kwargs))
+                    return MagicMock(returncode=rm_returncode, stdout="", stderr=rm_stderr)
+                raise AssertionError(f"Unexpected subprocess.run call: {cmd}")
+            return fake_run
+
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/git" if name == "git" else None):
+            buf_detect = io.BytesIO()
+            strict_detect = io.TextIOWrapper(buf_detect, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run()), \
+                 patch("sys.stdout", new=strict_detect):
+                rc_detect = cli._doctor(self.target_dir)
+                strict_detect.flush()
+                out_detect = buf_detect.getvalue().decode("utf-8")
+                strict_detect.detach()
+            self.assertEqual(rc_detect, 1)
+            self.assertIn("_gm-materials/rulings/bad\ufffdname.md is tracked in Git", out_detect)
+
+            buf_fix_ok = io.BytesIO()
+            strict_fix_ok = io.TextIOWrapper(buf_fix_ok, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run(rm_returncode=0)), \
+                 patch("sys.stdout", new=strict_fix_ok):
+                rc_fix_ok = cli._doctor(self.target_dir, fix=True)
+                strict_fix_ok.flush()
+                out_fix_ok = buf_fix_ok.getvalue().decode("utf-8")
+                strict_fix_ok.detach()
+            self.assertEqual(rc_fix_ok, 0)
+            self.assertIn("Untracked _gm-materials/rulings/bad\ufffdname.md from Git index", out_fix_ok)
+            self.assertEqual(rm_calls[-1][0][-1], surrogate_rel)
+
+            buf_fix_err = io.BytesIO()
+            strict_fix_err = io.TextIOWrapper(buf_fix_err, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run(rm_returncode=1, rm_stderr="fatal: bad\udcfferr\n")), \
+                 patch("sys.stdout", new=strict_fix_err):
+                rc_fix_err = cli._doctor(self.target_dir, fix=True)
+                strict_fix_err.flush()
+                out_fix_err = buf_fix_err.getvalue().decode("utf-8")
+                strict_fix_err.detach()
+            self.assertEqual(rc_fix_err, 1)
+            self.assertIn("Failed to untrack _gm-materials/rulings/bad\ufffdname.md: fatal: bad\ufffderr", out_fix_err)
 
     def test_doctor_gm_materials_guard_ignores_derived_cache_double_report(self):
         """A force-added _gm-materials/.cache/tier2.json is reported once via DERIVED_CACHE_FILES."""

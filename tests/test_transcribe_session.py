@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -267,6 +267,55 @@ class TestActiveRulingsInGlossary(unittest.TestCase):
             self.repo_root, self.out_glossary, "2026-11-02_ep001"
         )
         self.assertIn("Legacy ruling stays.", content)
+
+
+class TestAudioSubprocessDecoding(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="oude_audio_test_")
+        self.root = Path(self.test_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_normalise_audio_uses_utf8_replace_and_raises_on_failure(self):
+        src = self.root / "input.mkv"
+        dst = self.root / "output.wav"
+        src.write_bytes(b"")
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")) as mock_run:
+            transcribe_session.normalise_audio(src, dst)
+            self.assertEqual(mock_run.call_args.kwargs.get("encoding"), "utf-8")
+            self.assertEqual(mock_run.call_args.kwargs.get("errors"), "replace")
+            self.assertNotIn("text", mock_run.call_args.kwargs)
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=1, stdout="", stderr="bad\ufffdbyte")):
+            with self.assertRaisesRegex(RuntimeError, "ffmpeg conversion failed: bad\ufffdbyte"):
+                transcribe_session.normalise_audio(src, dst)
+
+    def test_transcribe_audio_uses_utf8_replace_and_raises_on_failure(self):
+        model = self.root / "model.bin"
+        wav = self.root / "audio.wav"
+        out_base = self.root / "session_transcript"
+        out_txt = out_base.with_suffix(".txt")
+        model.write_bytes(b"")
+        wav.write_bytes(b"")
+        out_txt.write_text("Transcript.", encoding="utf-8")
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/whisper-cli"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")) as mock_run:
+            res = transcribe_session.transcribe_audio(model, wav, out_base, ["Olmo"])
+            self.assertEqual(res, out_txt)
+            self.assertEqual(mock_run.call_args.kwargs.get("encoding"), "utf-8")
+            self.assertEqual(mock_run.call_args.kwargs.get("errors"), "replace")
+            self.assertNotIn("text", mock_run.call_args.kwargs)
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/whisper-cli"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=1, stdout="whisper\ufffderr", stderr="")):
+            with self.assertRaisesRegex(RuntimeError, "whisper-cli failed: whisper\ufffderr"):
+                transcribe_session.transcribe_audio(model, wav, out_base, [])
+
 
 if __name__ == "__main__":
     unittest.main()

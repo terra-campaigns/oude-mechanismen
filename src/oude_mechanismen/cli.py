@@ -615,6 +615,7 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
             for rel in sorted(p for p in gm_tracked.stdout.split("\0") if p):
                 if rel in DERIVED_CACHE_FILES:
                     continue  # already reported via the DERIVED_CACHE_FILES loop above
+                display_rel = rel.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
                 if fix:
                     untrack = subprocess.run(
                         ["git", "-C", str(vault), "rm", "--cached", "--quiet", "--", rel],
@@ -623,14 +624,20 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                         errors="surrogateescape",
                     )
                     if untrack.returncode == 0:
-                        print(f"  ✓ Untracked {rel} from Git index (kept on disk)")
+                        print(f"  ✓ Untracked {display_rel} from Git index (kept on disk)")
                     else:
-                        print(f"  ✗ Failed to untrack {rel}: {untrack.stderr.strip()}")
+                        err_text = (
+                            (untrack.stderr or "")
+                            .encode("utf-8", errors="surrogateescape")
+                            .decode("utf-8", errors="replace")
+                            .strip()
+                        )
+                        print(f"  ✗ Failed to untrack {display_rel}: {err_text}")
                         all_passed = False
                 else:
                     print(
-                        f"  ⚠ {rel} is tracked in Git (private GM materials under _gm-materials/ must stay "
-                        f"gitignored; run `git rm --cached {rel}` or `oude doctor --fix`)"
+                        f"  ⚠ {display_rel} is tracked in Git (private GM materials under _gm-materials/ must stay "
+                        f"gitignored; run `git rm --cached {display_rel}` or `oude doctor --fix`)"
                     )
                     all_passed = False
 
@@ -823,7 +830,13 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
             )
         else:
             print(f"  -> Regenerating catalogue with engine_version via '{bundle_cmd} exec jekyll build'...")
-        res = subprocess.run([bundle_cmd, "exec", "jekyll", "build"], cwd=str(vault), capture_output=True, text=True)
+        res = subprocess.run(
+            [bundle_cmd, "exec", "jekyll", "build"],
+            cwd=str(vault),
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if res.returncode == 0:
             print("  ✓ Recompiled Jekyll site and refreshed catalogue")
         else:

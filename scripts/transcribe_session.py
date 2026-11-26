@@ -506,7 +506,7 @@ def normalise_audio(input_file: Path, output_wav: Path) -> None:
         "-loglevel", "error"
     ]
 
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError(f"ffmpeg conversion failed: {res.stderr}")
 
@@ -544,7 +544,7 @@ def transcribe_audio(
         prompt_str = ", ".join(proper_nouns)
         cmd.extend(["--prompt", prompt_str])
 
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError(f"whisper-cli failed: {res.stderr or res.stdout}")
 
