@@ -60,3 +60,15 @@ All 15 findings were resolved via `/egm-resolve` in the Round 2 revision of [007
 8. **`templates/` clause (Major 8):** Recorded in `Non-Goals` that `grep -rn entity_type templates/` is empty and no template migration is needed.
 9. **Comprehension Majors (9–11):** Defined and exemplified YAML front matter, added full reproducible survey commands, and defined GM, ADR, CI, CRLF, engine, sourcebook, skill, Obsidian Sync / conflict copy / Properties view, `catalog.json` vs `references.json`, and `.agents/context/tier1_sources.yml`.
 10. **Nits (12–15):** Extracted shared `FRONTMATTER_BLOCK_RE`, aligned headings/footer with Design 006 (`## Risks & Mitigations`, `### Additional Resources`, `### Target Files to Create/Modify`, EGM provenance footer), switched unimplemented behaviour to proposed/future tense, corrected the line citation (`scripts/generate_digests.py:1070-1096`), extended the evidence grep to include `scripts/`, fixed doctor wording, pinned empty-value and case-variant behaviour, confirmed `both_agree` increments `migrated`, and specified `re.MULTILINE`.
+
+
+## Final Confirmation Check (`omp`, 8 Zero-Context Lenses on `5067200`)
+
+**Verdict:** `approve-with-nits` — 0 Blockers, 0 technical/design/readiness/codebase Majors (`egm-structural` approved; `egm-zoom-out`, `egm-inventive-catalyst`, `egm-design`, `egm-style`, `egm-implementation-readiness`, `egm-codebase-details` approved with nits; `egm-comprehension` flagged 3 zero-context glossary/ergonomics majors). `egm-implementation-readiness` empirically tested both regexes across edge cases with zero corrupting bugs; `egm-codebase-details` verified every codebase citation.
+
+Targeted polish nits applied before merge:
+
+* Pinned `raw_block = match.group(0)` (`FRONTMATTER_BLOCK_RE`) so removing a last-line `entity_type:` on a `both_agree` file leaves no stray blank line before `---` (Nit 8).
+* Ordered conflict checks explicitly so `duplicate_key`/`invalid`/`both_conflict` evaluate before `.strip()` (Nit 6), and added out-of-vocabulary and `per#son` regex/YAML disagreement cases to the Verification Plan (Nit 7).
+* Clarified `missing`-state notes are outside migrator scope (Nit 3), aligned absent-directory wording between Component 4 and `_doctor()` (Nit 4), corrected the ADR 003 pointer for `*conflicted copy*` (Nit 1), aligned `:184` to future tense (Nit 2), and switched the evidence command to `git grep -n` (Nit 10).
+* Declined the standalone-newcomer comprehension glossary additions to keep the specification concise for repository contributors.
