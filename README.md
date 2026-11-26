@@ -21,7 +21,7 @@ It solves the common problem of AI assistants hallucinating setting rules, forge
 
 ---
 
-## The Three-Tier Canon Hierarchy & Privacy Air-Gap
+## The Four-Tier Canon Hierarchy (Tiers 0–3) & Privacy Air-Gap
 
 To keep LLM token usage low, prevent hallucinations, and protect player privacy, `oude-mechanismen` separates raw table media from campaign canon:
 
@@ -29,10 +29,10 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
   Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git and all synced or networked storage.
 - **Tier 1 (Canonical Published Notes)**:
   Published Markdown notes indexed locally on build into `.agents/context/catalog.json` (gitignored derived cache). This is hard campaign canon.
-- **Tier 2 (Active Table Decisions & Archival Notes)**:
-  Confirmed GM rulings logged in `.agents/context/decisions.md`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`), 8-section archival session notes (`_session_notes.md`), and prep files in `_gm-materials/` (`session-summaries/`, `session-preps/`).
-- **Tier 3 (External Reference Material & Sourcebooks)**:
-  Offline PDF rulebooks and setting digests in `_gm-materials/digests/`, indexed into `.agents/context/references.json`. Influence and inspiration, never assumed canon unless confirmed at the table.
+- **Tier 2 (Behind-the-Screen Rulings & Archival Notes)**:
+  Structured GM rulings and faction-turn records in `_gm-materials/rulings/`, compiled by `oude tier2` into the derived `_gm-materials/.cache/tier2.json`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`) and 8-section archival session notes (`_session_notes.md`) in `_gm-materials/session-summaries/`, plus the gitignored `.agents/context/rolling_glossary.md` (unverified session-new terms, retained at `tier: 2` in `catalog.json` until promoted).
+- **Tier 3 (Reference Material, Digests & Unplayed Prep)**:
+  Offline PDF rulebooks (kept on local disk only), structured digests in `_gm-materials/digests/` indexed into `.agents/context/references.json`, and unplayed prep in `_gm-materials/session-preps/`. Influence and inspiration, never assumed canon unless confirmed at the table.
 
 ---
 

@@ -12,8 +12,9 @@ This repository contains the shared procedural engine, agent skills library, and
 2. **Campaign Parameterisation**: Downstream campaign vaults parameterise the engine via `.agents/AGENTS.md` (specifically `## Campaign Specification`), `.agents/context/tier1_sources.yml`, and `.agents/context/aesthetics.yml`.
 3. **Storage Separation & Privacy Air-Gap**:
    - **Tier 0 (Local Disk Air-Gap)**: Raw session audio recordings and verbatim speech transcripts reside strictly on local disk at `~/Private/rpg-sessions/<campaign>/`, completely excluded from Git, Obsidian Sync, and all networked storage for player privacy.
-   - **Tier 2 Canon (`_gm-materials/session-summaries/` & `_gm-materials/session-preps/`)**: De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), session prep (`_gm-materials/session-preps/<slug>_prep.md`), and acoustic glossaries (`<slug>_glossary.md`).
    - **Tier 1 Canon (Campaign Repository)**: Finalised, published markdown wiki notes (`campaigns/`, `directory/`, `systems/`) reside exclusively in the Git repository.
+   - **Tier 2 Canon (`_gm-materials/`):** De-personalised tactical facts (`<slug>_tactical_facts.md`), sensory textures (`<slug>_sensory_textures.md`), synthesised archival GM session notes (`<slug>_session_notes.md`), and acoustic glossaries (`<slug>_glossary.md`) in `_gm-materials/session-summaries/`; structured GM rulings and faction-turn records in `_gm-materials/rulings/`, compiled by `oude tier2` into the derived `_gm-materials/.cache/tier2.json`. The gitignored `.agents/context/rolling_glossary.md` also sits at Tier 2 until promoted.
+  - **Tier 3 Canon (`_gm-materials/digests/` & `_gm-materials/session-preps/`):** Distilled reference digests and unplayed session prep (`<slug>_prep.md`). Raw commercial sourcebook PDFs sit outside Tier 3 on local disk in [ADR 003](docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md) **Pillar 3** — the central static archive: local OneDrive on `ryu` (or a permanent local archive on `artemis`), outside both Git and Obsidian Sync.
 
 ---
 
@@ -49,7 +50,8 @@ oude-mechanismen/
 │   ├── transcribe_session.py   # Metal GPU ASR & dynamic glossary extraction (Tier 0 air-gap)
 │   ├── scribe_session.py       # Local Ollama two-pass de-personalised extractor (Pass 2A & 2B)
 │   ├── benchmark_models.py     # Empirical local model extraction benchmark harness
-│   └── lint_wiki.py            # Deterministic structural wiki linter (Gate 3: dead links, orphans, stubs, catalogue)
+│   ├── lint_wiki.py            # Deterministic structural wiki linter (Gate 3: dead links, orphans, stubs, catalogue, rulings)
+│   └── tier2.py                # Tier 2 rulings compiler & validator (`oude tier2` → _gm-materials/.cache/tier2.json)
 ├── tests/                      # Automated unit & integration test suite (`test_*.py`)
 ├── jekyll/                     # Source-of-truth Jekyll engine
 │   ├── _plugins/               # In-memory Tier 1 catalogue & backlink generator
@@ -57,7 +59,6 @@ oude-mechanismen/
 └── templates/                  # Scaffolding templates for downstream campaign vaults
     ├── AGENTS.md.template      # Starter instructions for downstream vault agents
     ├── tier1_sources.yml.template
-    ├── decisions.md.template   # Starter Tier 2 conversation canon file
     ├── aesthetics.yml.template # Starter art filter presets
     ├── route_graph.json.template
     ├── badges/                 # Neutral geometric fallback PNG badges
@@ -118,11 +119,12 @@ Verify that `.agents/context/catalog.json` compiled with zero errors.
 
 ## 4. Canon & Context Architecture
 
-The engine operates on a strict **Three-Tier Canon Hierarchy**:
+The engine operates on a strict **Four-Tier Canon Hierarchy (Tiers 0–3)**:
 
-- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed on build by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into the gitignored local cache `.agents/context/catalog.json`. This is hard canon.
-- **Tier 2 (Active Table Decisions & Archival Notes)**: Confirmed rulings recorded in `.agents/context/decisions.md` alongside synthesised archival GM session notes (`_gm-materials/session-summaries/`) and session prep (`_gm-materials/session-preps/`). Outranked by published Tier 1 notes; outranks external reference PDFs.
-- **Tier 3 (External Reference Material & Digests)**: Sourcebook PDFs and structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`. Influence and inspiration, not automatic canon.
+- **Tier 0 (Raw Table Evidence)**: Raw session recordings and verbatim transcripts kept strictly on local disk at `~/Private/rpg-sessions/<campaign>/` (Pillar 0); never committed to Git, never synced via Obsidian Sync, never published. Exposed only at the table.
+- **Tier 1 (Canonical Published Notes)**: Published markdown files indexed on build by the `oude-mechanismen` RubyGem (`jekyll/_plugins/data_extractor.rb`) into the gitignored local cache `.agents/context/catalog.json`. This is hard canon. Notes may carry an optional explicit `id:` front-matter field (indexed as `"id"` in `catalog.json`, `null` when absent — never derived from the filename); grammar and uniqueness are enforced by `check_duplicate_ids()` in `scripts/lint_wiki.py`, and Tier 2 rulings join on it at compile time.
+- **Tier 2 (Behind-the-Screen Working Canon & Unverified Records)**: Structured GM rulings and faction-turn records in `_gm-materials/rulings/` (validated and compiled by `oude tier2` / `scripts/tier2.py` into the derived `_gm-materials/.cache/tier2.json`), synthesised archival GM session notes (`_gm-materials/session-summaries/`), and the gitignored `.agents/context/rolling_glossary.md` (which retains `tier: 2` in `catalog.json`). Outranked by published Tier 1 notes; outranks Tier 3.
+- **Tier 3 (Defined Campaign Influences & Unplayed Prep)**: Structured digests in `_gm-materials/digests/`, indexed by `scripts/generate_digests.py` into `.agents/context/references.json`, and unplayed session prep in `_gm-materials/session-preps/`. Raw commercial sourcebook PDFs sit outside Tier 3 on local disk ([ADR 003 Pillar 3](docs/adr/003_dual_workstation_topology_and_semantic_wiki_ingestion.md)). Influence and inspiration, not automatic canon.
 
 - **Route graph (optional)**: `.agents/context/route_graph.json` (scaffolded from `templates/route_graph.json.template`) encodes station topology — stations, aliases, connections, `station_lore` — and is consumed only by `scripts/audit_coverage.py` for the *Geographic Proximity & Destination Gaps* section of `oude audit`. It is not canon and not part of progressive retrieval; when absent, the audit simply skips that section (audit findings on issue #29).
 

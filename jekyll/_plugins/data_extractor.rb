@@ -248,8 +248,14 @@ module OudeMechanismen
                       dossier_fields.any? ? dossier_fields.join(' | ') : nil
                     end
 
+          # Optional explicit stable id (indexed for compile-time Tier 2 joins; no filename fallback)
+          raw_id = fm['id']
+          entry_id = raw_id.nil? ? nil : raw_id.to_s.strip
+          entry_id = nil if entry_id.nil? || entry_id.empty?
+
           catalog_entries << {
             "path" => file_path,
+            "id" => entry_id,
             "title" => fm['title'] || File.basename(file_path, '.md'),
             "type" => fm['type'] || (file_path == rolling_glossary ? "glossary" : "misc"),
             "parent" => fm['parent'],

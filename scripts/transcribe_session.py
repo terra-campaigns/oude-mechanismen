@@ -10,7 +10,7 @@ Setting-agnostic audio transcription and campaign context extractor for table RP
 
 Pipeline stages handled:
 1. Resolves campaign context and campaign storage directory (_gm-materials/) from .agents/context/tier1_sources.yml.
-2. Extracts a dynamic campaign glossary from .agents/context/catalog.json, decisions.md, and AGENTS.md.
+2. Extracts a dynamic campaign glossary from .agents/context/catalog.json, active Tier 2 rulings (_gm-materials/rulings/), and AGENTS.md.
 3. Formulates a compact proper-noun prompt to bias Whisper speech recognition on Apple Metal.
 4. Normalises audio containers (.mkv, .mp4, .m4a, .wav, etc.) to 16 kHz mono WAV via ffmpeg.
 5. Transcribes audio via whisper-cli (whisper.cpp) using ggml-large-v3-turbo.bin.
@@ -30,6 +30,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import tier2  # noqa: E402
 
 
 DEFAULT_MODEL_PATH = Path.home() / ".whisper-models" / "ggml-large-v3-turbo.bin"
@@ -269,13 +273,12 @@ def build_dynamic_glossary(
 ) -> Tuple[str, List[str]]:
     """
     Compile a structured campaign glossary from .agents/context/catalog.json,
-    decisions.md, and AGENTS.md.
-    
+    active Tier 2 rulings (_gm-materials/rulings/), and AGENTS.md.
+
     Returns:
         A tuple of (written_glossary_markdown, list_of_proper_nouns_for_whisper_prompt).
     """
     catalog_path = repo_root / ".agents" / "context" / "catalog.json"
-    decisions_path = repo_root / ".agents" / "context" / "decisions.md"
     agents_path = repo_root / ".agents" / "AGENTS.md"
 
     entries: List[Dict[str, Any]] = []
@@ -364,10 +367,9 @@ def build_dynamic_glossary(
     locations.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
     factions.sort(key=lambda x: (not is_connected_to_campaign(x), x.get("title", "")))
 
-    # Decisions & active rulings
-    decisions_text = ""
-    if decisions_path.exists():
-        decisions_text = decisions_path.read_text(encoding="utf-8").strip()
+    # Active Tier 2 rulings (validated directly from _gm-materials/rulings/;
+    # read-only legacy .agents/context/decisions.md fallback when rulings/ is absent)
+    decisions_text = tier2.load_active_rulings_text(repo_root)
 
     # Format Markdown lines in British English with blank lines after headings
     lines = [
@@ -504,7 +506,7 @@ def normalise_audio(input_file: Path, output_wav: Path) -> None:
         "-loglevel", "error"
     ]
 
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError(f"ffmpeg conversion failed: {res.stderr}")
 
@@ -542,7 +544,7 @@ def transcribe_audio(
         prompt_str = ", ".join(proper_nouns)
         cmd.extend(["--prompt", prompt_str])
 
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError(f"whisper-cli failed: {res.stderr or res.stdout}")
 

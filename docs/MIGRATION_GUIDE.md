@@ -99,6 +99,49 @@ bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --baseurl ""
 
 Open `http://<hostname>.local:4000` (e.g. `http://artemis.local:4000`) from a secondary device — `.local` resolves via mDNS (`avahi-daemon` on Linux; Bonjour on macOS). On non-mDNS clients use `http://<host-ip>:4000`, where `<host-ip>` is the host's LAN address (`ip addr` on Linux, or your router's client list). Confirm pages, `relative_url` links, and gallery images render. One vault at a time on port `4000`.
 
+## Migrating Legacy `.agents/context/decisions.md`
+
+Older vaults keep confirmed table rulings as unstructured prose in the Git-tracked `.agents/context/decisions.md`. [Design 006](designs/006_tier2_canon_and_faction_turns.md) retires that file in favour of structured rulings inside the git-ignored `_gm-materials/rulings/` (compiled by `oude tier2` into `_gm-materials/.cache/tier2.json`). Migrate manually:
+
+1. Split the file: static style/procedure conventions move into `.agents/AGENTS.md`; mutable world-state rulings become one structured ruling file per decision under `_gm-materials/rulings/<id>_<slug>.md`, with YAML front matter per the [Design 006 ruling schema](designs/006_tier2_canon_and_faction_turns.md#component-2-canonical-ruling-schema-_gm-materialsrulingsmd):
+
+   ```yaml
+   ---
+   id: R-001                 # ^R-[0-9]{3,}$, unique across _gm-materials/rulings/
+   title: Covert tribute route
+   date: 2026-11-01          # real-world ISO date YYYY-MM-DD
+   in_world_date: "1025-12"  # optional freeform in-world campaign calendar label; omit or null when unused
+   kind: faction-turn        # or `ruling`
+   status: active            # active | superseded | retracted | promoted
+   fact: The Iron Pots secretly tax the Sigisfarne road.
+   entities: [sigisfarne]    # Tier 1 slugs, joined against catalog.json ids
+   actors: [piot_chant, iron_pot_6_body]   # required non-empty for faction-turn
+   supersedes: []            # authored list of ruling IDs; superseded_by is derived
+   promoted_to: null         # required when status: promoted, null otherwise
+   retraction_reason: null   # required when status: retracted, null otherwise
+   turn:                     # optional freeform faction-turn metadata
+     active_actor: piot_chant
+     roll: 17
+   opinions:                 # required non-empty for faction-turn; each item is:
+     - actor: piot_chant     #   a slug listed in `actors`
+       vote: 1               #   integer -1, 0, or +1
+       shifted: true         #   boolean
+       stance: Push the tribute.   #   non-empty string
+   ---
+   ```
+
+   Status semantics: `active` and `superseded` rulings must not set `promoted_to` or `retraction_reason`; `promoted` requires a valid Tier 1 `promoted_to` path (existing `.md` inside `include_paths`, outside `_gm-materials/` and `.agents/`, not matching `exclude_paths`) and forbids `retraction_reason`; `retracted` requires a non-empty `retraction_reason`, forbids `promoted_to`, and must keep `supersedes: []`. Supersession edges must form a DAG (directed acyclic graph) with at most one active successor per target.
+2. Remove `.agents/context/decisions.md` once everything is moved (`oude lint-wiki` and `oude doctor` warn while both coexist; `oude doctor` never auto-deletes it).
+3. Validate and compile:
+
+```bash
+oude doctor --fix        # refreshes .gitignore/_config.yml exclusions and untracks derived caches
+oude tier2               # validates _gm-materials/rulings/ and compiles _gm-materials/.cache/tier2.json
+oude lint-wiki           # Gate 3: schema, supersession DAG (directed acyclic graph), duplicate Tier 1 ids, tier2.json freshness
+```
+
+Already-pushed public Git history containing `.agents/context/decisions.md` in `charged`/`hostile` is accepted as-is; no history rewrite is performed. The read-only fallback in `scripts/tier2.py:load_active_rulings_text()` keeps un-migrated vaults working until the split completes.
+
 ## Troubleshooting
 
 | Symptom | Fix |

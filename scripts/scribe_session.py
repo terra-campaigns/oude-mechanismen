@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import link_graph  # noqa: E402
 import lint_chapter  # noqa: E402
+import tier2  # noqa: E402
 
 PROMPT_BOUNDARY_RE = re.compile(
     r"(?:^|\n)(?:---\s*\n)?###\s+(?:Session Glossary|Active Decisions|GM Recap Anchor|Verbatim Session Transcript|Chunk \d+)\b",
@@ -453,7 +454,7 @@ def read_context_files(
     repo_root: Path,
     manifest: Dict[str, Any],
 ) -> Dict[str, str]:
-    """Read transcript, glossary, GM recap anchor, and table rulings."""
+    """Read transcript, glossary, GM recap anchor, and active Tier 2 rulings."""
     context: Dict[str, str] = {
         "transcript": "",
         "glossary": "",
@@ -473,9 +474,9 @@ def read_context_files(
     if recap_p and Path(recap_p).exists():
         context["recap"] = load_recap_anchor(Path(recap_p))["body"]
 
-    decisions_p = repo_root / ".agents" / "context" / "decisions.md"
-    if decisions_p.exists():
-        context["decisions"] = decisions_p.read_text(encoding="utf-8").strip()
+    decisions_text = tier2.load_active_rulings_text(repo_root)
+    if decisions_text:
+        context["decisions"] = decisions_text
 
     return context
 

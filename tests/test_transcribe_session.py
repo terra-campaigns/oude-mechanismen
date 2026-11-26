@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for transcribe_session.py verifying the Three-Tier Storage Separation & Privacy Air-Gap.
+Unit tests for transcribe_session.py verifying the Four-Tier Storage Separation & Privacy Air-Gap.
 """
 
 import json
@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
@@ -199,6 +199,122 @@ class TestFindDriveDirErrorPropagation(unittest.TestCase):
         self.tier1_yml.write_bytes(b"drive_dir: \"\xff\xfe\x00invalid\"\n")
         with self.assertRaises(UnicodeDecodeError):
             transcribe_session.find_drive_dir(self.repo_root)
+
+
+
+
+class TestActiveRulingsInGlossary(unittest.TestCase):
+    """Design 006: build_dynamic_glossary ingests active Tier 2 rulings via tier2.load_active_rulings_text."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="oude_tier2_test_")
+        self.repo_root = (Path(self.test_dir) / "test_campaign").resolve()
+        self.repo_root.mkdir()
+        (self.repo_root / ".agents" / "context").mkdir(parents=True)
+        (self.repo_root / "_config.yml").write_text("title: Test Campaign\n", encoding="utf-8")
+        self.out_glossary = self.repo_root / "glossary.md"
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def _write_ruling(self, rel: str, text: str) -> None:
+        path = self.repo_root / "_gm-materials" / "rulings" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_active_rulings_included_when_rulings_dir_exists(self):
+        self._write_ruling(
+            "R-001_tribute.md",
+            "---\nid: R-001\ntitle: Tribute\ndate: 2026-11-01\nkind: faction-turn\nstatus: active\n"
+            "fact: The Piot Chants pay tribute.\nentities: []\nactors: [piot_chant]\n"
+            "opinions:\n  - actor: piot_chant\n    vote: 1\n    shifted: false\n    stance: Go.\n"
+            "---\n\nNarrative.\n",
+        )
+        content, _nouns = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("## 5. Active Tier 2 Table Rulings & Decisions", content)
+        self.assertIn("- **R-001 — Tribute:** The Piot Chants pay tribute.", content)
+
+    def test_non_active_rulings_excluded_and_stale_cache_ignored(self):
+        self._write_ruling(
+            "R-001_old.md",
+            "---\nid: R-001\ntitle: Old\ndate: 2026-11-01\nkind: ruling\nstatus: superseded\n"
+            "fact: Old fact.\nentities: []\n---\n\nB.\n",
+        )
+        self._write_ruling(
+            "R-002_new.md",
+            "---\nid: R-002\ntitle: New\ndate: 2026-11-02\nkind: ruling\nstatus: active\n"
+            "supersedes: [R-001]\nfact: New fact.\nentities: []\n---\n\nB.\n",
+        )
+        # A stale derived cache claiming a bogus active ruling must be ignored.
+        cache = self.repo_root / "_gm-materials" / ".cache" / "tier2.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"schema_version": 1, "entries": [
+            {"id": "R-999", "title": "Stale", "status": "active", "fact": "Stale fact."}
+        ]}), encoding="utf-8")
+        content, _ = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("New fact.", content)
+        self.assertNotIn("Old fact.", content)
+        self.assertNotIn("Stale fact.", content)
+
+    def test_read_only_legacy_decisions_fallback_when_rulings_absent(self):
+        decisions = self.repo_root / ".agents" / "context" / "decisions.md"
+        decisions.write_text("- Decision: Legacy ruling stays.\n", encoding="utf-8")
+        content, _ = transcribe_session.build_dynamic_glossary(
+            self.repo_root, self.out_glossary, "2026-11-02_ep001"
+        )
+        self.assertIn("Legacy ruling stays.", content)
+
+
+class TestAudioSubprocessDecoding(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix="oude_audio_test_")
+        self.root = Path(self.test_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def test_normalise_audio_uses_utf8_replace_and_raises_on_failure(self):
+        src = self.root / "input.mkv"
+        dst = self.root / "output.wav"
+        src.write_bytes(b"")
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")) as mock_run:
+            transcribe_session.normalise_audio(src, dst)
+            self.assertEqual(mock_run.call_args.kwargs.get("encoding"), "utf-8")
+            self.assertEqual(mock_run.call_args.kwargs.get("errors"), "replace")
+            self.assertNotIn("text", mock_run.call_args.kwargs)
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=1, stdout="", stderr="bad\ufffdbyte")):
+            with self.assertRaisesRegex(RuntimeError, "ffmpeg conversion failed: bad\ufffdbyte"):
+                transcribe_session.normalise_audio(src, dst)
+
+    def test_transcribe_audio_uses_utf8_replace_and_raises_on_failure(self):
+        model = self.root / "model.bin"
+        wav = self.root / "audio.wav"
+        out_base = self.root / "session_transcript"
+        out_txt = out_base.with_suffix(".txt")
+        model.write_bytes(b"")
+        wav.write_bytes(b"")
+        out_txt.write_text("Transcript.", encoding="utf-8")
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/whisper-cli"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")) as mock_run:
+            res = transcribe_session.transcribe_audio(model, wav, out_base, ["Olmo"])
+            self.assertEqual(res, out_txt)
+            self.assertEqual(mock_run.call_args.kwargs.get("encoding"), "utf-8")
+            self.assertEqual(mock_run.call_args.kwargs.get("errors"), "replace")
+            self.assertNotIn("text", mock_run.call_args.kwargs)
+
+        with patch("transcribe_session.shutil.which", return_value="/usr/bin/whisper-cli"), \
+             patch("transcribe_session.subprocess.run", return_value=MagicMock(returncode=1, stdout="whisper\ufffderr", stderr="")):
+            with self.assertRaisesRegex(RuntimeError, "whisper-cli failed: whisper\ufffderr"):
+                transcribe_session.transcribe_audio(model, wav, out_base, [])
 
 
 if __name__ == "__main__":

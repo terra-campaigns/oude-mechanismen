@@ -5,7 +5,9 @@ scripts/lint_wiki.py — Deterministic structural wiki linter (Gate 3).
 Machine-readable replacement for the LLM-based lint-wiki skill. Scans the
 campaign vault for structural health issues: dead internal links, orphan
 pages, empty stubs, unused images, deprecated front matter hooks, catalogue
-drift, missing front matter, duplicate titles, and rolling-glossary entries.
+drift, missing front matter, duplicate titles, duplicate Tier 1 `id:` values,
+Tier 2 ruling validation (`_gm-materials/rulings/` + `tier2.json` freshness),
+and rolling-glossary entries.
 
 Usage:
   python3 scripts/lint_wiki.py                          # full repo scan (text report)
@@ -18,7 +20,6 @@ under --strict), 0 otherwise.
 """
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -29,10 +30,10 @@ from urllib.parse import unquote
 
 import yaml
 
-# Defaults mirror jekyll/_plugins/data_extractor.rb so the linter and the
-# catalogue index agree on what constitutes Tier 1 content.
-DEFAULT_INCLUDE_PATHS = ["campaigns", "directory", "systems", "statblocks", "trading"]
-DEFAULT_EXCLUDE_PATHS = ["_inklings.md", "_TODO.md", "_notions.md"]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import tier2  # noqa: E402
+
 
 # Front matter check scope (per lint-wiki skill §7).
 FRONT_MATTER_DIRS = {"campaigns", "directory", "systems"}
@@ -46,7 +47,7 @@ LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\
 # Scheme-bearing targets (http:, mailto:, ...) are external, not internal links.
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
-FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n(.*)|\Z)", re.DOTALL)
+FRONT_MATTER_RE = tier2.FRONT_MATTER_RE
 LIQUID_COMMENT_RE = re.compile(
     r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}",
     re.DOTALL,
@@ -59,7 +60,7 @@ SKIPPED_DIR_SEGMENTS = frozenset({"_site", "vendor", "_plugins", "_gm-materials"
 class Finding:
     """A single lint diagnostic."""
 
-    check: str  # dead-link, orphan, stub, unused-image, deprecated-hook, catalogue, front-matter, duplicate-title, rolling-glossary
+    check: str  # dead-link, orphan, stub, unused-image, deprecated-hook, catalogue, front-matter, duplicate-title, duplicate-id, rolling-glossary, rulings
     severity: str  # FAIL, WARN
     file: str
     line: int = 0
@@ -94,58 +95,10 @@ class WikiReport:
 # ---------------------------------------------------------------------------
 
 
-def normalise_rel_path(raw: Any) -> str:
-    """Normalise a vault-relative config path for prefix comparison."""
-    cleaned = str(raw).strip().replace("\\", "/").rstrip("/")
-    if cleaned == ".":
-        return "."
-    return re.sub(r"^(?:\./+)+", "", cleaned).lstrip("/")
-
-
-def load_tier1_config(root: Path) -> Tuple[List[str], List[str]]:
-    """Load include/exclude paths from .agents/context/tier1_sources.yml.
-
-    Warns to stderr and falls back to defaults on read or YAML parse errors so
-    structural linters and audits still run when the config file is malformed.
-    """
-    config_path = root / ".agents" / "context" / "tier1_sources.yml"
-    include = list(DEFAULT_INCLUDE_PATHS)
-    exclude = list(DEFAULT_EXCLUDE_PATHS)
-    if not config_path.is_file():
-        return include, exclude
-    try:
-        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        print(f"Warning: Failed to parse {config_path}: {exc}", file=sys.stderr)
-        return include, exclude
-    if not isinstance(cfg, dict):
-        return include, exclude
-
-    raw_include = cfg.get("include_paths")
-    if isinstance(raw_include, list):
-        normalised = [
-            normalise_rel_path(p)
-            for p in raw_include
-            if p is not None and normalise_rel_path(p)
-        ]
-        if normalised:
-            include = normalised
-
-    if "exclude_paths" in cfg and cfg["exclude_paths"] is not None:
-        raw_exclude = cfg["exclude_paths"]
-        if isinstance(raw_exclude, list):
-            exclude = [
-                normalise_rel_path(p)
-                for p in raw_exclude
-                if p is not None and normalise_rel_path(p)
-            ]
-
-    return include, exclude
-
-
-def is_excluded(rel_posix: str, exclude_paths: List[str]) -> bool:
-    """Mirror data_extractor.rb exclusion semantics on repo-relative paths."""
-    return any(rel_posix == exc or rel_posix.startswith(f"{exc}/") for exc in exclude_paths)
+# Thin aliases: scripts/tier2.py owns tier1_sources.yml loading (single
+# stderr-warning fallback convention) and exclusion semantics.
+load_tier1_config = tier2.load_tier1_config
+is_excluded = tier2.is_excluded
 
 
 def _has_skipped_segment(rel_path: Path) -> bool:
@@ -293,7 +246,7 @@ def prose_line_count(body: str) -> int:
 
 def content_sha(path: Path) -> str:
     """First 8 hex chars of the SHA-256 of the raw file, matching data_extractor.rb."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+    return tier2.sha8(path.read_bytes())
 
 
 def is_section_index(root: Path, path: Path) -> bool:
@@ -631,6 +584,114 @@ def check_duplicate_titles(
             )
 
 
+def check_duplicate_ids(
+    root: Path,
+    files: List[Path],
+    findings: List[Finding],
+    check_duplicates: bool = True,
+) -> None:
+    """Check 9: optional Tier 1 `id:` front matter grammar and (full mode) uniqueness."""
+    by_id: Dict[str, List[str]] = {}
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        fm, _, _ = parse_front_matter(text)
+        if "id" not in fm:
+            continue
+        rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+        raw_id = fm["id"]
+        value = raw_id.strip() if isinstance(raw_id, str) else None
+        if value is None or not tier2.SLUG_RE.match(value):
+            findings.append(
+                Finding(
+                    check="front-matter",
+                    severity="FAIL",
+                    file=rel,
+                    line=1,
+                    message=(
+                        f"invalid Tier 1 'id' front matter {raw_id!r}: must be a string matching "
+                        f"{tier2.SLUG_RE.pattern}"
+                    ),
+                )
+            )
+            continue
+        by_id.setdefault(value, []).append(rel)
+    if check_duplicates:
+        for value, paths in sorted(by_id.items()):
+            if len(paths) > 1:
+                findings.append(
+                    Finding(
+                        check="duplicate-id",
+                        severity="FAIL",
+                        file=", ".join(sorted(paths)),
+                        message=f"duplicate Tier 1 id '{value}' shared by {len(paths)} notes",
+                    )
+                )
+
+
+def check_rulings(root: Path, findings: List[Finding]) -> None:
+    """Check 10: validate _gm-materials/rulings/ and the freshness of _gm-materials/.cache/tier2.json.
+
+    Returns cleanly with zero findings when the rulings directory is absent
+    (public CI runners, fresh vaults). An existing-but-empty rulings directory
+    still emits a `rulings` WARN when legacy decisions.md coexists, so zero
+    Tier 2 canon in prompts never passes silently.
+    """
+    if not (root / tier2.RULINGS_REL_DIR).is_dir():
+        return
+    legacy = root / tier2.LEGACY_DECISIONS_REL_PATH
+    if legacy.is_file():
+        findings.append(
+            Finding(
+                check="rulings",
+                severity="WARN",
+                file=legacy.relative_to(root).as_posix() if legacy.is_relative_to(root) else str(legacy),
+                message=(
+                    "legacy .agents/context/decisions.md coexists with _gm-materials/rulings/; move static "
+                    "conventions to .agents/AGENTS.md and mutable world-state rulings into _gm-materials/rulings/, "
+                    "then remove decisions.md"
+                ),
+            )
+        )
+    if not tier2.discover_ruling_files(root):
+        return
+    state, detail, _expected, diagnostics = tier2.cache_freshness(root)
+    for d in diagnostics:
+        findings.append(Finding(check="rulings", severity=d.severity, file=d.file, line=d.line, message=d.message))
+
+    cache_rel = tier2.CACHE_REL_PATH.as_posix()
+    if state == "absent":
+        findings.append(
+            Finding(
+                check="rulings",
+                severity="WARN",
+                file=cache_rel,
+                message=f"{cache_rel} absent; run `oude tier2` or `oude doctor --fix`",
+            )
+        )
+    elif state == "corrupt":
+        findings.append(
+            Finding(check="rulings", severity="FAIL", file=cache_rel, message=f"{cache_rel} is not valid JSON: {detail}")
+        )
+    elif state == "wrong-schema":
+        findings.append(
+            Finding(
+                check="rulings",
+                severity="FAIL",
+                file=cache_rel,
+                message=f"{cache_rel} is not a JSON object with schema_version {tier2.SCHEMA_VERSION}",
+            )
+        )
+    elif state == "stale":
+        findings.append(
+            Finding(
+                check="rulings",
+                severity="FAIL",
+                file=cache_rel,
+                message=f"{cache_rel} is stale; run `oude tier2`",
+            )
+        )
+
+
 # ---------------------------------------------------------------------------
 # Orchestration & rendering
 # ---------------------------------------------------------------------------
@@ -730,9 +791,12 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
     include_paths, exclude_paths = load_tier1_config(root)
     rg_resolved = (root / ".agents" / "context" / "rolling_glossary.md").resolve()
     rg_targeted = False
+    rulings_targeted = False
+    rulings_rel = tier2.RULINGS_REL_DIR.as_posix()
 
     if paths:
         files: List[Path] = []
+        ruling_files_targeted: set = set()
         for raw in paths:
             p = Path(raw)
             if not p.is_absolute():
@@ -740,6 +804,15 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                 p = candidate.resolve() if candidate.exists() else Path(raw).resolve()
             else:
                 p = p.resolve()
+            try:
+                rel_p = p.relative_to(root).as_posix()
+            except ValueError:
+                rel_p = None
+            # Evaluate raw CLI paths against _gm-materials/rulings/ BEFORE
+            # _has_skipped_segment filtering so explicitly targeted ruling
+            # files/directories still trigger check_rulings().
+            if rel_p is not None and (rel_p == rulings_rel or rel_p.startswith(rulings_rel + "/")):
+                rulings_targeted = True
             if p.is_dir():
                 for md in sorted(p.rglob("*.md")):
                     md_resolved = md.resolve()
@@ -750,6 +823,13 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                     except ValueError:
                         rel_path = None
                     if rel_path is not None:
+                        rel_posix = rel_path.as_posix()
+                        if rel_posix.startswith(rulings_rel + "/"):
+                            # Permit explicitly targeted ruling files through
+                            # directory expansion, but keep them out of Tier 1 checks.
+                            files.append(md_resolved)
+                            ruling_files_targeted.add(md_resolved)
+                            continue
                         if _has_skipped_segment(rel_path):
                             continue
                         if is_excluded(rel_path.as_posix(), exclude_paths):
@@ -757,15 +837,19 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
                     files.append(md_resolved)
             elif p.is_file():
                 files.append(p)
+                if rel_p is not None and rel_p.startswith(rulings_rel + "/"):
+                    ruling_files_targeted.add(p)
             else:
                 raise FileNotFoundError(f"path not found: {raw}")
         files = sorted(set(files))
         rg_targeted = rg_resolved in files
-        tier1_files = [p for p in files if p != rg_resolved]
+        tier1_files = [p for p in files if p != rg_resolved and p not in ruling_files_targeted]
         report = WikiReport(root=str(root), mode="targeted", files_scanned=len(files))
         report.checks_skipped = ["orphan", "unused-image", "catalogue", "duplicate-title"]
         if not rg_targeted:
             report.checks_skipped.append("rolling-glossary")
+        if not rulings_targeted:
+            report.checks_skipped += ["rulings", "duplicate-id"]
     else:
         files = iter_content_files(root, include_paths, exclude_paths)
         tier1_files = files
@@ -784,6 +868,9 @@ def lint_wiki(root: Path, paths: Optional[List[str]] = None) -> WikiReport:
         check_rolling_glossary(root, f)
     if report.mode == "full":
         check_duplicate_titles(root, tier1_files, f)
+    check_duplicate_ids(root, tier1_files, f, check_duplicates=(report.mode == "full"))
+    if report.mode == "full" or rulings_targeted:
+        check_rulings(root, f)
     return report
 
 
@@ -807,7 +894,9 @@ def render_text_report(report: WikiReport) -> str:
         "catalogue",
         "front-matter",
         "duplicate-title",
+        "duplicate-id",
         "rolling-glossary",
+        "rulings",
     ]
     by_check: Dict[str, List[Finding]] = {}
     for finding in report.findings:

@@ -1,5 +1,6 @@
 ---
 title: Alpha
+id: alpha
 type: npc
 layout: default
 ---

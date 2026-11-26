@@ -19,11 +19,11 @@ python3 scripts/lint_wiki.py campaigns/ directory/foo.md   # targeted scan of sp
 python3 scripts/lint_wiki.py --strict  # treat WARN findings as failures (exit 1)
 ```
 
-- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), duplicate titles, and `.agents/context/rolling_glossary.md` entries (`rolling-glossary`).
-- Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (`orphan`, `unused-image`, `catalogue`, `duplicate-title`, and `rolling-glossary` unless `.agents/context/rolling_glossary.md` is explicitly targeted), which are reported under `checks_skipped`.
+- Full scan (no paths) covers: dead internal links, orphan pages, empty stubs, unused images, deprecated `hooks:` front matter, catalogue health (`catalog.json` hashes, unindexed/stale notes), missing front matter (`title`, `parent`, non-default `layout`), duplicate titles, duplicate Tier 1 `id:` values (`duplicate-id`), Tier 2 ruling validation (`rulings`: schema and supersession-DAG (directed acyclic graph) checks over `_gm-materials/rulings/` plus `_gm-materials/.cache/tier2.json` freshness), and `.agents/context/rolling_glossary.md` entries (`rolling-glossary`).
+- Targeted mode (explicit paths) runs the file-level checks only and skips repo-wide checks (`orphan`, `unused-image`, `catalogue`, `duplicate-title`, `rolling-glossary` unless `.agents/context/rolling_glossary.md` is explicitly targeted, and `duplicate-id`/`rulings` unless a path resolves inside `_gm-materials/rulings/`), which are reported under `checks_skipped`.
 - Exit code is 1 on any FAIL finding (or any finding under `--strict`), 0 when clean, 2 on usage errors.
 
-Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, `.git/`, or `_gm-materials/`.
+Do **not** read `_site/`, `.jekyll-cache/`, `_plugins/`, `.obsidian/`, `.git/`, or `_gm-materials/`. The CLI deterministically inspects `_gm-materials/rulings/` locally (and `_gm-materials/.cache/tier2.json` freshness) on its own; the skill itself must still never bulk-read `_gm-materials/`.
 
 ## Interpreting findings
 
@@ -38,6 +38,8 @@ Parse the JSON `findings` array (or the text report tables). Group by `check` in
 - **front-matter (FAIL/WARN):** missing `title`/`parent` in `campaigns/`, `directory/`, `systems/`; non-default `layout` outside the exempt pages.
 - **duplicate-title (FAIL):** identical `title:` values cause navigation confusion in Just the Docs.
 - **rolling-glossary (FAIL/WARN):** entries in `.agents/context/rolling_glossary.md` with a missing definition line or a casing conflict against published `catalog.json` titles are `FAIL`; entries carrying `- Definition: Pending canonical definition.` are `WARN` until defined, or promoted to a Tier 1 note and removed from the glossary.
+- **duplicate-id (FAIL):** two or more Tier 1 notes share the same explicit `id:` front matter; rename one. Invalid `id:` grammar is reported under `front-matter` (FAIL).
+- **rulings (FAIL/WARN):** schema, supersession-DAG, or `opinions` violations in `_gm-materials/rulings/*.md` are FAIL; an absent `_gm-materials/.cache/tier2.json` is WARN (run `oude tier2` or `oude doctor --fix`); a corrupt/unknown-schema or stale `tier2.json` (ruling `sha`, entry, `superseded_by`, or `catalog_sha` drift) is FAIL; coexistence of legacy `.agents/context/decisions.md` with an existing `_gm-materials/rulings/` directory (even when empty) is WARN; unresolved entity/actor slugs and filename-prefix mismatches are WARN.
 
 ## Output format
 
@@ -58,6 +60,8 @@ Command: `oude lint-wiki --format json`
 - X deprecated hooks
 - X catalogue / front matter issues
 - X duplicate titles
+- X duplicate ids
+- X Tier 2 ruling issues
 - X rolling-glossary issues
 
 ## Findings

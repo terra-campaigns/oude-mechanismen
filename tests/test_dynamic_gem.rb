@@ -109,9 +109,10 @@ class JekyllHeadlessTest < Minitest::Test
     assert_includes paths, "directory/alpha.md"
     assert_includes paths, "campaigns/ep_001.md"
     alpha_entry = catalog["entries"].find { |e| e["path"] == "directory/alpha.md" }
-    assert_includes alpha_entry["links_out"], "campaigns/ep_001.md"
-    assert_includes alpha_entry["links_in"], "index.md"
+    assert_equal "alpha", alpha_entry["id"], "catalog.json must carry the explicit front-matter id: field"
     ep1_entry = catalog["entries"].find { |e| e["path"] == "campaigns/ep_001.md" }
+    assert_nil ep1_entry["id"], "entries without an explicit id: must be indexed as null (no filename fallback)"
+    assert_includes alpha_entry["links_out"], "campaigns/ep_001.md"
     assert_includes ep1_entry["links_in"], "directory/alpha.md",
                     "narrative-anchored episode links must be indexed in catalog.json (#18)"
 
