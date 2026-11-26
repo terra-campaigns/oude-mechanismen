@@ -349,7 +349,11 @@ def parse_ruling_file(root: Path, path: Path) -> Tuple[Optional[ParsedRuling], L
 def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str], List[Tier2Diagnostic]]:
     """Return ({id: path} for catalog entries with a non-empty string id, 8-char sha or None, diagnostics).
 
-    An absent catalog.json yields ({}, None, []). A present-but-unparseable or
+    The sha is the 8-char SHA-256 of the canonical JSON serialisation of the
+    id→path projection (sort_keys, compact separators), not of the raw
+    catalog.json bytes, so volatile catalog fields (`generated`,
+    `engine_version`, per-entry `sha`) do not change it. An absent
+    catalog.json yields ({}, None, []). A present-but-unparseable or
     non-object catalog.json yields a FAIL diagnostic (the Tier 1 join source must
     never fail silently) with ({}, None). Duplicate ids inside catalog.json emit a
     WARN (the last entry wins).
@@ -365,7 +369,6 @@ def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str], List[
         return {}, None, [Tier2Diagnostic("FAIL", rel, 1, f"{rel} is not valid JSON: {exc}")]
     if not isinstance(data, dict):
         return {}, None, [Tier2Diagnostic("FAIL", rel, 1, f"{rel} is not a JSON object")]
-    sha = sha8(raw)
     id_to_path: Dict[str, str] = {}
     diagnostics: List[Tier2Diagnostic] = []
     entries = data.get("entries", [])
@@ -387,6 +390,7 @@ def load_catalog_state(root: Path) -> Tuple[Dict[str, str], Optional[str], List[
                         )
                     )
                 id_to_path[entry["id"]] = entry["path"]
+    sha = sha8(json.dumps(id_to_path, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return id_to_path, sha, diagnostics
 
 

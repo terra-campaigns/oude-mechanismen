@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `catalog_sha` in `_gm-materials/.cache/tier2.json` now hashes the canonical `id`→`path` projection of `catalog.json` instead of its raw bytes, so volatile fields (`generated`, `engine_version`, the rewritten `rolling_glossary.md` entry) no longer flag the index stale; id-affecting rebuilds still do (#120).
+
 ## [0.9.1] - 2026-11-21
 
 ### Fixed

@@ -942,9 +942,42 @@ class TestRulings(LintWikiTestCase):
     def test_catalog_sha_drift_is_stale_fail(self):
         self._write_ruling()
         tier2.compile_tier2_index(self.root, write=True)
-        self._write(".agents/context/catalog.json", json.dumps({"entries": [{"path": "x.md", "id": None}]}))
+        self._write(".agents/context/catalog.json", json.dumps({"entries": [{"path": "x.md", "id": "x_note"}]}))
         report = lint_wiki.lint_wiki(self.root)
         self.assertTrue(any(f.severity == "FAIL" and "stale" in f.message for f in self._findings(report, "rulings")))
+
+    def test_volatile_catalog_rewrite_is_not_stale(self):
+        self._write_ruling()
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({
+                "generated": "2026-11-25T10:00:00+00:00",
+                "engine_version": "0.9.1",
+                "entries": [
+                    {"path": "directory/place.md", "id": "the_place", "title": "The Place", "sha": "aaaa1111"},
+                    {"path": "campaigns/arc/ep001.md", "id": None, "title": "Episode 001", "sha": "bbbb2222"},
+                ],
+            }),
+        )
+        tier2.compile_tier2_index(self.root, write=True)
+        # Volatile-only rewrite: new stamps, changed per-entry sha, renamed title,
+        # and an extra null-id entry — the id→path projection is unchanged.
+        self._write(
+            ".agents/context/catalog.json",
+            json.dumps({
+                "generated": "2026-11-26T12:00:00+00:00",
+                "engine_version": "0.9.2",
+                "entries": [
+                    {"path": "directory/place.md", "id": "the_place", "title": "The Place (renamed)", "sha": "cccc3333"},
+                    {"path": "campaigns/arc/ep001.md", "id": None, "title": "Episode 001", "sha": "dddd4444"},
+                    {"path": ".agents/context/rolling_glossary.md", "id": None, "title": "Rolling Glossary", "sha": "eeee5555"},
+                ],
+            }),
+        )
+        report = lint_wiki.lint_wiki(self.root)
+        self.assertFalse(
+            any(f.severity == "FAIL" and "stale" in f.message for f in self._findings(report, "rulings"))
+        )
 
     def test_invalid_ruling_is_fail_under_rulings_check(self):
         self._write_ruling(raw="---\nid: R-1\ntitle: T\n---\n\nBody.\n")

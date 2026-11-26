@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import tier2  # noqa: E402
+import lint_wiki  # noqa: E402
 
 
 def make_ruling_text(fm: dict, body: str = "Narrative body of the ruling.\n") -> str:
@@ -113,14 +114,20 @@ class TestCompilation(Tier2TestCase):
 
     def test_valid_ruling_compiles_with_schema_and_catalog_sha(self):
         self.write_ruling(self.base_fm())
-        catalog_path = self.catalog_with_sigisfarne()
+        self.catalog_with_sigisfarne()
         payload, diagnostics, overlaps = self.compile()
         self.assertEqual(self.fails(diagnostics), [])
         self.assertIsNotNone(payload)
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(
             payload["catalog_sha"],
-            hashlib.sha256(catalog_path.read_bytes()).hexdigest()[:8],
+            hashlib.sha256(
+                json.dumps(
+                    {"sigisfarne": "directory/sigisfarne.md"},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8"),
+            ).hexdigest()[:8],
         )
         self.assertEqual(len(payload["entries"]), 1)
         entry = payload["entries"][0]
@@ -144,6 +151,56 @@ class TestCompilation(Tier2TestCase):
         on_disk = json.loads(cache.read_text(encoding="utf-8"))
         self.assertEqual(on_disk["schema_version"], 1)
         self.assertEqual(on_disk["catalog_sha"], payload["catalog_sha"])
+
+    def test_volatile_catalog_rewrite_keeps_catalog_sha_and_not_stale(self):
+        self.write_ruling(self.base_fm())
+        self.catalog_with_sigisfarne()
+        payload, diagnostics, _ = self.compile()
+        self.assertEqual(self.fails(diagnostics), [])
+        sha_before = payload["catalog_sha"]
+        # Volatile-only rewrite: new generated stamp, new engine_version, changed
+        # per-entry sha values, and an extra null-id entry — the id→path
+        # projection is unchanged.
+        volatile = {
+            "generated": "2026-11-26T00:00:00+00:00",
+            "engine_version": "0.9.2",
+            "entries": [
+                {"path": "directory/sigisfarne.md", "id": "sigisfarne", "title": "Sigisfarne", "sha": "deadbeef"},
+                {"path": "campaigns/ep_014.md", "id": None, "title": "Episode 14", "sha": "cafebabe"},
+                {"path": ".agents/context/rolling_glossary.md", "id": None, "title": "Rolling Glossary", "sha": "0123abcd"},
+            ],
+        }
+        (self.root / ".agents" / "context" / "catalog.json").write_text(
+            json.dumps(volatile), encoding="utf-8"
+        )
+        payload2, diagnostics2, _ = self.compile()
+        self.assertEqual(self.fails(diagnostics2), [])
+        self.assertEqual(payload2["catalog_sha"], sha_before)
+        report = lint_wiki.lint_wiki(self.root)
+        rulings_findings = [f for f in report.findings if f.check == "rulings"]
+        self.assertFalse(
+            any(f.severity == "FAIL" and "stale" in f.message for f in rulings_findings),
+            "volatile-only catalog changes must not flag tier2.json stale",
+        )
+
+    def test_id_affecting_catalog_change_flips_catalog_sha_and_flags_stale(self):
+        self.write_ruling(self.base_fm())
+        self.catalog_with_sigisfarne()
+        payload, diagnostics, _ = self.compile()
+        self.assertEqual(self.fails(diagnostics), [])
+        sha_before = payload["catalog_sha"]
+        # Id-affecting rebuild: the previously null-id episode gains an id.
+        self.write_catalog([
+            {"path": "directory/sigisfarne.md", "id": "sigisfarne", "title": "Sigisfarne"},
+            {"path": "campaigns/ep_014.md", "id": "ep_014", "title": "Episode 14"},
+        ])
+        payload2, diagnostics2, _ = self.compile(write=False)
+        self.assertEqual(self.fails(diagnostics2), [])
+        self.assertNotEqual(payload2["catalog_sha"], sha_before)
+        # The on-disk cache still holds the old projection, so lint_wiki flags it stale.
+        report = lint_wiki.lint_wiki(self.root)
+        rulings_findings = [f for f in report.findings if f.check == "rulings"]
+        self.assertTrue(any(f.severity == "FAIL" and "stale" in f.message for f in rulings_findings))
 
     def test_faction_turn_compiles_and_omits_opinions_prose(self):
         fm = self.base_fm(
