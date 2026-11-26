@@ -7,6 +7,9 @@
 - **Origin:** Operational evaluation of `terra-campaigns/hostile` across MacBook Air (`ryu`) and Debian Linux (`artemis`)
 - **Tracking Issue:** [#17](https://github.com/terra-campaigns/oude-mechanismen/issues/17) (predates Four-Pillar / `_gm-materials/` refinements; reconcile or split by phase upon ADR acceptance)
 
+> [!NOTE]
+> Amended 2026-11-25 by [Design 007](../designs/007_unified_type_key_for_digests.md): digest notes (§3.5.3 note template) and `references.json` (§3.5.4 index schema) use `type` (values `index | people | faction | location | creature | artefact | mechanic | table | reference | other`); `entity_type` is a deprecated alias.
+
 ---
 
 ## 1. Context & Problem Statement
