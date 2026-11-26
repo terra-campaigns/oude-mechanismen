@@ -807,6 +807,27 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                 print("  ✗ scripts/tier2.py failed to compile the Tier 2 rulings index")
                 all_passed = False
 
+    # 2f. Digest type keys check (Design 007)
+    digest_type_rc = _run_script(
+        "generate_digests.py",
+        ["--repo-root", str(vault), "--migrate-type", "--dry-run"],
+    )
+    if digest_type_rc == 0:
+        print("  ✓ Digest type keys")
+    elif fix:
+        migrate_rc = _run_script(
+            "generate_digests.py",
+            ["--repo-root", str(vault), "--migrate-type"],
+        )
+        if migrate_rc == 0:
+            print("  ✓ Digest type keys migrated to canonical 'type'")
+        else:
+            print("  ⚠ Digest type conflicts need manual edits")
+            all_passed = False
+    else:
+        print("  ⚠ Legacy digest type keys (run oude doctor --fix)")
+        all_passed = False
+
     # 3. Check catalog.json local cache and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
     engine_ver = None
