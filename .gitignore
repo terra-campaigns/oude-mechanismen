@@ -8,6 +8,7 @@ venv/
 .agents/tmp/
 .agents/context/catalog.json
 .agents/context/rolling_glossary.md
+.agents/context/references.json
 _site/
 .jekyll-cache/
 .sass-cache/

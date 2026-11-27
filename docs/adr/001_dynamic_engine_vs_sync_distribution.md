@@ -237,3 +237,9 @@ flowchart TD
 1. Update `templates/` to generate decoupled starter files.
 2. Formally replace `sync.sh` with `bin/init_vault.sh`.
 3. Update `AGENTS.md` and `README.md` to document the modern decoupled architecture.
+
+---
+
+## Addendum — 2026-11-25: Four-Tier Canon Model & Current Storage Pillars
+
+This addendum points to the current model without rewriting the historical body above: the Four-Tier canon model and Four-Pillar storage model are now defined in [ADR 003](003_dual_workstation_topology_and_semantic_wiki_ingestion.md) (dual-workstation topology; vault-local, git-ignored `_gm-materials/` synchronised peer-to-peer via Obsidian Sync; Pillar 3 local-only sourcebook archive) and [Design 006](../designs/006_tier2_canon_and_faction_turns.md) (Tier 0 raw session media on local disk only, excluded from Git, Obsidian Sync, and all networked storage; Tier 1 public Git canon; Tier 2 `<drive_dir>/_gm-materials/` working canon; Tier 3 digests and unplayed prep). The "Google Drive `_sessions/`" wording in §2 Layer 6 above is historical; the Google-Drive cutover onto the vault-local model is documented in [MIGRATION_GUIDE.md](../MIGRATION_GUIDE.md).

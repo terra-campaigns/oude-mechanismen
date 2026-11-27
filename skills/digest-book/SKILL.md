@@ -50,7 +50,7 @@ Write notes under `<out-dir>/staged/<source>/` (never directly into the live dig
   source_pdf: <portable relative path or basename>
   pages: "14-18"
   tier: 3
-  entity_type: faction   # index | faction | location | person | creature | artefact | mechanic | table | other
+  type: faction   # index | people | faction | location | creature | artefact | mechanic | table | reference | other
   title: Harbour Guild
   tags: [faction, trade]
   related: ["../locations/docking_bay_01.md"]

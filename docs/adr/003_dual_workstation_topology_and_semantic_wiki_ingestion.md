@@ -7,6 +7,9 @@
 - **Origin:** Operational evaluation of `terra-campaigns/hostile` across MacBook Air (`ryu`) and Debian Linux (`artemis`)
 - **Tracking Issue:** [#17](https://github.com/terra-campaigns/oude-mechanismen/issues/17) (predates Four-Pillar / `_gm-materials/` refinements; reconcile or split by phase upon ADR acceptance)
 
+> [!NOTE]
+> Amended 2026-11-25 by [Design 007](../designs/007_unified_type_key_for_digests.md): digest notes (§3.5.3 note template) and `references.json` (§3.5.4 index schema) use `type` (values `index | people | faction | location | creature | artefact | mechanic | table | reference | other`); `entity_type` is a deprecated alias.
+
 ---
 
 ## 1. Context & Problem Statement
@@ -476,3 +479,13 @@ Example entry in `.agents/context/references.json`:
   - *Acceptance criteria*: ADR 003 §3.4 and `README.md` document the zero-wrapper command; a manual smoke check from `artemis` to `ryu` / mobile at `http://artemis.local:4000` passes with live rendering, `relative_url` links, and gallery images intact.
 - [x] **Phase 3: Book-to-Wiki Knowledge Synthesiser (`oude digest --extract` + `skills/digest-book/`)** *(Implemented in PR #48 / v0.7.0; extraction empirically validated against BF1 Morgansfort and Eclipse Phase 1e — see PR #48 comments; parser auto-detection follow-up in [#49](https://github.com/terra-campaigns/oude-mechanismen/issues/49), operational runs in [#55](https://github.com/terra-campaigns/oude-mechanismen/issues/55))*: Develop the deterministic `oude digest --extract <pdf_path>` / `--validate` helpers (single-book explicit file path, no bulk archive scanning) and the procedural skill `skills/digest-book/` to extract rich relational knowledge wikis from sourcebook PDFs into nested `_gm-materials/digests/<source>/**/*.md` following the Section 3.5 target format (multi-file entity granularity, `n = 20` subfolder subdivision, annotated relative Markdown links, canonical note schema), indexed recursively into `references.json` via the `rglob("*.md")` change from Phase 1.
   - *Acceptance criteria*: Empirical format and navigation experiments run against *Eclipse Phase (1st Edition)* ([PDFs](https://robboyle.wordpress.com/eclipse-phase-pdfs)) and *BF1 Morgansfort* ([PDF](https://www.basicfantasy.org/downloads.html)); a sample sourcebook produces a hyperlinked multi-file Markdown knowledge wiki under `_gm-materials/digests/<source>/` with an `_index.md` hub and ~30–120-line entity notes; `compile_references()` with `rglob("*.md")` indexes every nested note into `.agents/context/references.json` with collision-free relative `slug`s; `lookup-context` retrieves entities from the nested notes via the 3-hop workflow.
+
+---
+
+## Addendum — 2026-11-25: Tier 2 Rulings & Derived Index (Design 006)
+
+This addendum refines the Pillar 2 contents described in §2 Layer 2 without rewriting the historical body above (issue #117, [Design 006](../designs/006_tier2_canon_and_faction_turns.md)):
+
+- **Pillar 2 gains `_gm-materials/rulings/`**: structured GM rulings and faction-turn records (YAML front matter + narrative body, one file per ruling, recommended `<id>_<slug>.md`), plus the derived local index `_gm-materials/.cache/tier2.json` compiled by `oude tier2` (`scripts/tier2.py`). Both live inside `_gm-materials/`, so all four exclusion layers (`.gitignore`, `_config.yml` `exclude:`, Jekyll leading-underscore skip, `jekyll/_plugins/data_extractor.rb`) apply unchanged; the dot-folder `.cache/` is additionally skipped by Obsidian Sync under default hidden-files settings.
+- **Tier 2 vs Tier 3 alignment**: `_gm-materials/rulings/` and `_gm-materials/session-summaries/` are Tier 2 (behind-the-screen working canon and unverified records); `_gm-materials/session-preps/` (unplayed prep) and `_gm-materials/digests/` are Tier 3, and commercial sourcebook PDFs remain outside Tier 3 in Pillar 3. The legacy `.agents/context/decisions.md` is retired in favour of `_gm-materials/rulings/`; already-pushed public Git history containing it in `charged`/`hostile` is accepted without history rewrites, and `oude doctor` only advises (never auto-deletes) while it coexists.
+- **Compile-time entity joins**: Tier 1 notes may carry an optional explicit `id:` front-matter field, indexed by `data_extractor.rb` into `catalog.json` (`null` when absent, no filename fallback). `oude tier2` left-joins ruling `entities`/`actors` slugs against those ids, storing `resolved_entities` and an 8-char `catalog_sha` in `tier2.json` so any change to the indexed `id`→`path` projection flags the index stale (volatile catalog fields excluded).

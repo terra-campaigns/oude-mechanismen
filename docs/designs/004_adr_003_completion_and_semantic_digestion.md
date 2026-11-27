@@ -4,6 +4,11 @@
 * **Status:** Accepted (2026-11-17; Stage A implemented in v0.6.1 via PR #43)
 * **Date:** 2026-11-15
 
+> [!NOTE]
+> Amended 2026-11-25 by [Design 007](007_unified_type_key_for_digests.md): digest notes and `references.json` use `type` (values `index | people | faction | location | creature | artefact | mechanic | table | reference | other`); `entity_type` is a deprecated alias.
+>
+> Amended 2026-11-27 by [#118](https://github.com/terra-campaigns/oude-mechanismen/issues/118) ([PR #127](https://github.com/terra-campaigns/oude-mechanismen/pull/127)): `.agents/context/references.json` remains at its existing path as a gitignored derived local cache outside Pillar 1 public Git (superseding the Stage C diagram label below), guarded by `DERIVED_CACHE_FILES`, `DEFAULT_GITIGNORE`, and `oude doctor --fix`; regenerate on fresh clones via `oude digest`.
+
 ***
 
 ## Overview

@@ -22,13 +22,13 @@ If the user provided a specific topic, faction, trade good, or character, confir
 
 - `.agents/AGENTS.md` — setting rules, tone, canon hierarchy.
 - `.agents/context/catalog.json` — inspect all entities, parents, types, and connection graphs (`links_in` / `links_out`).
-- `.agents/context/decisions.md` — active Tier 2 rulings.
+- `_gm-materials/.cache/tier2.json` — active Tier 2 rulings index (source ruling files under `_gm-materials/rulings/` for private `opinions` and turn narrative).
 - If `trading/index.md` exists: read active trade goods, price multipliers, and market conditions (taboos, bubbles, crises, gluts).
 - Targeted reads on specific session logs in `campaigns/` and entity notes in `directory/`.
 
 ### Reference digests (Tier 3 canon)
 
-- Consult `.agents/context/references.json` to find relevant digest files and sections matching the party's current location, trajectory, and encounters.
+- Consult `.agents/context/references.json` (if absent on a fresh clone, run `oude digest` to regenerate it from `_gm-materials/digests/`) to find relevant digest files and sections matching the party's current location, trajectory, and encounters.
 
 ## What to produce
 
@@ -67,7 +67,7 @@ When an identified anomaly (price skew, resource crisis, or sudden military mobi
 1. **Highlight the anomaly**: Present the resource/trade good, location disparity, and any special condition (`Crisis Demand`, `Market Bubble`, `Taboo`, `Corporate Embargo`).
 2. **Offer 2–3 lore hypotheses**: Present distinct, evocative, setting-faithful explanations for why the distortion exists (e.g. Option A: covert requisition by a megacorporation; Option B: sabotage or ecological collapse; Option C: cult ritual or synthetic awakening).
 3. **Solicit GM steer**: Ask the GM which hypothesis fits best, or invite them to tweak or combine elements.
-4. **Consolidate**: Once agreed, weave the chosen lore into the session threads and record any firm table ruling in `.agents/context/decisions.md` if the GM confirms it.
+4. **Consolidate**: Once agreed, weave the chosen lore into the session threads and record any firm table ruling as a structured note in `_gm-materials/rulings/` if the GM confirms it, then refresh `_gm-materials/.cache/tier2.json` via `oude tier2`.
 
 ### 3. Discovered tie-ins (optional)
 
@@ -78,10 +78,10 @@ Format link additions the same way existing links are formatted in the repo (rel
 ## Procedure
 
 1. Read `.agents/AGENTS.md`.
-2. Inspect `.agents/context/catalog.json` and `.agents/context/decisions.md`.
+2. Inspect `.agents/context/catalog.json` and `_gm-materials/.cache/tier2.json` (targeted reads of `_gm-materials/rulings/*.md` when private opinions are relevant).
 3. Check `trading/index.md` (if present) for price skews or market anomalies.
 4. Check recent session logs in `campaigns/` using line ranges for recent developments.
-5. Consult Tier 3 digests via `.agents/context/references.json`.
+5. Consult Tier 3 digests via `.agents/context/references.json` (regenerate via `oude digest` if absent on a fresh clone).
 6. Build a mental map of active PCs, unresolved contracts, unvisited directory locations, and NPCs with empty `links_in`.
 7. If exploring market or economic anomalies, engage the GM iteratively with 2–3 potential lore explanations before locking in the final thread.
 8. Identify the strongest thread candidates (up to 3) and rank by natural fit and depth.

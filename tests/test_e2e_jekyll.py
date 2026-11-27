@@ -64,6 +64,11 @@ def _write_fixture_vault(vault: Path) -> None:
         "---\ntitle: Session 001\ntype: session\n---\n\n# Session 001\n\nThe party entered the mill.\n",
         encoding="utf-8",
     )
+    (vault / "directory").mkdir()
+    (vault / "directory" / "alpha.md").write_text(
+        "---\ntitle: Alpha\ntype: npc\nid: alpha\n---\n\n# Alpha\n\nA fixture NPC with an explicit id.\n",
+        encoding="utf-8",
+    )
     gemfile = (
         'source "https://rubygems.org"\n'
         'gem "jekyll", "~> 4.4"\n'
@@ -121,6 +126,9 @@ class TestE2EJekyllBuild(unittest.TestCase):
         self.assertGreaterEqual(catalog["total_entries"], 1)
         paths = [entry["path"] for entry in catalog["entries"]]
         self.assertIn("campaigns/session-001.md", paths)
+        by_path = {entry["path"]: entry for entry in catalog["entries"]}
+        self.assertEqual(by_path["directory/alpha.md"]["id"], "alpha")
+        self.assertIsNone(by_path["campaigns/session-001.md"]["id"])
 
     def test_3_monolithic_all_content_html_not_generated(self):
         """Regression guard for #25/#35: no /all-content.html unless the vault ships its own."""

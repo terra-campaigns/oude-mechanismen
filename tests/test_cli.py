@@ -175,7 +175,6 @@ class TestOudeCLI(unittest.TestCase):
         for expected_file in [
             ".agents/AGENTS.md",
             ".agents/context/tier1_sources.yml",
-            ".agents/context/decisions.md",
             ".agents/context/aesthetics.yml",
             ".agents/context/route_graph.json",
             "_config.yml",
@@ -192,6 +191,17 @@ class TestOudeCLI(unittest.TestCase):
                 (self.target_dir / expected_file).is_file(),
                 f"File {expected_file} was not scaffolded",
             )
+
+        self.assertFalse(
+            (self.target_dir / ".agents" / "context" / "decisions.md").exists(),
+            "legacy decisions.md must no longer be scaffolded (Design 006)",
+        )
+        gitignore_lines = (self.target_dir / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn(
+            "_gm-materials/.cache/tier2.json",
+            gitignore_lines,
+            "fresh vault .gitignore must carry an uncommented _gm-materials/.cache/tier2.json line",
+        )
 
         self.assertFalse((self.target_dir / "all-content.md").exists())
         self.assertFalse((self.target_dir / "_plugins" / "llm_content.rb").exists())
@@ -389,7 +399,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_detects_deprecated_all_content_md_and_llm_content_plugin(self):
@@ -826,6 +837,8 @@ class TestOudeCLI(unittest.TestCase):
         self.assertIn("_gm-materials/", gitignore_text)
         self.assertIn(".agents/context/catalog.json", gitignore_text)
         self.assertIn(".agents/context/rolling_glossary.md", gitignore_text)
+        self.assertIn(".agents/context/references.json", gitignore_text)
+        self.assertIn("_gm-materials/.cache/tier2.json", gitignore_text)
 
         tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
         self.assertIn("drive_dir: .", tier1_text)
@@ -848,14 +861,14 @@ class TestOudeCLI(unittest.TestCase):
         gitignore_path = self.target_dir / ".gitignore"
         config_path = self.target_dir / "_config.yml"
 
-        # Case 1: .gitignore missing _gm-materials/, .agents/context/catalog.json, and .agents/context/rolling_glossary.md (and no trailing newline)
+        # Case 1: .gitignore missing _gm-materials/, derived .agents/context caches, and the tier2 index (and no trailing newline)
         gitignore_path.write_text("_site/", encoding="utf-8")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
         self.assertEqual(
             gitignore_path.read_text(encoding="utf-8"),
-            "_site/\n_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n",
+            "_site/\n_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n.agents/context/references.json\n_gm-materials/.cache/tier2.json\n",
         )
         self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
         self.assertTrue(
@@ -868,6 +881,12 @@ class TestOudeCLI(unittest.TestCase):
             cli._has_gitignore_entry(
                 "_site/\r\n.agents/context/rolling_glossary.md\r\n",
                 ".agents/context/rolling_glossary.md",
+            )
+        )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "_site/\r\n.agents/context/references.json\r\n",
+                ".agents/context/references.json",
             )
         )
         self.assertFalse(
@@ -884,23 +903,72 @@ class TestOudeCLI(unittest.TestCase):
             ),
             "dotted entries must be regex-escaped (no wildcard false positive)",
         )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\r\n_agents/context/referencesXjson\r\n",
+                ".agents/context/references.json",
+            ),
+            "dotted entries must be regex-escaped (no wildcard false positive)",
+        )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "/.agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "leading slash anchored gitignore entry must match",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "# .agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "full-line comment must not satisfy gitignore entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n.agents/context/references.json # derived cache\n",
+                ".agents/context/references.json",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n_gm-materials/ # private\n",
+                "_gm-materials/",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy directory entry",
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
-        # Case 1b: pre-v0.9.0 .gitignore missing only .agents/context/rolling_glossary.md
+        # Case 1b: pre-Design-006 .gitignore missing rolling_glossary.md, references.json, and the tier2 index
         gitignore_path.write_text(
             "_gm-materials/\n.agents/context/catalog.json\n", encoding="utf-8"
         )
         with patch("sys.stdout", new=io.StringIO()) as fake_out:
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertIn(".gitignore is missing .agents/context/rolling_glossary.md", fake_out.getvalue())
+            self.assertIn(".gitignore is missing .agents/context/references.json", fake_out.getvalue())
+            self.assertIn(".gitignore is missing _gm-materials/.cache/tier2.json", fake_out.getvalue())
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
             self.assertEqual(cli._doctor(self.target_dir), 0)
         self.assertEqual(
             gitignore_path.read_text(encoding="utf-8"),
-            "_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n",
+            "_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n.agents/context/references.json\n_gm-materials/.cache/tier2.json\n",
         )
+
+        # Case 1c: completely missing .gitignore is flagged and recreated with all required exclusions
+        gitignore_path.unlink()
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertIn("Missing .gitignore", fake_out.getvalue())
+            self.assertIn(".agents/context/references.json", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            self.assertIn("Created .gitignore", fake_out.getvalue())
+            self.assertIn(".agents/context/references.json", fake_out.getvalue())
+        self.assertIn(".agents/context/references.json", gitignore_path.read_text(encoding="utf-8"))
 
         # Case 2: _config.yml inline and block exclude variants
         exclude_cases = [
@@ -1124,7 +1192,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_fix_falls_back_to_bundle33(self):
@@ -1150,7 +1219,8 @@ class TestOudeCLI(unittest.TestCase):
                     ["bundle3.3", "exec", "jekyll", "build"],
                     cwd=str(self.target_dir),
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
 
     def test_doctor_warns_when_vendor_dir_exists(self):
@@ -1345,6 +1415,510 @@ class TestOudeCLI(unittest.TestCase):
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
+    def test_doctor_detects_and_untracks_git_tracked_references_json(self):
+        """Verify doctor detects git-tracked references.json and --fix untracks it cleanly."""
+        self.assertIn(".agents/context/references.json", cli.DERIVED_CACHE_FILES)
+        self.assertIn(".agents/context/references.json", cli.REQUIRED_GITIGNORE_ENTRIES)
+        self.assertTrue(
+            any(line == ".agents/context/references.json" for line in cli.DEFAULT_GITIGNORE.splitlines()),
+            "DEFAULT_GITIGNORE must carry an uncommented .agents/context/references.json line",
+        )
+
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+            encoding="utf-8",
+        )
+
+        ref_path = self.target_dir / ".agents" / "context" / "references.json"
+        ref_path.write_text(json.dumps({"generated": "2026-01-01", "digests": []}), encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "add", "-f", ".agents/context/references.json"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "commit", "-m", "track references.json"],
+            check=True,
+            capture_output=True,
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(".agents/context/references.json is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Untracked derived .agents/context/references.json", fake_out.getvalue())
+
+        self.assertTrue(ref_path.is_file(), "references.json should remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", ".agents/context/references.json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(ls_res.returncode, 0, "references.json should no longer be tracked in Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_default_gitignore_includes_all_required_entries(self):
+        """Verify every REQUIRED_GITIGNORE_ENTRIES item appears uncommented in DEFAULT_GITIGNORE."""
+        default_lines = cli.DEFAULT_GITIGNORE.splitlines()
+        for entry in cli.REQUIRED_GITIGNORE_ENTRIES:
+            self.assertIn(
+                entry,
+                default_lines,
+                f"DEFAULT_GITIGNORE must carry an uncommented line for {entry}",
+            )
+            self.assertTrue(
+                cli._has_gitignore_entry(cli.DEFAULT_GITIGNORE, entry),
+                f"_has_gitignore_entry must recognise {entry} in DEFAULT_GITIGNORE",
+            )
+
+
+
+
+    def test_tier2_pass_through_and_derived_cache_guard_registered(self):
+        """Design 006: oude tier2 pass-through, DERIVED_CACHE_FILES guard, retired decisions template."""
+        self.assertEqual(cli.PASS_THROUGH_SCRIPTS.get("tier2"), "tier2.py")
+        self.assertIn("_gm-materials/.cache/tier2.json", cli.DERIVED_CACHE_FILES)
+        self.assertIn("_gm-materials/.cache/tier2.json", cli.REQUIRED_GITIGNORE_ENTRIES)
+        self.assertTrue(
+            any(line == "_gm-materials/.cache/tier2.json" for line in cli.DEFAULT_GITIGNORE.splitlines()),
+            "DEFAULT_GITIGNORE must carry an uncommented _gm-materials/.cache/tier2.json line",
+        )
+        self.assertFalse(
+            any("decisions.md.template" in src for src, _ in cli.TEMPLATE_MAPPINGS),
+            "decisions.md.template must be retired from TEMPLATE_MAPPINGS",
+        )
+        self.assertFalse((REPO_ROOT / "templates" / "decisions.md.template").exists())
+
+    def _write_healthy_vault(self):
+        """Initialise a vault with a fresh catalog.json so doctor starts healthy."""
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+            encoding="utf-8",
+        )
+
+    def _write_valid_ruling(self, ruling_id="R-001"):
+        rulings_dir = self.target_dir / "_gm-materials" / "rulings"
+        rulings_dir.mkdir(parents=True, exist_ok=True)
+        (rulings_dir / f"{ruling_id}_slug.md").write_text(
+            "---\n"
+            f"id: {ruling_id}\n"
+            "title: Test Ruling\n"
+            "date: 2026-11-01\n"
+            "kind: ruling\n"
+            "status: active\n"
+            "fact: The sky is red.\n"
+            "entities: []\n"
+            "---\n\n"
+            "Narrative body.\n",
+            encoding="utf-8",
+        )
+
+    def test_doctor_legacy_decisions_advisory_preserved_never_deleted(self):
+        """Legacy decisions.md yields a warning advisory only; --fix never deletes it."""
+        self._write_healthy_vault()
+        decisions = self.target_dir / ".agents" / "context" / "decisions.md"
+        decisions.write_text("- Decision: legacy ruling\n", encoding="utf-8")
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0, "legacy decisions.md advisory must not fail doctor")
+            self.assertIn("decisions.md", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("decisions.md", fake_out.getvalue())
+        self.assertTrue(decisions.is_file(), "--fix must never auto-delete legacy decisions.md")
+
+    def test_doctor_detects_and_untracks_git_tracked_tier2_cache(self):
+        """Force-added _gm-materials/.cache/tier2.json is detected and --fix untracks it."""
+        self._write_healthy_vault()
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+
+        cache_path = self.target_dir / "_gm-materials" / ".cache" / "tier2.json"
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"schema_version": 1, "entries": []}), encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "add", "-f", "_gm-materials/.cache/tier2.json"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "commit", "-m", "track tier2 cache"],
+            check=True,
+            capture_output=True,
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn("_gm-materials/.cache/tier2.json is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Untracked derived _gm-materials/.cache/tier2.json", fake_out.getvalue())
+
+        self.assertTrue(cache_path.is_file(), "tier2.json should remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", "_gm-materials/.cache/tier2.json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(ls_res.returncode, 0, "tier2.json should no longer be tracked in the Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+
+    def test_doctor_detects_and_untracks_any_tracked_gm_materials_path(self):
+        """M3: tree-wide guard — force-added _gm-materials/rulings/*.md (private opinions)
+        and any other tracked path under _gm-materials/ is detected and --fix untracks it."""
+        self._write_healthy_vault()
+        self._write_valid_ruling()
+        notes_rel = "_gm-materials/session-summaries/ep_001_notes.md"
+        notes_path = self.target_dir / notes_rel
+        notes_path.parent.mkdir(parents=True, exist_ok=True)
+        notes_path.write_text("# Session notes\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        rulings_rel = "_gm-materials/rulings/R-001_slug.md"
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", rulings_rel, notes_rel], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "commit", "-m", "leak gm materials"], check=True, capture_output=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            out = fake_out.getvalue()
+            self.assertIn(f"{rulings_rel} is tracked in Git", out)
+            self.assertIn(f"{notes_rel} is tracked in Git", out)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            out = fake_out.getvalue()
+            self.assertIn(f"Untracked {rulings_rel} from Git index", out)
+            self.assertIn(f"Untracked {notes_rel} from Git index", out)
+
+        for rel in (rulings_rel, notes_rel):
+            self.assertTrue((self.target_dir / rel).is_file(), f"{rel} must remain on disk after untracking")
+            ls_res = subprocess.run(
+                ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", rel],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(ls_res.returncode, 0, f"{rel} should no longer be tracked in the Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_gm_materials_guard_handles_non_ascii_filenames(self):
+        """Non-ASCII ruling filenames are detected with the real path and --fix untracks them
+        (ls-files -z NUL split, no C-quoting)."""
+        self._write_healthy_vault()
+        rulings_rel = "_gm-materials/rulings/R-001_são-paulo.md"
+        rulings_path = self.target_dir / rulings_rel
+        rulings_path.parent.mkdir(parents=True, exist_ok=True)
+        rulings_path.write_text(
+            "---\n"
+            "id: R-001\n"
+            "title: São Paulo ruling\n"
+            "date: 2026-11-01\n"
+            "kind: ruling\n"
+            "status: active\n"
+            "fact: The sky is red.\n"
+            "entities: []\n"
+            "---\n\n"
+            "Narrative body.\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", rulings_rel], check=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(f"{rulings_rel} is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn(f"Untracked {rulings_rel} from Git index", fake_out.getvalue())
+
+        self.assertTrue(rulings_path.is_file(), "ruling must remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "-z", "--", "_gm-materials/"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotIn(rulings_rel, ls_res.stdout.split("\0"), "ruling should no longer be tracked in the Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_gm_materials_guard_prints_surrogate_paths_safely(self):
+        """Surrogate-escaped paths and stderr print safely under strict UTF-8 stdout while keeping raw paths for git rm."""
+        self._write_healthy_vault()
+        (self.target_dir / ".git").mkdir()
+        surrogate_rel = "_gm-materials/rulings/bad\udcffname.md"
+        rm_calls = []
+
+        def make_fake_run(rm_returncode=0, rm_stderr=""):
+            def fake_run(cmd, **kwargs):
+                if len(cmd) >= 2 and str(cmd[1]).endswith("generate_digests.py"):
+                    return MagicMock(returncode=0, stdout="", stderr="")
+                if "ls-files" in cmd and "--error-unmatch" in cmd:
+                    return MagicMock(returncode=1, stdout="", stderr="")
+                if "ls-files" in cmd and "-z" in cmd:
+                    return MagicMock(returncode=0, stdout=f"{surrogate_rel}\0", stderr="")
+                if "rm" in cmd:
+                    rm_calls.append((cmd, kwargs))
+                    return MagicMock(returncode=rm_returncode, stdout="", stderr=rm_stderr)
+                raise AssertionError(f"Unexpected subprocess.run call: {cmd}")
+            return fake_run
+
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/git" if name == "git" else None):
+            buf_detect = io.BytesIO()
+            strict_detect = io.TextIOWrapper(buf_detect, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run()), \
+                 patch("sys.stdout", new=strict_detect):
+                rc_detect = cli._doctor(self.target_dir)
+                strict_detect.flush()
+                out_detect = buf_detect.getvalue().decode("utf-8")
+                strict_detect.detach()
+            self.assertEqual(rc_detect, 1)
+            self.assertIn("_gm-materials/rulings/bad\ufffdname.md is tracked in Git", out_detect)
+
+            buf_fix_ok = io.BytesIO()
+            strict_fix_ok = io.TextIOWrapper(buf_fix_ok, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run(rm_returncode=0)), \
+                 patch("sys.stdout", new=strict_fix_ok):
+                rc_fix_ok = cli._doctor(self.target_dir, fix=True)
+                strict_fix_ok.flush()
+                out_fix_ok = buf_fix_ok.getvalue().decode("utf-8")
+                strict_fix_ok.detach()
+            self.assertEqual(rc_fix_ok, 0)
+            self.assertIn("Untracked _gm-materials/rulings/bad\ufffdname.md from Git index", out_fix_ok)
+            self.assertEqual(rm_calls[-1][0][-1], surrogate_rel)
+
+            buf_fix_err = io.BytesIO()
+            strict_fix_err = io.TextIOWrapper(buf_fix_err, encoding="utf-8", errors="strict")
+            with patch("subprocess.run", side_effect=make_fake_run(rm_returncode=1, rm_stderr="fatal: bad\udcfferr\n")), \
+                 patch("sys.stdout", new=strict_fix_err):
+                rc_fix_err = cli._doctor(self.target_dir, fix=True)
+                strict_fix_err.flush()
+                out_fix_err = buf_fix_err.getvalue().decode("utf-8")
+                strict_fix_err.detach()
+            self.assertEqual(rc_fix_err, 1)
+            self.assertIn("Failed to untrack _gm-materials/rulings/bad\ufffdname.md: fatal: bad\ufffderr", out_fix_err)
+
+    def test_doctor_gm_materials_guard_ignores_derived_cache_double_report(self):
+        """A force-added _gm-materials/.cache/tier2.json is reported once via DERIVED_CACHE_FILES."""
+        self._write_healthy_vault()
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+        cache_rel = "_gm-materials/.cache/tier2.json"
+        cache_path = self.target_dir / cache_rel
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"schema_version": 1, "entries": []}), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.target_dir), "add", "-f", cache_rel], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "commit", "-m", "track cache"], check=True, capture_output=True)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            out = fake_out.getvalue()
+            self.assertEqual(out.count(f"{cache_rel} is tracked in Git"), 1, "derived cache must be reported exactly once")
+
+    def test_doctor_empty_rulings_dir_produces_no_missing_index_warning(self):
+        """An empty _gm-materials/rulings/ must stay silent (no unfixable WARN)."""
+        self._write_healthy_vault()
+        (self.target_dir / "_gm-materials" / "rulings").mkdir(parents=True, exist_ok=True)
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertNotIn("tier2.json absent", fake_out.getvalue())
+            self.assertFalse((self.target_dir / "_gm-materials" / ".cache" / "tier2.json").exists())
+
+    def test_doctor_stale_tier2_cache_advisory_and_fix_refresh(self):
+        """Rulings present: absent cache warns; stale cache warns; --fix recompiles via tier2.py."""
+        self._write_healthy_vault()
+        self._write_valid_ruling()
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0, "missing tier2.json is an advisory, not a failure")
+            self.assertIn("tier2.json absent", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("tier2.py", fake_out.getvalue())
+        cache_path = self.target_dir / "_gm-materials" / ".cache" / "tier2.json"
+        self.assertTrue(cache_path.is_file(), "--fix must compile _gm-materials/.cache/tier2.json")
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        self.assertEqual(cache["schema_version"], 1)
+        self.assertEqual([e["id"] for e in cache["entries"]], ["R-001"])
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("fresh", fake_out.getvalue())
+
+        # Make the cache stale by editing the ruling, then confirm the advisory and --fix refresh.
+        ruling_path = self.target_dir / "_gm-materials" / "rulings" / "R-001_slug.md"
+        ruling_path.write_text(
+            ruling_path.read_text(encoding="utf-8") + "\nExtra line.\n",
+            encoding="utf-8",
+        )
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("stale", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+            self.assertIn("fresh", fake_out.getvalue())
+
+    def test_doctor_invalid_rulings_fail_compilation_under_fix(self):
+        """A FAIL-severity ruling makes tier2.py fail and doctor --fix report the failure."""
+        self._write_healthy_vault()
+        rulings_dir = self.target_dir / "_gm-materials" / "rulings"
+        rulings_dir.mkdir(parents=True, exist_ok=True)
+        (rulings_dir / "R-001_slug.md").write_text(
+            "---\nid: R-1\ntitle: Bad\n---\n\nBody.\n",
+            encoding="utf-8",
+        )
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 1, "invalid rulings must fail doctor --fix")
+            self.assertIn("tier2.py", fake_out.getvalue())
+        self.assertFalse((self.target_dir / "_gm-materials" / ".cache" / "tier2.json").exists())
+
+    def test_doctor_warns_and_fixes_legacy_digest_type_keys(self):
+        """Legacy digest entity_type warns and exits 1 in doctor; --fix migrates to canonical type."""
+        self._write_healthy_vault()
+        digest_path = self.target_dir / "_gm-materials" / "digests" / "book" / "npc.md"
+        digest_path.parent.mkdir(parents=True, exist_ok=True)
+        digest_path.write_text(
+            "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn("Legacy digest type keys (run oude doctor --fix)", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Digest type keys migrated to canonical 'type'", fake_out.getvalue())
+
+        migrated = digest_path.read_text(encoding="utf-8")
+        self.assertIn("type: people", migrated)
+        self.assertNotIn("entity_type", migrated)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+            self.assertIn("Digest type keys", fake_out.getvalue())
+
+    def test_doctor_reports_digest_type_conflicts(self):
+        """Conflicting type/entity_type keys make doctor --fix fail loudly without altering the note."""
+        self._write_healthy_vault()
+        digest_path = self.target_dir / "_gm-materials" / "digests" / "book" / "conflict.md"
+        digest_path.parent.mkdir(parents=True, exist_ok=True)
+        raw = "---\nsource: book\ntier: 3\ntype: faction\nentity_type: location\ntitle: C\n---\n\n# C\n\nBody.\n"
+        digest_path.write_text(raw, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 1)
+            self.assertIn("Digest type conflicts need manual edits", fake_out.getvalue())
+        self.assertEqual(digest_path.read_text(encoding="utf-8"), raw)
+
+    def test_doctor_skips_digest_type_check_when_digests_dir_absent(self):
+        """Absent _gm-materials/digests/ passes cleanly without warning or failing."""
+        self._write_healthy_vault()
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("Digest type keys", fake_out.getvalue())
+
+    def test_doctor_vault_flag_migrates_target_vault_not_cwd(self):
+        """oude doctor --vault <other> --fix migrates <other>, leaving CWD untouched."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd_vault = Path(tmp) / "cwd_vault"
+            other_vault = Path(tmp) / "other_vault"
+            legacy_note = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n"
+
+            for vault in (cwd_vault, other_vault):
+                with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+                     patch.object(cli, "_install_skills", return_value=0):
+                    cli._init_repository(vault)
+                (vault / ".agents" / "context" / "catalog.json").write_text(
+                    json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+                    encoding="utf-8",
+                )
+                note = vault / "_gm-materials" / "digests" / "book" / "npc.md"
+                note.parent.mkdir(parents=True, exist_ok=True)
+                note.write_text(legacy_note, encoding="utf-8")
+
+            prev_cwd = Path.cwd()
+            try:
+                os.chdir(cwd_vault)
+                with patch("sys.stdout", new=io.StringIO()):
+                    rc = cli.main(["doctor", "--vault", str(other_vault), "--fix"])
+            finally:
+                os.chdir(prev_cwd)
+
+            self.assertEqual(rc, 0)
+            other_text = (other_vault / "_gm-materials" / "digests" / "book" / "npc.md").read_text(encoding="utf-8")
+            cwd_text = (cwd_vault / "_gm-materials" / "digests" / "book" / "npc.md").read_text(encoding="utf-8")
+            self.assertIn("type: people", other_text)
+            self.assertNotIn("entity_type", other_text)
+            self.assertEqual(cwd_text, legacy_note)
+
+    def test_doctor_digest_type_dry_run_is_quiet_and_reports_missing_script(self):
+        """Dry-run probe runs quietly (DEVNULL), and missing generate_digests.py returns 127 and fails clearly."""
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_sub:
+            rc = cli._run_script("generate_digests.py", ["--help"], quiet=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stdout"), subprocess.DEVNULL)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stderr"), subprocess.DEVNULL)
+
+        with patch("sys.stderr", new=io.StringIO()) as fake_err:
+            rc_missing = cli._run_script("definitely_missing_script_xyz.py", [])
+        self.assertEqual(rc_missing, 127)
+        self.assertIn("not found", fake_err.getvalue())
+
+        self._write_healthy_vault()
+        with patch.object(cli, "_run_script", return_value=127) as mock_run_script, \
+             patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_doc = cli._doctor(self.target_dir)
+        self.assertEqual(rc_doc, 1)
+        out = fake_out.getvalue()
+        self.assertIn("Bundled scripts/generate_digests.py not found", out)
+        self.assertNotIn("Legacy digest type keys", out)
+        self.assertEqual(mock_run_script.call_args.kwargs.get("quiet"), True)
 
 
 class TestDependabotGuard(unittest.TestCase):

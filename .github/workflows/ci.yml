@@ -48,6 +48,7 @@ jobs:
           oude --version
           oude lint --help
           oude lint-wiki --help
+          oude tier2 --help
 
       - name: Validate Ruby plugins syntax
         run: |

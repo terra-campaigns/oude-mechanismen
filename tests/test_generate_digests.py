@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -117,6 +118,7 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertTrue(core["digest_exists"])
         self.assertEqual(core["source_pdf"], "Core_Rules.pdf")
         self.assertNotIn("entity_type", core)
+        self.assertNotIn("type", core)
         self.assertNotIn("pages", core)
         self.assertNotIn("tags", core)
 
@@ -137,7 +139,7 @@ class TestGenerateDigests(unittest.TestCase):
             "## Frontmatter Comment That Looks Like H2\n"
             "title: Frontmatter Alpha\n"
             "source_pdf: Book_A.pdf\n"
-            "entity_type: faction\n"
+            "type: faction\n"
             "pages: 14-18\n"
             "tags:\n"
             "  - syndicate\n"
@@ -165,7 +167,8 @@ class TestGenerateDigests(unittest.TestCase):
         alpha = by_slug["book_a/faction_alpha"]
         self.assertEqual(alpha["title"], "Frontmatter Alpha")
         self.assertEqual(alpha["source_pdf"], "Book_A.pdf")
-        self.assertEqual(alpha["entity_type"], "faction")
+        self.assertEqual(alpha["type"], "faction")
+        self.assertNotIn("entity_type", alpha)
         self.assertEqual(alpha["pages"], "14-18")
         self.assertEqual(alpha["tags"], ["syndicate", "trade"])
         self.assertEqual(alpha["sections"], [{"level": 2, "heading": "Operations", "line": 13}])
@@ -178,6 +181,7 @@ class TestGenerateDigests(unittest.TestCase):
         self.assertEqual(broken["title"], "Fallback Heading")
         self.assertEqual(broken["source_pdf"], "Fallback.pdf")
         self.assertNotIn("entity_type", broken)
+        self.assertNotIn("type", broken)
 
     def test_compile_references_empty_frontmatter_source_pdf_falls_back_to_body(self):
         digests_dir = self.repo_root / "_gm-materials" / "digests"
@@ -567,7 +571,7 @@ class TestExtractAndValidate(unittest.TestCase):
         note = target_dir / name
         body = "See [Guild](factions/guild.md).\n" if with_link else "Intro.\n"
         note.write_text(
-            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\n" + body,
+            "---\nsource: book\ntier: 3\ntype: index\ntitle: Book\n---\n\n# Book\n\n" + body,
             encoding="utf-8",
         )
         return note
@@ -577,7 +581,7 @@ class TestExtractAndValidate(unittest.TestCase):
         self._write_valid_note(digest_dir, with_link=True)
         (digest_dir / "factions").mkdir()
         (digest_dir / "factions" / "guild.md").write_text(
-            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\n\nText.\n",
+            "---\nsource: book\ntier: 3\ntype: faction\ntitle: Guild\n---\n\n# Guild\n\nText.\n",
             encoding="utf-8",
         )
         with patch("sys.stdout", new=io.StringIO()):
@@ -588,7 +592,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir, name="guild.md", folder="factions")
         note.write_text(
-            "---\nsource: book\ntier: 2\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\nNo blank line.\n\n[bad](missing.md)\n[esc](../../../../../../etc/hostname)\n",
+            "---\nsource: book\ntier: 2\ntype: faction\ntitle: Guild\n---\n\n# Guild\nNo blank line.\n\n[bad](missing.md)\n[esc](../../../../../../etc/hostname)\n",
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -618,11 +622,11 @@ class TestExtractAndValidate(unittest.TestCase):
         staged = Path(self.temp_dir.name) / "extract" / "staged" / "mybook"
         (staged / "factions").mkdir(parents=True)
         (staged / "_index.md").write_text(
-            "---\nsource: mybook\ntier: 3\nentity_type: index\ntitle: Mybook\n---\n\n# Mybook\n\nSee [Guild](factions/guild.md).\n",
+            "---\nsource: mybook\ntier: 3\ntype: index\ntitle: Mybook\n---\n\n# Mybook\n\nSee [Guild](factions/guild.md).\n",
             encoding="utf-8",
         )
         (staged / "factions" / "guild.md").write_text(
-            "---\nsource: mybook\ntier: 3\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
+            "---\nsource: mybook\ntier: 3\ntype: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
             encoding="utf-8",
         )
         with patch("sys.stdout", new=io.StringIO()):
@@ -630,7 +634,7 @@ class TestExtractAndValidate(unittest.TestCase):
         self.assertEqual(rc, 0)
         # A link escaping the staged dir (and the repo) must still fail.
         (staged / "_index.md").write_text(
-            "---\nsource: mybook\ntier: 3\nentity_type: index\ntitle: Mybook\n---\n\n# Mybook\n\n[esc](../../../../etc/hostname)\n",
+            "---\nsource: mybook\ntier: 3\ntype: index\ntitle: Mybook\n---\n\n# Mybook\n\n[esc](../../../../etc/hostname)\n",
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -643,7 +647,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nExample:\n\n```\n[bad](missing.md)\n```\n",
+            "---\nsource: book\ntier: 3\ntype: index\ntitle: Book\n---\n\n# Book\n\nExample:\n\n```\n[bad](missing.md)\n```\n",
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -693,7 +697,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\nrelated: ["factions/missing.md", "../../../../../etc/hostname"]\n---\n\n# Book\n\nIntro.\n',
+            '---\nsource: book\ntier: 3\ntype: index\ntitle: Book\nrelated: ["factions/missing.md", "../../../../../etc/hostname"]\n---\n\n# Book\n\nIntro.\n',
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -708,7 +712,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nSee [[Guild]] and:\n\n```\n[[in fence]]\n```\n",
+            "---\nsource: book\ntier: 3\ntype: index\ntitle: Book\n---\n\n# Book\n\nSee [[Guild]] and:\n\n```\n[[in fence]]\n```\n",
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -724,11 +728,11 @@ class TestExtractAndValidate(unittest.TestCase):
         self._write_valid_note(digest_dir, with_link=True)
         (digest_dir / "factions").mkdir()
         (digest_dir / "factions" / "guild.md").write_text(
-            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
+            "---\nsource: book\ntier: 3\ntype: faction\ntitle: Guild\n---\n\n# Guild\n\nBack to [Index](../_index.md).\n",
             encoding="utf-8",
         )
         (digest_dir / "factions" / "orphan.md").write_text(
-            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Orphan\n---\n\n# Orphan\n\nNobody links here.\n",
+            "---\nsource: book\ntier: 3\ntype: faction\ntitle: Orphan\n---\n\n# Orphan\n\nNobody links here.\n",
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -742,7 +746,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: "3-5, oops"\n---\n\n# Book\n\nCites [p. 5], [pp. 4-2], and [pp. 1–3].\n',
+            '---\nsource: book\ntier: 3\ntype: index\ntitle: Book\npages: "3-5, oops"\n---\n\n# Book\n\nCites [p. 5], [pp. 4-2], and [pp. 1–3].\n',
             encoding="utf-8",
         )
         manifest = Path(self.temp_dir.name) / "manifest.json"
@@ -761,7 +765,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            '---\nsource: book\nsource_pdf: /home/gm/rulebooks/book.pdf\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nIntro.\n',
+            '---\nsource: book\nsource_pdf: /home/gm/rulebooks/book.pdf\ntier: 3\ntype: index\ntitle: Book\n---\n\n# Book\n\nIntro.\n',
             encoding="utf-8",
         )
         buf = io.StringIO()
@@ -774,7 +778,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         note = self._write_valid_note(digest_dir)
         note.write_text(
-            "---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\npages: [3, 25]\n---\n\n# Book\n\nIntro.\n",
+            "---\nsource: book\ntier: 3\ntype: index\ntitle: Book\npages: [3, 25]\n---\n\n# Book\n\nIntro.\n",
             encoding="utf-8",
         )
         manifest = Path(self.temp_dir.name) / "manifest.json"
@@ -789,11 +793,11 @@ class TestExtractAndValidate(unittest.TestCase):
         digest_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         (digest_dir / "factions").mkdir(parents=True)
         (digest_dir / "factions" / "guild hall.md").write_text(
-            "---\nsource: book\ntier: 3\nentity_type: faction\ntitle: Guild Hall\n---\n\n# Guild Hall\n\nText.\n",
+            "---\nsource: book\ntier: 3\ntype: faction\ntitle: Guild Hall\n---\n\n# Guild Hall\n\nText.\n",
             encoding="utf-8",
         )
         (digest_dir / "_index.md").write_text(
-            '---\nsource: book\ntier: 3\nentity_type: index\ntitle: Book\n---\n\n# Book\n\nSee [Guild](factions/guild%20hall.md "Guild Hall").\n',
+            '---\nsource: book\ntier: 3\ntype: index\ntitle: Book\n---\n\n# Book\n\nSee [Guild](factions/guild%20hall.md "Guild Hall").\n',
             encoding="utf-8",
         )
         with patch("sys.stdout", new=io.StringIO()):
@@ -864,7 +868,7 @@ class TestExtractAndValidate(unittest.TestCase):
         digests_dir = self.repo_root / "_gm-materials" / "digests" / "book"
         digests_dir.mkdir(parents=True)
         (digests_dir / "_index.md").write_text(
-            "---\nsource: morgansfort\ntier: 3\nentity_type: index\ntitle: Morgansfort\n---\n\n# Morgansfort\n\nIntro.\n",
+            "---\nsource: morgansfort\ntier: 3\ntype: index\ntitle: Morgansfort\n---\n\n# Morgansfort\n\nIntro.\n",
             encoding="utf-8",
         )
         generate_digests.compile_references(self.repo_root, self.repo_root)
@@ -885,19 +889,19 @@ class TestExtractAndValidate(unittest.TestCase):
         (digests_dir / "locations").mkdir(parents=True)
         (digests_dir / "tables").mkdir(parents=True)
         (digests_dir / "_index.md").write_text(
-            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: index\ntitle: Gradient Descent\n---\n\n# Gradient Descent\n\nIntro.\n",
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\ntype: index\ntitle: Gradient Descent\n---\n\n# Gradient Descent\n\nIntro.\n",
             encoding="utf-8",
         )
         (digests_dir / "locations" / "floor_5_ai_core.md").write_text(
-            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: location\ntitle: Floor 5 AI Core\n---\n\n# Floor 5 AI Core\n\nDetails.\n",
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\ntype: location\ntitle: Floor 5 AI Core\n---\n\n# Floor 5 AI Core\n\nDetails.\n",
             encoding="utf-8",
         )
         (digests_dir / "locations" / "station_map.md").write_text(
-            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\nentity_type: location\ntitle: Station Map\n---\n\n# Station Map\n\nDetails.\n",
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ntier: 3\ntype: location\ntitle: Station Map\n---\n\n# Station Map\n\nDetails.\n",
             encoding="utf-8",
         )
         (digests_dir / "tables" / "bell_rumours.md").write_text(
-            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ncategory: supplement\ntier: 3\nentity_type: table\ntitle: Bell Rumours\n---\n\n# Bell Rumours\n\nDetails.\n",
+            "---\nsource: gradient_descent\nsource_pdf: Gradient-Descent-v1.1.pdf\ncategory: supplement\ntier: 3\ntype: table\ntitle: Bell Rumours\n---\n\n# Bell Rumours\n\nDetails.\n",
             encoding="utf-8",
         )
 
@@ -913,22 +917,22 @@ class TestExtractAndValidate(unittest.TestCase):
         ep_dir = self.repo_root / "_gm-materials" / "digests" / "eclipse_phase"
         (ep_dir / "locations").mkdir(parents=True)
         (ep_dir / "_index.md").write_text(
-            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ncategory: core_setting\ntier: 3\nentity_type: index\ntitle: Eclipse Phase\n---\n\n# Eclipse Phase\n\nIntro.\n",
+            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ncategory: core_setting\ntier: 3\ntype: index\ntitle: Eclipse Phase\n---\n\n# Eclipse Phase\n\nIntro.\n",
             encoding="utf-8",
         )
         (ep_dir / "locations" / "locus.md").write_text(
-            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ntier: 3\nentity_type: location\ntitle: Locus\n---\n\n# Locus\n\nIntro.\n",
+            "---\nsource: eclipse_phase\nsource_pdf: Eclipse-Phase.pdf\ntier: 3\ntype: location\ntitle: Locus\n---\n\n# Locus\n\nIntro.\n",
             encoding="utf-8",
         )
 
         core_dir = self.repo_root / "_gm-materials" / "digests" / "mothership_core"
         (core_dir / "factions").mkdir(parents=True)
         (core_dir / "_index.md").write_text(
-            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\nentity_type: index\ntitle: Mothership Core\n---\n\n# Mothership Core\n\nIntro.\n",
+            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\ntype: index\ntitle: Mothership Core\n---\n\n# Mothership Core\n\nIntro.\n",
             encoding="utf-8",
         )
         (core_dir / "factions" / "company.md").write_text(
-            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\nentity_type: faction\ntitle: Company\n---\n\n# Company\n\nIntro.\n",
+            "---\nsource: mothership_core\nsource_pdf: Mothership.pdf\ntier: 3\ntype: faction\ntitle: Company\n---\n\n# Company\n\nIntro.\n",
             encoding="utf-8",
         )
 
@@ -1062,6 +1066,416 @@ class TestExtractAndValidate(unittest.TestCase):
             rc = generate_digests.validate_digests(self.repo_root, digest_dir, manifest=str(manifest))
         self.assertEqual(rc, 0)
         self.assertIn("text slices with large images: 2 slice(s) (pages: [18, 23])", buf.getvalue())
+
+
+class TestDigestTypeUnification(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repo_root = Path(self.temp_dir.name) / "repo"
+        self.repo_root.mkdir(parents=True)
+        (self.repo_root / ".agents" / "context").mkdir(parents=True)
+        self.digests_dir = self.repo_root / "_gm-materials" / "digests"
+        self.book_dir = self.digests_dir / "book"
+        self.book_dir.mkdir(parents=True)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_validate_canonical_types_and_person_rejection(self):
+        (self.book_dir / "people_note.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: people\ntitle: NPC\n---\n\n# NPC\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "ref_note.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: reference\ntitle: Ref\n---\n\n# Ref\n\nBody.\n",
+            encoding="utf-8",
+        )
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(generate_digests.validate_digests(self.repo_root, self.book_dir), 0)
+
+        for bad in ("person", "bogus"):
+            with self.subTest(bad=bad):
+                (self.book_dir / "bad.md").write_text(
+                    f"---\nsource: book\ntier: 3\ntype: {bad}\ntitle: Bad\n---\n\n# Bad\n\nBody.\n",
+                    encoding="utf-8",
+                )
+                buf = io.StringIO()
+                with patch("sys.stdout", new=buf):
+                    rc = generate_digests.validate_digests(self.repo_root, self.book_dir)
+                self.assertEqual(rc, 1)
+                self.assertIn("frontmatter 'type' must be one of", buf.getvalue())
+
+    def test_validate_legacy_and_both_agree_warn_without_failing(self):
+        (self.book_dir / "legacy_npc.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: person\ntitle: Legacy NPC\n---\n\n# Legacy NPC\n\nBody.\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.validate_digests(self.repo_root, self.book_dir)
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "[WARN] _gm-materials/digests/book/legacy_npc.md:1: legacy 'entity_type' key; "
+            "run 'oude doctor --fix' to migrate to 'type'",
+            buf.getvalue(),
+        )
+
+        (self.book_dir / "both_agree.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: people\nentity_type: person\ntitle: Both\n---\n\n# Both\n\nBody.\n",
+            encoding="utf-8",
+        )
+        buf2 = io.StringIO()
+        with patch("sys.stdout", new=buf2):
+            rc2 = generate_digests.validate_digests(self.repo_root, self.book_dir)
+        self.assertEqual(rc2, 0)
+        self.assertIn(
+            "[WARN] _gm-materials/digests/book/both_agree.md:1: redundant legacy 'entity_type' key; "
+            "run 'oude doctor --fix' to remove it",
+            buf2.getvalue(),
+        )
+
+    def test_validate_rejects_out_of_vocab_legacy_and_both_agree(self):
+        for name, fm in (
+            ("legacy_bogus.md", "entity_type: bogus"),
+            ("agree_bogus.md", "type: bogus\nentity_type: bogus"),
+        ):
+            with self.subTest(name=name):
+                note = self.book_dir / name
+                note.write_text(
+                    f"---\nsource: book\ntier: 3\n{fm}\ntitle: Bad\n---\n\n# Bad\n\nBody.\n",
+                    encoding="utf-8",
+                )
+                buf = io.StringIO()
+                with patch("sys.stdout", new=buf):
+                    rc = generate_digests.validate_digests(self.repo_root, self.book_dir)
+                self.assertEqual(rc, 1)
+                self.assertIn("frontmatter 'type' must be one of", buf.getvalue())
+                note.unlink()
+
+    def test_validate_rejects_conflict_missing_duplicate_nonstring_and_null(self):
+        cases = [
+            (
+                "conflict.md",
+                "---\nsource: book\ntier: 3\ntype: faction\nentity_type: location\ntitle: C\n---\n\n# C\n\nB.\n",
+                "frontmatter 'type' and legacy 'entity_type' disagree; keep only 'type'",
+            ),
+            (
+                "missing.md",
+                "---\nsource: book\ntier: 3\ntitle: M\n---\n\n# M\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "case_variant.md",
+                "---\nsource: book\ntier: 3\nEntity_Type: faction\ntitle: CV\n---\n\n# CV\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "dup_type.md",
+                "---\nsource: book\ntier: 3\ntype: faction\ntype: location\ntitle: DT\n---\n\n# DT\n\nB.\n",
+                "duplicate frontmatter key 'type'; keep a single 'type'",
+            ),
+            (
+                "dup_legacy.md",
+                "---\nsource: book\ntier: 3\nentity_type: faction\nentity_type: location\ntitle: DL\n---\n\n# DL\n\nB.\n",
+                "duplicate frontmatter key 'entity_type'; keep a single 'type'",
+            ),
+            (
+                "list_val.md",
+                "---\nsource: book\ntier: 3\nentity_type: [a, b]\ntitle: LV\n---\n\n# LV\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "int_val.md",
+                "---\nsource: book\ntier: 3\ntype: 42\ntitle: IV\n---\n\n# IV\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "bool_val.md",
+                "---\nsource: book\ntier: 3\ntype: true\ntitle: BV\n---\n\n# BV\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "null_type.md",
+                "---\nsource: book\ntier: 3\ntype:\ntitle: NT\n---\n\n# NT\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "null_legacy.md",
+                "---\nsource: book\ntier: 3\nentity_type:\ntitle: NL\n---\n\n# NL\n\nB.\n",
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "blank_type.md",
+                '---\nsource: book\ntier: 3\ntype: "   "\ntitle: BT\n---\n\n# BT\n\nB.\n',
+                "frontmatter 'type' must be one of",
+            ),
+            (
+                "no_fm.md",
+                "# Plain Heading\n\nNo front matter.\n",
+                "missing YAML frontmatter block",
+            ),
+        ]
+        for filename, text, expected in cases:
+            with self.subTest(filename=filename):
+                path = self.book_dir / filename
+                path.write_text(text, encoding="utf-8")
+                buf = io.StringIO()
+                with patch("sys.stdout", new=buf):
+                    rc = generate_digests.validate_digests(self.repo_root, self.book_dir)
+                self.assertEqual(rc, 1)
+                self.assertIn(expected, buf.getvalue())
+                path.unlink()
+
+    def test_compile_references_maps_legacy_person_and_warns_on_invalid_or_missing(self):
+        (self.book_dir / "legacy_person.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: person\ntitle: Alice\n---\n\n# Alice\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "reference_note.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: reference\ntitle: Ref\n---\n\n# Ref\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "both_agree.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: people\nentity_type: person\ntitle: Bob\n---\n\n# Bob\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "bad_int.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: 42\ntitle: Bad Int\n---\n\n# Bad Int\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "dup_key.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: faction\ntype: location\ntitle: Dup\n---\n\n# Dup\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "conflict.md").write_text(
+            "---\nsource: book\ntier: 3\ntype: faction\nentity_type: location\ntitle: Conf\n---\n\n# Conf\n\nBody.\n",
+            encoding="utf-8",
+        )
+        (self.book_dir / "missing_type.md").write_text(
+            "---\nsource: book\ntier: 3\ntitle: Missing\n---\n\n# Missing\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        err_buf = io.StringIO()
+        with patch("sys.stdout", new=io.StringIO()), patch("sys.stderr", new=err_buf):
+            generate_digests.compile_references(self.repo_root, self.repo_root)
+
+        refs = json.loads((self.repo_root / ".agents" / "context" / "references.json").read_text(encoding="utf-8"))
+        by_slug = {e["slug"]: e for e in refs["sources"]}
+
+        self.assertEqual(by_slug["book/legacy_person"]["type"], "people")
+        self.assertEqual(by_slug["book/reference_note"]["type"], "reference")
+        self.assertEqual(by_slug["book/both_agree"]["type"], "people")
+        for slug in ("book/legacy_person", "book/reference_note", "book/both_agree"):
+            self.assertNotIn("entity_type", by_slug[slug])
+
+        stderr_text = err_buf.getvalue()
+        for bad_slug in ("book/bad_int", "book/dup_key", "book/conflict", "book/missing_type"):
+            self.assertNotIn("type", by_slug[bad_slug])
+            self.assertNotIn("entity_type", by_slug[bad_slug])
+            self.assertIn(f"[WARN] _gm-materials/digests/{bad_slug}.md:", stderr_text)
+
+    def test_migrate_digest_types_rewrites_legacy_preserving_formatting_crlf_and_mode(self):
+        quoted = self.book_dir / "quoted.md"
+        quoted_raw = (
+            "---\r\n"
+            "source: book\r\n"
+            "tier: 3\r\n"
+            'entity_type: "person"  # note\r\n'
+            "title: Quoted NPC\r\n"
+            "---\r\n\r\n"
+            "# Quoted NPC\r\n\r\nBody.\r\n"
+        )
+        with open(quoted, "w", encoding="utf-8", newline="") as fh:
+            fh.write(quoted_raw)
+        os.chmod(quoted, 0o600)
+
+        spaced = self.book_dir / "spaced.md"
+        spaced.write_text(
+            "---\nsource: book\ntier: 3\nentity_type :  person  # keep\ntitle: Spaced\n---\n\n# Spaced\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        agree_last = self.book_dir / "agree_last.md"
+        agree_last.write_text(
+            "---\nsource: book\ntier: 3\ntitle: Agree\ntype: people\nentity_type: person\n---\n\n# Agree\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        canonical = self.book_dir / "canonical.md"
+        canonical_text = "---\nsource: book\ntier: 3\ntype: reference\ntitle: Ref\n---\n\n# Ref\n\nBody.\n"
+        canonical.write_text(canonical_text, encoding="utf-8")
+
+        flat_legacy = self.digests_dir / "flat.md"
+        flat_legacy.write_text("# Flat Legacy\n\nPlain body.\n", encoding="utf-8")
+
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 0)
+        self.assertIn("3 migrated, 0 conflict(s), 1 already canonical, 1 no front matter", buf.getvalue())
+
+        expected_quoted = quoted_raw.replace('entity_type: "person"  # note', 'type: "people"  # note')
+        self.assertEqual(quoted.read_bytes(), expected_quoted.encode("utf-8"))
+        self.assertEqual(stat.S_IMODE(quoted.stat().st_mode), 0o600)
+
+        self.assertEqual(
+            spaced.read_text(encoding="utf-8"),
+            "---\nsource: book\ntier: 3\ntype :  people  # keep\ntitle: Spaced\n---\n\n# Spaced\n\nBody.\n",
+        )
+        self.assertEqual(
+            agree_last.read_text(encoding="utf-8"),
+            "---\nsource: book\ntier: 3\ntitle: Agree\ntype: people\n---\n\n# Agree\n\nBody.\n",
+        )
+        self.assertEqual(canonical.read_text(encoding="utf-8"), canonical_text)
+
+        # Second run and dry-run must both be no-ops exiting 0.
+        buf2 = io.StringIO()
+        with patch("sys.stdout", new=buf2):
+            rc2 = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+            rc3 = generate_digests.migrate_digest_types(self.repo_root, dry_run=True)
+        self.assertEqual(rc2, 0)
+        self.assertEqual(rc3, 0)
+        self.assertIn("0 migrated, 0 conflict(s), 4 already canonical, 1 no front matter", buf2.getvalue())
+
+    def test_migrate_digest_types_dry_run_exits_1_without_writing(self):
+        note = self.book_dir / "npc.md"
+        raw = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n"
+        note.write_text(raw, encoding="utf-8")
+
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("(dry-run) 1 migrated", buf.getvalue())
+        self.assertEqual(note.read_text(encoding="utf-8"), raw)
+
+    def test_migrate_digest_types_conflicts_stay_untouched_and_exit_1(self):
+        target = Path(self.temp_dir.name) / "external_target.md"
+        target_raw = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: Ext\n---\n\n# Ext\n\nBody.\n"
+        target.write_text(target_raw, encoding="utf-8")
+        symlink_note = self.book_dir / "sym.md"
+        symlink_note.symlink_to(target)
+
+        conflict_files = {
+            "both_conflict.md": "---\nsource: book\ntier: 3\ntype: faction\nentity_type: location\ntitle: C\n---\n\n# C\n\nB.\n",
+            "empty.md": "---\nsource: book\ntier: 3\nentity_type:\ntitle: E\n---\n\n# E\n\nB.\n",
+            "non_string.md": "---\nsource: book\ntier: 3\nentity_type: [a, b]\ntitle: N\n---\n\n# N\n\nB.\n",
+            "bogus.md": "---\nsource: book\ntier: 3\nentity_type: bogus\ntitle: B\n---\n\n# B\n\nB.\n",
+            "hash_disagree.md": "---\nsource: book\ntier: 3\nentity_type: per#son\ntitle: H\n---\n\n# H\n\nB.\n",
+            "malformed_yaml.md": "---\nsource: book\ntier: 3\nentity_type: \"person'\ntitle: M\n---\n\n# M\n\nB.\n",
+            "dup.md": "---\nsource: book\ntier: 3\nentity_type: faction\nentity_type: location\ntitle: D\n---\n\n# D\n\nB.\n",
+            "unclosed_fm.md": "---\nsource: book\ntier: 3\nentity_type: person\ntitle: U\n",
+        }
+        for fname, text in conflict_files.items():
+            (self.book_dir / fname).write_text(text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 1)
+        out = buf.getvalue()
+        self.assertIn("0 migrated, 9 conflict(s)", out)
+        for fname, text in conflict_files.items():
+            self.assertIn(fname, out)
+            self.assertEqual((self.book_dir / fname).read_text(encoding="utf-8"), text)
+        self.assertIn("sym.md", out)
+        self.assertEqual(target.read_text(encoding="utf-8"), target_raw)
+
+    def test_migrate_digest_types_rejects_symlinked_subdirectory(self):
+        ext_dir = Path(self.temp_dir.name) / "external_dir"
+        ext_dir.mkdir()
+        ext_file = ext_dir / "leak.md"
+        ext_raw = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: Leak\n---\n\n# Leak\n\nBody.\n"
+        ext_file.write_text(ext_raw, encoding="utf-8")
+
+        sub_link = self.digests_dir / "linked_sub"
+        sub_link.symlink_to(ext_dir, target_is_directory=True)
+        via_link = sub_link / "leak.md"
+
+        # On Python <= 3.12 rglob traverses symlinked directories; on 3.13+ it skips them.
+        # Verify both natural behaviour (ext_file untouched) and the containment branch explicitly.
+        with patch("sys.stdout", new=io.StringIO()):
+            rc_real = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertIn(rc_real, (0, 1))
+        self.assertEqual(ext_file.read_text(encoding="utf-8"), ext_raw)
+
+        buf = io.StringIO()
+        with patch.object(Path, "rglob", return_value=[via_link]), patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 1)
+        self.assertIn("resolves outside _gm-materials/digests", buf.getvalue())
+        self.assertEqual(ext_file.read_text(encoding="utf-8"), ext_raw)
+
+    def test_migrate_digest_types_leaves_case_variant_and_missing_untouched(self):
+        cv = self.book_dir / "case_variant.md"
+        cv_text = "---\nsource: book\ntier: 3\nEntity_Type: faction\ntitle: CV\n---\n\n# CV\n\nBody.\n"
+        cv.write_text(cv_text, encoding="utf-8")
+
+        missing = self.book_dir / "missing.md"
+        missing_text = "---\nsource: book\ntier: 3\ntitle: Missing\n---\n\n# Missing\n\nBody.\n"
+        missing.write_text(missing_text, encoding="utf-8")
+
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 0)
+        self.assertEqual(cv.read_text(encoding="utf-8"), cv_text)
+        self.assertEqual(missing.read_text(encoding="utf-8"), missing_text)
+
+    def test_migrate_digest_types_missing_dir_exits_0(self):
+        import shutil
+        shutil.rmtree(self.digests_dir)
+        buf = io.StringIO()
+        with patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 0)
+        self.assertIn("skipping", buf.getvalue())
+
+    def test_main_cli_migrate_dispatch_and_mutually_exclusive_flags(self):
+        refs_path = self.repo_root / ".agents" / "context" / "references.json"
+        (self.book_dir / "npc.md").write_text(
+            "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        # Bare --dry-run must exit non-zero without falling through to compile_references().
+        with patch.object(sys, "argv", ["generate_digests.py", "--repo-root", str(self.repo_root), "--dry-run"]), \
+             patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                generate_digests.main()
+        self.assertNotEqual(ctx.exception.code, 0)
+        self.assertFalse(refs_path.exists())
+
+        # Combining mutually exclusive mode flags must exit non-zero.
+        with patch.object(
+            sys,
+            "argv",
+            ["generate_digests.py", "--repo-root", str(self.repo_root), "--validate", "--migrate-type"],
+        ), patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx_mut:
+                generate_digests.main()
+        self.assertNotEqual(ctx_mut.exception.code, 0)
+
+        # --migrate-type --dry-run exits 1 when work is pending, then --migrate-type exits 0.
+        with patch.object(
+            sys,
+            "argv",
+            ["generate_digests.py", "--repo-root", str(self.repo_root), "--migrate-type", "--dry-run"],
+        ), patch("sys.stdout", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx_dry:
+                generate_digests.main()
+        self.assertEqual(ctx_dry.exception.code, 1)
+
+        with patch.object(
+            sys,
+            "argv",
+            ["generate_digests.py", "--repo-root", str(self.repo_root), "--migrate-type"],
+        ), patch("sys.stdout", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx_run:
+                generate_digests.main()
+        self.assertEqual(ctx_run.exception.code, 0)
+        self.assertIn("type: people", (self.book_dir / "npc.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
