@@ -28,7 +28,7 @@ If the user provided a specific topic, faction, trade good, or character, confir
 
 ### Reference digests (Tier 3 canon)
 
-- Consult `.agents/context/references.json` to find relevant digest files and sections matching the party's current location, trajectory, and encounters.
+- Consult `.agents/context/references.json` (if absent on a fresh clone, run `oude digest` to regenerate it from `_gm-materials/digests/`) to find relevant digest files and sections matching the party's current location, trajectory, and encounters.
 
 ## What to produce
 
@@ -81,7 +81,7 @@ Format link additions the same way existing links are formatted in the repo (rel
 2. Inspect `.agents/context/catalog.json` and `_gm-materials/.cache/tier2.json` (targeted reads of `_gm-materials/rulings/*.md` when private opinions are relevant).
 3. Check `trading/index.md` (if present) for price skews or market anomalies.
 4. Check recent session logs in `campaigns/` using line ranges for recent developments.
-5. Consult Tier 3 digests via `.agents/context/references.json`.
+5. Consult Tier 3 digests via `.agents/context/references.json` (regenerate via `oude digest` if absent on a fresh clone).
 6. Build a mental map of active PCs, unresolved contracts, unvisited directory locations, and NPCs with empty `links_in`.
 7. If exploring market or economic anomalies, engage the GM iteratively with 2–3 potential lore explanations before locking in the final thread.
 8. Identify the strongest thread candidates (up to 3) and rank by natural fit and depth.

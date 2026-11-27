@@ -837,6 +837,7 @@ class TestOudeCLI(unittest.TestCase):
         self.assertIn("_gm-materials/", gitignore_text)
         self.assertIn(".agents/context/catalog.json", gitignore_text)
         self.assertIn(".agents/context/rolling_glossary.md", gitignore_text)
+        self.assertIn(".agents/context/references.json", gitignore_text)
         self.assertIn("_gm-materials/.cache/tier2.json", gitignore_text)
 
         tier1_text = (self.target_dir / ".agents" / "context" / "tier1_sources.yml").read_text(encoding="utf-8")
@@ -860,14 +861,14 @@ class TestOudeCLI(unittest.TestCase):
         gitignore_path = self.target_dir / ".gitignore"
         config_path = self.target_dir / "_config.yml"
 
-        # Case 1: .gitignore missing _gm-materials/, both derived .agents/context caches, and the tier2 index (and no trailing newline)
+        # Case 1: .gitignore missing _gm-materials/, derived .agents/context caches, and the tier2 index (and no trailing newline)
         gitignore_path.write_text("_site/", encoding="utf-8")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
         self.assertEqual(
             gitignore_path.read_text(encoding="utf-8"),
-            "_site/\n_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n_gm-materials/.cache/tier2.json\n",
+            "_site/\n_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n.agents/context/references.json\n_gm-materials/.cache/tier2.json\n",
         )
         self.assertTrue(cli._has_gitignore_entry("_site/\r\n_gm-materials/\r\n", "_gm-materials"))
         self.assertTrue(
@@ -880,6 +881,12 @@ class TestOudeCLI(unittest.TestCase):
             cli._has_gitignore_entry(
                 "_site/\r\n.agents/context/rolling_glossary.md\r\n",
                 ".agents/context/rolling_glossary.md",
+            )
+        )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "_site/\r\n.agents/context/references.json\r\n",
+                ".agents/context/references.json",
             )
         )
         self.assertFalse(
@@ -896,24 +903,72 @@ class TestOudeCLI(unittest.TestCase):
             ),
             "dotted entries must be regex-escaped (no wildcard false positive)",
         )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\r\n_agents/context/referencesXjson\r\n",
+                ".agents/context/references.json",
+            ),
+            "dotted entries must be regex-escaped (no wildcard false positive)",
+        )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "/.agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "leading slash anchored gitignore entry must match",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "# .agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "full-line comment must not satisfy gitignore entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n.agents/context/references.json # derived cache\n",
+                ".agents/context/references.json",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n_gm-materials/ # private\n",
+                "_gm-materials/",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy directory entry",
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
-        # Case 1b: pre-Design-006 .gitignore missing .agents/context/rolling_glossary.md and the tier2 index
+        # Case 1b: pre-Design-006 .gitignore missing rolling_glossary.md, references.json, and the tier2 index
         gitignore_path.write_text(
             "_gm-materials/\n.agents/context/catalog.json\n", encoding="utf-8"
         )
         with patch("sys.stdout", new=io.StringIO()) as fake_out:
             self.assertEqual(cli._doctor(self.target_dir), 1)
             self.assertIn(".gitignore is missing .agents/context/rolling_glossary.md", fake_out.getvalue())
+            self.assertIn(".gitignore is missing .agents/context/references.json", fake_out.getvalue())
             self.assertIn(".gitignore is missing _gm-materials/.cache/tier2.json", fake_out.getvalue())
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
             self.assertEqual(cli._doctor(self.target_dir), 0)
         self.assertEqual(
             gitignore_path.read_text(encoding="utf-8"),
-            "_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n_gm-materials/.cache/tier2.json\n",
+            "_gm-materials/\n.agents/context/catalog.json\n.agents/context/rolling_glossary.md\n.agents/context/references.json\n_gm-materials/.cache/tier2.json\n",
         )
+
+        # Case 1c: completely missing .gitignore is flagged and recreated with all required exclusions
+        gitignore_path.unlink()
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 1)
+            self.assertIn("Missing .gitignore", fake_out.getvalue())
+            self.assertIn(".agents/context/references.json", fake_out.getvalue())
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir, fix=True), 0)
+            self.assertIn("Created .gitignore", fake_out.getvalue())
+            self.assertIn(".agents/context/references.json", fake_out.getvalue())
+        self.assertIn(".agents/context/references.json", gitignore_path.read_text(encoding="utf-8"))
 
         # Case 2: _config.yml inline and block exclude variants
         exclude_cases = [
@@ -1359,6 +1414,75 @@ class TestOudeCLI(unittest.TestCase):
         self.assertNotEqual(ls_res.returncode, 0, "rolling_glossary.md should no longer be tracked in Git index")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_doctor_detects_and_untracks_git_tracked_references_json(self):
+        """Verify doctor detects git-tracked references.json and --fix untracks it cleanly."""
+        self.assertIn(".agents/context/references.json", cli.DERIVED_CACHE_FILES)
+        self.assertIn(".agents/context/references.json", cli.REQUIRED_GITIGNORE_ENTRIES)
+        self.assertTrue(
+            any(line == ".agents/context/references.json" for line in cli.DEFAULT_GITIGNORE.splitlines()),
+            "DEFAULT_GITIGNORE must carry an uncommented .agents/context/references.json line",
+        )
+
+        with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+             patch.object(cli, "_install_skills", return_value=0):
+            cli._init_repository(self.target_dir)
+
+        subprocess.run(["git", "init", "-b", "main", str(self.target_dir)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.email", "test@example.com"], check=True)
+        subprocess.run(["git", "-C", str(self.target_dir), "config", "user.name", "Test"], check=True)
+
+        catalog_path = self.target_dir / ".agents" / "context" / "catalog.json"
+        catalog_path.write_text(
+            json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+            encoding="utf-8",
+        )
+
+        ref_path = self.target_dir / ".agents" / "context" / "references.json"
+        ref_path.write_text(json.dumps({"generated": "2026-01-01", "digests": []}), encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "add", "-f", ".agents/context/references.json"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.target_dir), "commit", "-m", "track references.json"],
+            check=True,
+            capture_output=True,
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn(".agents/context/references.json is tracked in Git", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Untracked derived .agents/context/references.json", fake_out.getvalue())
+
+        self.assertTrue(ref_path.is_file(), "references.json should remain on disk after untracking")
+        ls_res = subprocess.run(
+            ["git", "-C", str(self.target_dir), "ls-files", "--error-unmatch", ".agents/context/references.json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(ls_res.returncode, 0, "references.json should no longer be tracked in Git index")
+        with patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_default_gitignore_includes_all_required_entries(self):
+        """Verify every REQUIRED_GITIGNORE_ENTRIES item appears uncommented in DEFAULT_GITIGNORE."""
+        default_lines = cli.DEFAULT_GITIGNORE.splitlines()
+        for entry in cli.REQUIRED_GITIGNORE_ENTRIES:
+            self.assertIn(
+                entry,
+                default_lines,
+                f"DEFAULT_GITIGNORE must carry an uncommented line for {entry}",
+            )
+            self.assertTrue(
+                cli._has_gitignore_entry(cli.DEFAULT_GITIGNORE, entry),
+                f"_has_gitignore_entry must recognise {entry} in DEFAULT_GITIGNORE",
+            )
 
 
 

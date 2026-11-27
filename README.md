@@ -32,7 +32,7 @@ To keep LLM token usage low, prevent hallucinations, and protect player privacy,
 - **Tier 2 (Behind-the-Screen Rulings & Archival Notes)**:
   Structured GM rulings and faction-turn records in `_gm-materials/rulings/`, compiled by `oude tier2` into the derived `_gm-materials/.cache/tier2.json`, alongside de-personalised extraction notes (`_tactical_facts.md`, `_sensory_textures.md`) and 8-section archival session notes (`_session_notes.md`) in `_gm-materials/session-summaries/`, plus the gitignored `.agents/context/rolling_glossary.md` (unverified session-new terms, retained at `tier: 2` in `catalog.json` until promoted).
 - **Tier 3 (Reference Material, Digests & Unplayed Prep)**:
-  Offline PDF rulebooks (kept on local disk only), structured digests in `_gm-materials/digests/` indexed into `.agents/context/references.json`, and unplayed prep in `_gm-materials/session-preps/`. Influence and inspiration, never assumed canon unless confirmed at the table.
+  Offline PDF rulebooks (kept on local disk only), structured digests in `_gm-materials/digests/` indexed locally into `.agents/context/references.json` (gitignored derived cache), and unplayed prep in `_gm-materials/session-preps/`. Influence and inspiration, never assumed canon unless confirmed at the table.
 
 ---
 
