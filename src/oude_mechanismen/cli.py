@@ -807,6 +807,31 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
                 print("  ✗ scripts/tier2.py failed to compile the Tier 2 rulings index")
                 all_passed = False
 
+    # 2f. Digest type keys check (Design 007)
+    digest_type_rc = _run_script(
+        "generate_digests.py",
+        ["--repo-root", str(vault), "--migrate-type", "--dry-run"],
+        quiet=True,
+    )
+    if digest_type_rc == 0:
+        print("  ✓ Digest type keys")
+    elif digest_type_rc == 127:
+        print("  ✗ Bundled scripts/generate_digests.py not found")
+        all_passed = False
+    elif fix:
+        migrate_rc = _run_script(
+            "generate_digests.py",
+            ["--repo-root", str(vault), "--migrate-type"],
+        )
+        if migrate_rc == 0:
+            print("  ✓ Digest type keys migrated to canonical 'type'")
+        else:
+            print("  ⚠ Digest type conflicts need manual edits")
+            all_passed = False
+    else:
+        print("  ⚠ Legacy digest type keys (run oude doctor --fix)")
+        all_passed = False
+
     # 3. Check catalog.json local cache and engine version
     catalog_path = vault / ".agents" / "context" / "catalog.json"
     engine_ver = None
@@ -910,20 +935,28 @@ def _doctor(target_path: Optional[Path] = None, fix: bool = False) -> int:
     return 0 if all_passed else 1
 
 
-def _run_script(script_name: str, extra_args: List[str]) -> int:
+def _run_script(script_name: str, extra_args: List[str], quiet: bool = False) -> int:
     """Execute a pass-through procedural script with PYTHONPATH set to scripts/."""
     scripts_dir = resolve_asset_dir("scripts")
     script_path = scripts_dir / script_name
 
     if not script_path.is_file():
         print(f"Error: Script '{script_name}' not found at {script_path}", file=sys.stderr)
-        return 1
+        return 127
 
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{scripts_dir}:{env.get('PYTHONPATH', '')}"
 
     cmd = [sys.executable, str(script_path)] + extra_args
-    result = subprocess.run(cmd, env=env)
+    if quiet:
+        result = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        result = subprocess.run(cmd, env=env)
     return result.returncode
 
 

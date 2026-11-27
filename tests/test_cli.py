@@ -1557,6 +1557,8 @@ class TestOudeCLI(unittest.TestCase):
 
         def make_fake_run(rm_returncode=0, rm_stderr=""):
             def fake_run(cmd, **kwargs):
+                if len(cmd) >= 2 and str(cmd[1]).endswith("generate_digests.py"):
+                    return MagicMock(returncode=0, stdout="", stderr="")
                 if "ls-files" in cmd and "--error-unmatch" in cmd:
                     return MagicMock(returncode=1, stdout="", stderr="")
                 if "ls-files" in cmd and "-z" in cmd:
@@ -1686,6 +1688,113 @@ class TestOudeCLI(unittest.TestCase):
             self.assertEqual(rc_fix, 1, "invalid rulings must fail doctor --fix")
             self.assertIn("tier2.py", fake_out.getvalue())
         self.assertFalse((self.target_dir / "_gm-materials" / ".cache" / "tier2.json").exists())
+
+    def test_doctor_warns_and_fixes_legacy_digest_type_keys(self):
+        """Legacy digest entity_type warns and exits 1 in doctor; --fix migrates to canonical type."""
+        self._write_healthy_vault()
+        digest_path = self.target_dir / "_gm-materials" / "digests" / "book" / "npc.md"
+        digest_path.parent.mkdir(parents=True, exist_ok=True)
+        digest_path.write_text(
+            "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n",
+            encoding="utf-8",
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 1)
+            self.assertIn("Legacy digest type keys (run oude doctor --fix)", fake_out.getvalue())
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 0)
+            self.assertIn("Digest type keys migrated to canonical 'type'", fake_out.getvalue())
+
+        migrated = digest_path.read_text(encoding="utf-8")
+        self.assertIn("type: people", migrated)
+        self.assertNotIn("entity_type", migrated)
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            self.assertEqual(cli._doctor(self.target_dir), 0)
+            self.assertIn("Digest type keys", fake_out.getvalue())
+
+    def test_doctor_reports_digest_type_conflicts(self):
+        """Conflicting type/entity_type keys make doctor --fix fail loudly without altering the note."""
+        self._write_healthy_vault()
+        digest_path = self.target_dir / "_gm-materials" / "digests" / "book" / "conflict.md"
+        digest_path.parent.mkdir(parents=True, exist_ok=True)
+        raw = "---\nsource: book\ntier: 3\ntype: faction\nentity_type: location\ntitle: C\n---\n\n# C\n\nBody.\n"
+        digest_path.write_text(raw, encoding="utf-8")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_fix = cli._doctor(self.target_dir, fix=True)
+            self.assertEqual(rc_fix, 1)
+            self.assertIn("Digest type conflicts need manual edits", fake_out.getvalue())
+        self.assertEqual(digest_path.read_text(encoding="utf-8"), raw)
+
+    def test_doctor_skips_digest_type_check_when_digests_dir_absent(self):
+        """Absent _gm-materials/digests/ passes cleanly without warning or failing."""
+        self._write_healthy_vault()
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc = cli._doctor(self.target_dir)
+            self.assertEqual(rc, 0)
+            self.assertIn("Digest type keys", fake_out.getvalue())
+
+    def test_doctor_vault_flag_migrates_target_vault_not_cwd(self):
+        """oude doctor --vault <other> --fix migrates <other>, leaving CWD untouched."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd_vault = Path(tmp) / "cwd_vault"
+            other_vault = Path(tmp) / "other_vault"
+            legacy_note = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: NPC\n---\n\n# NPC\n\nBody.\n"
+
+            for vault in (cwd_vault, other_vault):
+                with patch.object(cli, "_enable_auto_branch_deletion", return_value=True), \
+                     patch.object(cli, "_install_skills", return_value=0):
+                    cli._init_repository(vault)
+                (vault / ".agents" / "context" / "catalog.json").write_text(
+                    json.dumps({"engine_version": cli.__version__, "total_entries": 1}),
+                    encoding="utf-8",
+                )
+                note = vault / "_gm-materials" / "digests" / "book" / "npc.md"
+                note.parent.mkdir(parents=True, exist_ok=True)
+                note.write_text(legacy_note, encoding="utf-8")
+
+            prev_cwd = Path.cwd()
+            try:
+                os.chdir(cwd_vault)
+                with patch("sys.stdout", new=io.StringIO()):
+                    rc = cli.main(["doctor", "--vault", str(other_vault), "--fix"])
+            finally:
+                os.chdir(prev_cwd)
+
+            self.assertEqual(rc, 0)
+            other_text = (other_vault / "_gm-materials" / "digests" / "book" / "npc.md").read_text(encoding="utf-8")
+            cwd_text = (cwd_vault / "_gm-materials" / "digests" / "book" / "npc.md").read_text(encoding="utf-8")
+            self.assertIn("type: people", other_text)
+            self.assertNotIn("entity_type", other_text)
+            self.assertEqual(cwd_text, legacy_note)
+
+    def test_doctor_digest_type_dry_run_is_quiet_and_reports_missing_script(self):
+        """Dry-run probe runs quietly (DEVNULL), and missing generate_digests.py returns 127 and fails clearly."""
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_sub:
+            rc = cli._run_script("generate_digests.py", ["--help"], quiet=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stdout"), subprocess.DEVNULL)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stderr"), subprocess.DEVNULL)
+
+        with patch("sys.stderr", new=io.StringIO()) as fake_err:
+            rc_missing = cli._run_script("definitely_missing_script_xyz.py", [])
+        self.assertEqual(rc_missing, 127)
+        self.assertIn("not found", fake_err.getvalue())
+
+        self._write_healthy_vault()
+        with patch.object(cli, "_run_script", return_value=127) as mock_run_script, \
+             patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_doc = cli._doctor(self.target_dir)
+        self.assertEqual(rc_doc, 1)
+        out = fake_out.getvalue()
+        self.assertIn("Bundled scripts/generate_digests.py not found", out)
+        self.assertNotIn("Legacy digest type keys", out)
+        self.assertEqual(mock_run_script.call_args.kwargs.get("quiet"), True)
 
 
 class TestDependabotGuard(unittest.TestCase):

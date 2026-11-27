@@ -4,6 +4,9 @@
 * **Status:** Accepted (2026-11-17; Stage A implemented in v0.6.1 via PR #43)
 * **Date:** 2026-11-15
 
+> [!NOTE]
+> Amended 2026-11-25 by [Design 007](007_unified_type_key_for_digests.md): digest notes and `references.json` use `type` (values `index | people | faction | location | creature | artefact | mechanic | table | reference | other`); `entity_type` is a deprecated alias.
+
 ***
 
 ## Overview

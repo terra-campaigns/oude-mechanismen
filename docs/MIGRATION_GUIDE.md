@@ -142,6 +142,23 @@ oude lint-wiki           # Gate 3: schema, supersession DAG (directed acyclic gr
 
 Already-pushed public Git history containing `.agents/context/decisions.md` in `charged`/`hostile` is accepted as-is; no history rewrite is performed. The read-only fallback in `scripts/tier2.py:load_active_rulings_text()` keeps un-migrated vaults working until the split completes.
 
+## Migrating Legacy Digest `entity_type` Keys
+
+[Design 007](designs/007_unified_type_key_for_digests.md) unifies digest front matter classification on `type` (values `index | people | faction | location | creature | artefact | mechanic | table | reference | other`, aligning `person` to `people` and adding `reference`).
+
+1. **Single-writer Obsidian Sync precondition:** run the migration on **one** workstation only (`ryu` or `artemis`, after Step 1's backup snapshot) and let Obsidian Sync propagate the updated `_gm-materials/digests/` notes before running on the second machine. If concurrent edits create a `*conflicted copy*.md` file, delete the duplicate conflict copy once reconciled and re-run `oude digest`.
+2. **Migrate, re-index, and validate:**
+
+```bash
+oude doctor --fix                      # rewrites legacy entity_type keys to canonical type (reports conflicts)
+oude digest                            # recompiles .agents/context/references.json with canonical "type"
+oude digest --validate _gm-materials/digests
+```
+
+3. **Local / self-hosted `oude doctor` exit-1 note:** standard public vault Continuous Integration (CI) skips the check when `_gm-materials/digests/` is absent, whereas local hooks or self-hosted runners mounting `_gm-materials/` will exit `1` until `oude doctor --fix` finishes. Unmigrated `entity_type` notes still pass `oude digest --validate` with a non-fatal `[WARN]`.
+4. **Immediate `.agents/context/references.json` field rename:** `compile_references()` immediately emits `"type"` instead of `"entity_type"` (and omits `"type"` with a stderr `[WARN]` when absent or invalid). Update any vault-local script reading `entry["entity_type"]` to read `entry["type"]`.
+5. **Rollback:** downgrading the engine restores `entity_type` validation and rejects migrated `type:` notes; roll back from your Step 1 snapshot if reverting.
+
 ## Troubleshooting
 
 | Symptom | Fix |

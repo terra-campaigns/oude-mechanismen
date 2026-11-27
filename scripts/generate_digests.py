@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -94,6 +95,28 @@ def find_drive_dir(repo_root: Path, explicit_drive_dir: Optional[str] = None) ->
     raise FileNotFoundError(f"Repository root '{repo_root}' does not exist or is not a directory.")
 
 
+FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
+VALID_DIGEST_TYPES = {
+    "index",
+    "people",
+    "faction",
+    "location",
+    "creature",
+    "artefact",
+    "mechanic",
+    "table",
+    "reference",
+    "other",
+}
+LEGACY_TYPE_VALUES = {"person": "people"}
+_TYPE_KEY_LINE_RE = re.compile(r"^type[ \t]*:", re.MULTILINE)
+_ENTITY_TYPE_KEY_LINE_RE = re.compile(r"^entity_type[ \t]*:", re.MULTILINE)
+_ENTITY_TYPE_LINE_RE = re.compile(
+    r'^entity_type(?P<colon>[ \t]*:[ \t]*)(?P<q>["\']?)(?P<val>[^"\'#\r\n]*?)(?P=q)(?P<rest>[ \t]*(?:#[^\r\n]*)?)(?P<eol>\r?\n|$)',
+    re.MULTILINE,
+)
+
+
 def _parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, str, Optional[str]]:
     """Split leading YAML frontmatter from *content*.
 
@@ -103,7 +126,7 @@ def _parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, str
     """
     if not content.startswith("---"):
         return None, "", content, "missing YAML frontmatter block"
-    fm_match = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", content, flags=re.DOTALL)
+    fm_match = FRONTMATTER_BLOCK_RE.match(content)
     if not fm_match:
         return None, "", content, "malformed frontmatter delimiters"
     try:
@@ -113,6 +136,53 @@ def _parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str, str
     if not isinstance(loaded, dict):
         return None, "", content, f"frontmatter must be a YAML mapping, got {type(loaded).__name__}"
     return loaded, content[: fm_match.end()], content[fm_match.end() :], None
+
+
+def _find_duplicate_type_key(raw_block: str) -> Optional[str]:
+    """Return the offending key name if column-0 type: or entity_type: appears more than once."""
+    if len(_TYPE_KEY_LINE_RE.findall(raw_block)) > 1:
+        return "type"
+    if len(_ENTITY_TYPE_KEY_LINE_RE.findall(raw_block)) > 1:
+        return "entity_type"
+    return None
+
+
+def _canonical_type(frontmatter: Dict[str, Any], raw_block: str = "") -> Tuple[Optional[str], str]:
+    """Resolve canonical digest type and state from parsed frontmatter and raw block.
+
+    Returns (value_or_None, state) where state is one of:
+    'canonical', 'legacy', 'both_agree', 'both_conflict', 'duplicate_key', 'invalid', 'missing'.
+    """
+    if raw_block and _find_duplicate_type_key(raw_block) is not None:
+        return None, "duplicate_key"
+
+    has_type = "type" in frontmatter
+    has_legacy = "entity_type" in frontmatter
+    if not has_type and not has_legacy:
+        return None, "missing"
+
+    canon_type: Optional[str] = None
+    if has_type:
+        raw_type = frontmatter["type"]
+        if not isinstance(raw_type, str) or not raw_type.strip():
+            return None, "invalid"
+        canon_type = raw_type.strip()
+
+    mapped_legacy: Optional[str] = None
+    if has_legacy:
+        raw_legacy = frontmatter["entity_type"]
+        if not isinstance(raw_legacy, str) or not raw_legacy.strip():
+            return None, "invalid"
+        stripped_legacy = raw_legacy.strip()
+        mapped_legacy = LEGACY_TYPE_VALUES.get(stripped_legacy, stripped_legacy)
+
+    if has_type and not has_legacy:
+        return canon_type, "canonical"
+    if has_legacy and not has_type:
+        return mapped_legacy, "legacy"
+    if canon_type == mapped_legacy:
+        return canon_type, "both_agree"
+    return None, "both_conflict"
 
 
 def _normalise_source_pdf(raw_src: Optional[str], drive_dir: Path) -> Optional[str]:
@@ -292,7 +362,15 @@ def compile_references(repo_root: Path, drive_dir: Path, clean_headings: bool = 
             "digest_exists": True,
             "sections": sections,
         }
-        for opt_key in ("entity_type", "pages", "tags", "source"):
+        resolved_type, type_state = _canonical_type(frontmatter, fm_prefix)
+        if resolved_type in VALID_DIGEST_TYPES:
+            entry["type"] = resolved_type
+        else:
+            print(
+                f"[WARN] {digest_path}: omitting 'type' in references.json (state={type_state})",
+                file=sys.stderr,
+            )
+        for opt_key in ("pages", "tags", "source"):
             if opt_key in frontmatter and frontmatter[opt_key] is not None:
                 entry[opt_key] = frontmatter[opt_key]
 
@@ -971,7 +1049,6 @@ def extract_pdf(
     return manifest_path
 
 
-VALID_ENTITY_TYPES = {"index", "faction", "location", "person", "creature", "artefact", "mechanic", "table", "other"}
 LINK_EXCLUDED_DIRS = {".git", "_site", "vendor"}
 DIGEST_LINK_RE = re.compile(r'(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
@@ -983,14 +1060,14 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
     """Validate digest notes against hard invariants; return 0 on pass, 1 on any failure.
 
     Hard invariants: YAML-mapping frontmatter with non-empty 'source' and 'title', 'tier' == 3,
-    'entity_type' in VALID_ENTITY_TYPES, a portable (non-absolute) 'source_pdf' when present, and
-    every 'related:' entry resolving like a body link; no [[wikilinks]] outside fenced code blocks;
-    a blank line immediately after every Markdown heading (outside fenced code blocks); every
-    relative Markdown link resolves to an existing file inside the repository root (or *digest_dir*
-    when validating external staging) and outside LINK_EXCLUDED_DIRS. When *manifest* records
-    'total_pages', frontmatter 'pages:' and inline [p. N]/[pp. A-B] citations must stay within
-    1..total_pages. Nested book wikis with an _index.md get a non-fatal [WARN] for orphan notes.
-    Soft sizing stays non-fatal [INFO] output.
+    'type' in VALID_DIGEST_TYPES (deprecated 'entity_type' emits a non-fatal [WARN]), a portable
+    (non-absolute) 'source_pdf' when present, and every 'related:' entry resolving like a body link;
+    no [[wikilinks]] outside fenced code blocks; a blank line immediately after every Markdown
+    heading (outside fenced code blocks); every relative Markdown link resolves to an existing file
+    inside the repository root (or *digest_dir* when validating external staging) and outside
+    LINK_EXCLUDED_DIRS. When *manifest* records 'total_pages', frontmatter 'pages:' and inline
+    [p. N]/[pp. A-B] citations must stay within 1..total_pages. Nested book wikis with an _index.md
+    get a non-fatal [WARN] for orphan notes. Soft sizing stays non-fatal [INFO] output.
     """
     repo_root = repo_root.resolve()
     digest_dir = digest_dir.resolve()
@@ -1073,8 +1150,18 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
                 errors.append(f"{rel}:1: frontmatter 'source' must be a non-empty string")
             if loaded.get("tier") != 3:
                 errors.append(f"{rel}:1: frontmatter 'tier' must equal 3")
-            if loaded.get("entity_type") not in VALID_ENTITY_TYPES:
-                errors.append(f"{rel}:1: frontmatter 'entity_type' must be one of {sorted(VALID_ENTITY_TYPES)}")
+            resolved_type, type_state = _canonical_type(loaded, fm_prefix)
+            if type_state == "duplicate_key":
+                dup_key = _find_duplicate_type_key(fm_prefix) or "type"
+                errors.append(f"{rel}:1: duplicate frontmatter key '{dup_key}'; keep a single 'type'")
+            elif type_state == "both_conflict":
+                errors.append(f"{rel}:1: frontmatter 'type' and legacy 'entity_type' disagree; keep only 'type'")
+            elif type_state in ("invalid", "missing") or resolved_type not in VALID_DIGEST_TYPES:
+                errors.append(f"{rel}:1: frontmatter 'type' must be one of {sorted(VALID_DIGEST_TYPES)}")
+            elif type_state == "legacy":
+                print(f"[WARN] {rel}:1: legacy 'entity_type' key; run 'oude doctor --fix' to migrate to 'type'")
+            elif type_state == "both_agree":
+                print(f"[WARN] {rel}:1: redundant legacy 'entity_type' key; run 'oude doctor --fix' to remove it")
             if not (isinstance(loaded.get("title"), str) and loaded["title"].strip()):
                 errors.append(f"{rel}:1: frontmatter 'title' must be a non-empty string")
             source_pdf = loaded.get("source_pdf")
@@ -1171,18 +1258,141 @@ def validate_digests(repo_root: Path, digest_dir: Path, manifest: Optional[str] 
     return 0
 
 
+def migrate_digest_types(drive_dir: Path, dry_run: bool = False) -> int:
+    """Migrate legacy 'entity_type' frontmatter keys to canonical 'type' under _gm-materials/digests/."""
+    digests_dir = drive_dir / "_gm-materials" / "digests"
+    if not digests_dir.is_dir():
+        print(f"[MIGRATE] No _gm-materials/digests directory found at {digests_dir}; skipping.")
+        return 0
+
+    digests_root_resolved = digests_dir.resolve()
+    md_files = sorted(digests_dir.rglob("*.md"), key=lambda p: p.as_posix())
+    migrated = 0
+    already_canonical = 0
+    no_frontmatter = 0
+    conflicts: List[str] = []
+
+    for md_file in md_files:
+        try:
+            rel_display = md_file.relative_to(drive_dir).as_posix()
+        except ValueError:
+            rel_display = str(md_file)
+
+        if md_file.is_symlink():
+            conflicts.append(f"{rel_display}: symlinked digest file is not migrated")
+            continue
+
+        resolved_md = md_file.resolve()
+        if digests_root_resolved not in resolved_md.parents:
+            conflicts.append(f"{rel_display}: digest path resolves outside _gm-materials/digests")
+            continue
+
+        with open(md_file, "r", encoding="utf-8", newline="") as fh:
+            content = fh.read()
+
+        fm_match = FRONTMATTER_BLOCK_RE.match(content)
+        if fm_match is None:
+            if content.startswith("---"):
+                conflicts.append(f"{rel_display}: malformed frontmatter delimiters")
+                continue
+            no_frontmatter += 1
+            continue
+
+        raw_block = fm_match.group(0)
+        rest_of_file = content[fm_match.end() :]
+        loaded, _, _, fm_err = _parse_frontmatter(content)
+        if fm_err is not None or loaded is None:
+            conflicts.append(f"{rel_display}: {fm_err}")
+            continue
+
+        resolved_type, state = _canonical_type(loaded, raw_block)
+        if state in ("duplicate_key", "invalid", "both_conflict"):
+            conflicts.append(f"{rel_display}: cannot auto-migrate ({state})")
+            continue
+        if state == "missing":
+            continue
+        if state == "canonical":
+            if resolved_type in VALID_DIGEST_TYPES:
+                already_canonical += 1
+            continue
+
+        if resolved_type not in VALID_DIGEST_TYPES:
+            conflicts.append(f"{rel_display}: unsupported type value {resolved_type!r}")
+            continue
+
+        matches = list(_ENTITY_TYPE_LINE_RE.finditer(raw_block))
+        if len(matches) != 1:
+            conflicts.append(f"{rel_display}: expected 1 column-0 entity_type line, found {len(matches)}")
+            continue
+        m = matches[0]
+        if m.group("val").strip() != loaded["entity_type"].strip():
+            conflicts.append(f"{rel_display}: raw entity_type line disagrees with YAML value")
+            continue
+
+        if state == "legacy":
+            replacement = (
+                f"type{m.group('colon')}{m.group('q')}{resolved_type}{m.group('q')}"
+                f"{m.group('rest')}{m.group('eol')}"
+            )
+            new_block = raw_block[: m.start()] + replacement + raw_block[m.end() :]
+        else:
+            new_block = raw_block[: m.start()] + raw_block[m.end() :]
+
+        new_content = new_block + rest_of_file
+        migrated += 1
+
+        if not dry_run:
+            tmp_path = md_file.parent / f".{md_file.name}.{os.getpid()}.tmp"
+            mode = stat.S_IMODE(md_file.stat().st_mode)
+            try:
+                with open(tmp_path, "w", encoding="utf-8", newline="") as fh:
+                    fh.write(new_content)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.chmod(tmp_path, mode)
+                os.replace(tmp_path, md_file)
+                # Fsync parent directory after os.replace so the directory rename is durable on POSIX.
+                try:
+                    dir_fd = os.open(str(md_file.parent), os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:
+                    pass
+            except BaseException:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+
+    mode_tag = " (dry-run)" if dry_run else ""
+    print(
+        f"[MIGRATE]{mode_tag} {migrated} migrated, {len(conflicts)} conflict(s), "
+        f"{already_canonical} already canonical, {no_frontmatter} no front matter"
+    )
+    for item in conflicts:
+        print(f"[CONFLICT] {item}")
+
+    if dry_run:
+        return 1 if (migrated > 0 or conflicts) else 0
+    return 1 if conflicts else 0
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index, scaffold digests, extract PDF slices, or validate digests.")
+    parser = argparse.ArgumentParser(description="Compile Tier 3 reference index, scaffold digests, extract PDF slices, validate, or migrate digests.")
     parser.add_argument("--repo-root", "--repo-dir", dest="repo_root", type=str, default=None, help="Path to campaign repository (defaults to CWD)")
     parser.add_argument("--drive-dir", type=str, default=None, help="Path to the campaign materials directory")
     parser.add_argument("--clean-headings", action="store_true", help="Ensure empty blank line after headings in digests")
-    parser.add_argument("--scaffold", type=str, default=None, metavar="PDF_PATH", help="Scaffold a new Tier 3 Markdown digest from an explicit PDF path")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--scaffold", type=str, default=None, metavar="PDF_PATH", help="Scaffold a new Tier 3 Markdown digest from an explicit PDF path")
     parser.add_argument("--source-pdf", type=str, default=None, help="Portable identifier recorded as source_pdf for a scaffolded digest")
     parser.add_argument("--slug", type=str, default=None, help="Custom slug/filename for scaffolded digest")
     parser.add_argument("--category", type=str, default=None, help="Category for scaffolded digest (core_setting, supplement, module, rules, bestiary)")
     parser.add_argument("--depth", type=int, default=1, help="Maximum outline depth to extract (default: 1 for top-level chapters)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing digest file during scaffolding")
-    parser.add_argument("--extract", type=str, default=None, metavar="PDF_PATH", help="Extract bounded page-tagged slices from an explicit PDF plus manifest.json")
+    mode_group.add_argument("--extract", type=str, default=None, metavar="PDF_PATH", help="Extract bounded page-tagged slices from an explicit PDF plus manifest.json")
     parser.add_argument("--format", choices=["auto", "text", "pdf"], default="auto", help="Slice format for --extract (default: auto with low-density pdf fallback)")
     parser.add_argument("--out-dir", type=str, default=None, help="Output directory for --extract slices (default: <tempdir>/oude-extract/<slug>)")
     parser.add_argument("--max-depth", type=int, default=1, help="Maximum outline depth for --extract (default: 1)")
@@ -1191,9 +1401,14 @@ def main():
     parser.add_argument("--max-bytes", type=int, default=38000, help="Maximum bytes per text slice under --extract (default: 38000)")
     parser.add_argument("--min-chars-per-page", type=int, default=DEFAULT_MIN_CHARS_PER_PAGE, help=f"Auto-fallback threshold for --extract --format auto (default: {DEFAULT_MIN_CHARS_PER_PAGE})")
     parser.add_argument("--pages", type=str, default=None, metavar="RANGES", help="Restrict --extract to page ranges (e.g. '209-211,261'); merges into an existing manifest, replacing those pages' slices")
-    parser.add_argument("--validate", nargs="?", const="", default=None, metavar="DIGEST_DIR", help="Validate digest notes against hard invariants (default dir: <drive_dir>/_gm-materials/digests)")
+    mode_group.add_argument("--validate", nargs="?", const="", default=None, metavar="DIGEST_DIR", help="Validate digest notes against hard invariants (default dir: <drive_dir>/_gm-materials/digests)")
     parser.add_argument("--manifest", type=str, default=None, help="manifest.json from --extract, used by --validate for auto-fallback telemetry")
+    mode_group.add_argument("--migrate-type", action="store_true", help="Migrate legacy 'entity_type' digest frontmatter keys to canonical 'type'")
+    parser.add_argument("--dry-run", action="store_true", help="Preview --migrate-type changes without modifying files (exits 1 if changes or conflicts exist)")
     args = parser.parse_args()
+
+    if args.dry_run and not args.migrate_type:
+        parser.error("--dry-run requires --migrate-type")
 
     repo_root = find_repo_root(args.repo_root)
     drive_dir = find_drive_dir(repo_root, args.drive_dir)
@@ -1228,6 +1443,8 @@ def main():
             force=args.force,
             source_pdf=args.source_pdf
         )
+    elif args.migrate_type:
+        raise SystemExit(migrate_digest_types(drive_dir, dry_run=args.dry_run))
     else:
         compile_references(repo_root, drive_dir, clean_headings=args.clean_headings)
 
