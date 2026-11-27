@@ -26,7 +26,7 @@ Perform progressive, token-efficient context lookups across all tiers of campaig
 ### 3. Consult Tier 3 Reference Digests (When Needed)
 
 - If the topic relates to unvisited sectors/trail stations, weird rules, external sourcebooks, or general setting lore not yet found in Tier 1:
-  1. Inspect `.agents/context/references.json` to find the relevant source (`source` field, plus `slug`) and section (`digest_path` under `_gm-materials/digests/`). When several books share entity names, match on `source` to disambiguate.
+  1. Inspect `.agents/context/references.json` (if absent on a fresh clone, run `oude digest` to regenerate it from `_gm-materials/digests/`) to find the relevant source (`source` field, plus `slug`) and section (`digest_path` under `_gm-materials/digests/`). When several books share entity names, match on `source` to disambiguate.
   2. Follow the progressive 3-hop workflow: `references.json` entry → the book's `_index.md` hub or the targeted entity note via its relative `digest_path` → annotated relative links only when the annotation justifies the hop (`[Label](../category/entity.md) — reason`).
   3. Only inspect raw source PDFs if exact table entries or art details on a specific cited page (`[p. X]`) are strictly needed.
 

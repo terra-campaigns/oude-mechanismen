@@ -81,11 +81,12 @@ cd ~/Repos/<campaign>
 ob sync-setup --vault "<obsidian-vault-name>"
 ob sync-config --configs "" --file-types image,audio,video,pdf --excluded-folders "_site,vendor,.jekyll-cache,.sass-cache,.bundle,.githooks,.agents,bin,_data"
 ob sync
+oude digest                 # regenerates local .agents/context/references.json from synced _gm-materials/digests/
 ```
 
 > **Why `--file-types` and `--excluded-folders` matter:** Leaving `unsupported` enabled lets Obsidian Sync restore old `.html`, `.json`, `.py`, and `.rb` ghost files from remote vault history, while omitting `vendor` causes `./vendor/bundle` (if ever created) to synchronise thousands of gem files across machines.
 
-Enable Obsidian Sync on both machines pointing at the vault; `_gm-materials/` syncs encrypted peer-to-peer and stays out of Git.
+Enable Obsidian Sync on both machines pointing at the vault; `_gm-materials/` syncs encrypted peer-to-peer and stays out of Git. Because `.agents` is excluded from Obsidian Sync and `.agents/context/references.json` is gitignored, running `oude digest` after `ob sync` regenerates the local Tier 3 routing index on the secondary workstation.
 
 ## Step 7 — LAN preview smoke check
 

@@ -134,7 +134,7 @@ When searching for lore, locations, NPCs, or mechanics:
 1. Never read all markdown notes or large reference PDFs in bulk.
 2. Use the `lookup-context` skill or consult `.agents/context/catalog.json` first to identify target entities and line ranges.
 3. Open only the identified note using targeted line-range reads.
-4. For external rules or lore, consult `_gm-materials/digests/` via `.agents/context/references.json` before opening raw PDFs.
+4. For external rules or lore, consult `_gm-materials/digests/` via `.agents/context/references.json` (if absent on a fresh clone, run `oude digest` to regenerate it) before opening raw PDFs.
 
 ---
 

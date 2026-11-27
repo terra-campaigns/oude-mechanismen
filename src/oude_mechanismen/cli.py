@@ -423,9 +423,10 @@ def _append_jekyll_exclude(config_content: str, entry: str = "_gm-materials") ->
 
 
 def _has_gitignore_entry(gitignore_content: str, entry: str = "_gm-materials") -> bool:
-    """Return True if *entry* is present in .gitignore."""
+    """Return True if *entry* is present in .gitignore (per gitignore(5) syntax)."""
     base = re.escape(entry.rstrip("/"))
-    return bool(re.search(rf"(?m)^/?{base}/?[ \t]*(?:#[^\r\n]*)?\r?$", gitignore_content))
+    # gitignore(5) ignores unescaped trailing ASCII spaces only; trailing '#' is literal pattern text.
+    return bool(re.search(rf"(?m)^/?{base}/? *\r?$", gitignore_content))
 
 
 def _gemfile_pins_engine_via_git(gemfile_content: str) -> bool:

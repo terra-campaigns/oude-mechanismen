@@ -910,6 +910,34 @@ class TestOudeCLI(unittest.TestCase):
             ),
             "dotted entries must be regex-escaped (no wildcard false positive)",
         )
+        self.assertTrue(
+            cli._has_gitignore_entry(
+                "/.agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "leading slash anchored gitignore entry must match",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "# .agents/context/references.json\n",
+                ".agents/context/references.json",
+            ),
+            "full-line comment must not satisfy gitignore entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n.agents/context/references.json # derived cache\n",
+                ".agents/context/references.json",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy entry",
+        )
+        self.assertFalse(
+            cli._has_gitignore_entry(
+                "_site/\n_gm-materials/ # private\n",
+                "_gm-materials/",
+            ),
+            "trailing '#' is literal text in gitignore(5) and must not satisfy directory entry",
+        )
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
 
@@ -1441,6 +1469,20 @@ class TestOudeCLI(unittest.TestCase):
         self.assertNotEqual(ls_res.returncode, 0, "references.json should no longer be tracked in Git index")
         with patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(cli._doctor(self.target_dir), 0)
+
+    def test_default_gitignore_includes_all_required_entries(self):
+        """Verify every REQUIRED_GITIGNORE_ENTRIES item appears uncommented in DEFAULT_GITIGNORE."""
+        default_lines = cli.DEFAULT_GITIGNORE.splitlines()
+        for entry in cli.REQUIRED_GITIGNORE_ENTRIES:
+            self.assertIn(
+                entry,
+                default_lines,
+                f"DEFAULT_GITIGNORE must carry an uncommented line for {entry}",
+            )
+            self.assertTrue(
+                cli._has_gitignore_entry(cli.DEFAULT_GITIGNORE, entry),
+                f"_has_gitignore_entry must recognise {entry} in DEFAULT_GITIGNORE",
+            )
 
 
 
