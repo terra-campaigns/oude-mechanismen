@@ -170,6 +170,14 @@ When adding a new procedural skill to `skills/<skill-name>/`:
 2. **`main` is release-only**: `main` receives ONLY release-cut Pull Requests (from `develop`) carrying the `VERSION` bump and the dated `CHANGELOG.md` section; merge via PR, then tag the merged `main` commit as `vX.Y.Z` and publish the release.
 3. **Transition note**: the first PRs landed directly on `main` ahead of a release and shipped together in the next tagged version. From the two-branch flow onward, all unreleased work goes to `develop`; `main` stays exactly at tagged releases. Pull Requests already open against `main` when this flow was introduced may still merge to `main`; otherwise retarget them to `develop`.
 
+### Release-Cut Checklist
+
+1. Cut a `release/vX.Y.Z` branch from an up-to-date `develop`.
+2. Bump `VERSION`, `src/oude_mechanismen/__init__.py` fallback, `lib/oude_mechanismen/version.rb` fallback, and `templates/jekyll/Gemfile.template` `tag: "vX.Y.Z"` together (guarded by `test_version_synchronisation_across_package_gem_and_templates`).
+3. Move `## [Unreleased]` entries into a dated `## [X.Y.Z] - YYYY-MM-DD` section in `CHANGELOG.md` and update the bottom `[Unreleased]` and `[X.Y.Z]` comparison links.
+4. Open a Pull Request targeting `main` listing `Closes #...` for every open GitHub issue resolved in the release (GitHub auto-closes issues only on merge to the default branch `main`), confirm `validate` CI succeeds, and request human merge.
+5. After human merge to `main`: tag the merged `main` commit `vX.Y.Z`, publish the GitHub Release, and sync `main` back into `develop` via a `chore/sync-develop-vX.Y.Z` Pull Request.
+
 ### Branch Protection (GitHub Rulesets)
 
 The two-branch flow is enforced by repository [rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets), whose definitions are committed in `.github/rulesets/` for audit and reproduction:
