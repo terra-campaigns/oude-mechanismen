@@ -59,12 +59,12 @@ First ensure the vault consumes the `oude-mechanismen` RubyGem: `Gemfile` pins `
 Then run:
 
 ```bash
-oude doctor --fix           # repairs .gitignore (_gm-materials/, .agents/context/catalog.json, .agents/context/rolling_glossary.md) / _config.yml exclude:, untracks derived caches if committed, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, deprecated all-content.md, and refreshes local catalog.json
+oude doctor --fix           # repairs .gitignore (_gm-materials/, .agents/context/catalog.json, .agents/context/rolling_glossary.md, .agents/context/references.json, _gm-materials/.cache/tier2.json) / _config.yml exclude:, untracks derived caches if committed, deletes legacy .agents/scripts/ runners and shadowing _plugins/, _includes/, deprecated all-content.md, and refreshes local catalog.json
 oude audit                  # coverage & gap report
 bundle exec jekyll build    # Tier 1 local catalogue cache compiles with zero errors (use bundle3.3 on Debian 13 if unlinked)
 ```
 
-Verify all four `_gm-materials/` exclusion layers from ADR 003 hold: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths (audited by `oude doctor --fix`). Also confirm `.agents/context/catalog.json` and `.agents/context/rolling_glossary.md` are gitignored and untracked (if upgrading manually from an older vault where either was committed, run `git rm --cached --ignore-unmatch .agents/context/catalog.json .agents/context/rolling_glossary.md`, and ensure any local `.git/hooks/pre-commit` script does **not** stage either derived cache).
+Verify all four `_gm-materials/` exclusion layers from ADR 003 hold: `.gitignore`, `_config.yml` `exclude:`, the gem's `data_extractor.rb` filter, and updated script/skill/template paths (audited by `oude doctor --fix`). Also confirm `.agents/context/catalog.json`, `.agents/context/rolling_glossary.md`, and `.agents/context/references.json` are gitignored and untracked (if upgrading manually from an older vault where any of them was committed, run `git rm --cached --ignore-unmatch .agents/context/catalog.json .agents/context/rolling_glossary.md .agents/context/references.json`, and ensure any local `.git/hooks/pre-commit` script does **not** stage any derived cache).
 
 ## Step 6 — Commit and clone on the secondary workstation
 

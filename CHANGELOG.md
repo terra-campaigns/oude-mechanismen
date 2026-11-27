@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `catalog_sha` in `_gm-materials/.cache/tier2.json` now hashes the canonical `id`→`path` projection of `catalog.json` instead of its raw bytes, so volatile fields (`generated`, `engine_version`, the rewritten `rolling_glossary.md` entry) no longer flag the index stale; id-affecting rebuilds still do (#120).
 - **Unified `type` front matter key across Tier 1 notes and Tier 3 digests (`#115`, `#125`)**: aligned Tier 3 digest classification on `type` with vocabulary `index | people | faction | location | creature | artefact | mechanic | table | reference | other` (`person` → `people`, `reference` added); `compile_references()` in `scripts/generate_digests.py` now writes `"type"` only into `.agents/context/references.json` (immediate field rename from `"entity_type"`) and prints a stderr `[WARN]` while omitting `"type"` when absent or invalid; added line-level atomic `oude digest --migrate-type [--dry-run]`, mutually exclusive CLI mode flags (`--dry-run` requires `--migrate-type`), and the `Digest type keys` check in `oude doctor` / `oude doctor --fix`.
+- **`.agents/context/references.json` classified as a gitignored derived cache (`#118`)**: kept `.agents/context/references.json` at its existing path and added it to `DERIVED_CACHE_FILES`, `DEFAULT_GITIGNORE`, and `oude doctor` / `oude doctor --fix` untracking guards so private `_gm-materials/digests/` titles and headings are never leaked into public Git repositories.
 
 ### Deprecated
 
