@@ -9,15 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-27
+
+### Added
+
+- **Tier 2 rulings & faction-turn engine — Design 006 (`#117`, `#120`, `#123`)**: added the `oude tier2` CLI command and compiler (`scripts/tier2.py`) validating structured GM rulings and faction-turn notes in `_gm-materials/rulings/` (`R-NNN` identifiers, `active | superseded | retracted | promoted` lifecycle, supersession DAG cycle/dangling validation, private actor `opinions` kept out of the compiled index) and compiling `_gm-materials/.cache/tier2.json`; added optional explicit `id:` front-matter indexing in `jekyll/_plugins/data_extractor.rb` (joined at compile time against ruling `entities`/`actors`); added duplicate/invalid `id:` and Tier 2 rulings checks in `scripts/lint_wiki.py`; integrated `oude tier2` and a tree-wide `git ls-files -z -- _gm-materials/` force-add guard in `oude doctor` / `oude doctor --fix`; cut over `transcribe_session.py`, `scribe_session.py`, skills (`lookup-context`, `prep-session`, `scribe-session`, `weave-threads`, `lint-wiki`), and `docs/MIGRATION_GUIDE.md`.
+- **Release-cut checklist (`#114`)**: documented the five-step release checklist (including synchronised version files, `Closes #...` issue links on `main` PRs, tagging, and `main` → `develop` back-sync) in `AGENTS.md` §8.
+
 ### Changed
 
-- `catalog_sha` in `_gm-materials/.cache/tier2.json` now hashes the canonical `id`→`path` projection of `catalog.json` instead of its raw bytes, so volatile fields (`generated`, `engine_version`, the rewritten `rolling_glossary.md` entry) no longer flag the index stale; id-affecting rebuilds still do (#120).
+- `catalog_sha` in `_gm-materials/.cache/tier2.json` now hashes the canonical `id`→`path` projection of `catalog.json` instead of its raw bytes, so volatile fields (`generated`, `engine_version`, the rewritten `rolling_glossary.md` entry) no longer flag the index stale; id-affecting rebuilds still do (`#120`).
+- Retired `templates/decisions.md.template` in favour of structured `_gm-materials/rulings/` notes, retaining a read-only legacy fallback in `transcribe_session.py` when `_gm-materials/rulings/` is absent (`#117`, `#120`).
 - **Unified `type` front matter key across Tier 1 notes and Tier 3 digests (`#115`, `#125`)**: aligned Tier 3 digest classification on `type` with vocabulary `index | people | faction | location | creature | artefact | mechanic | table | reference | other` (`person` → `people`, `reference` added); `compile_references()` in `scripts/generate_digests.py` now writes `"type"` only into `.agents/context/references.json` (immediate field rename from `"entity_type"`) and prints a stderr `[WARN]` while omitting `"type"` when absent or invalid; added line-level atomic `oude digest --migrate-type [--dry-run]`, mutually exclusive CLI mode flags (`--dry-run` requires `--migrate-type`), and the `Digest type keys` check in `oude doctor` / `oude doctor --fix`.
-- **`.agents/context/references.json` classified as a gitignored derived cache (`#118`)**: kept `.agents/context/references.json` at its existing path and added it to `DERIVED_CACHE_FILES`, `DEFAULT_GITIGNORE`, and `oude doctor` / `oude doctor --fix` untracking guards so private `_gm-materials/digests/` titles and headings are never leaked into public Git repositories.
+- **`.agents/context/references.json` classified as a gitignored derived cache (`#118`)**: kept `.agents/context/references.json` at its existing path and added it to `DERIVED_CACHE_FILES`, `DEFAULT_GITIGNORE`, and `oude doctor` / `oude doctor --fix` untracking guards so private `_gm-materials/digests/` titles and headings are never leaked into public Git repositories; added fresh-clone `oude digest` regeneration guidance across docs and skills and amended Design 004.
 
 ### Fixed
 
 - **`.gitignore` trailing-`#` matching in `oude doctor` (`#118`)**: `_has_gitignore_entry()` in `src/oude_mechanismen/cli.py` now follows `gitignore(5)` semantics (ignoring only trailing ASCII spaces and rejecting trailing `# ...` text as literal pattern characters) so lines carrying inline notes cannot produce false-positive privacy checks.
+- **Documentation & changelog housekeeping (`#114`, `#123`)**: corrected stale `v0.9.0` version wording in `## [0.9.1]` release notes (`#114`, PR `#116`) and fixed the broken EGM review link in Design 006 (`#123`).
 
 ### Deprecated
 
@@ -386,7 +395,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `resources/filter_studio.html`: Standalone interactive generative UI studio for real-time preset blending, inking, grain, and lens flare placement.
   - GitHub Actions CI workflow verifying Python, Ruby, and Shell script syntax, ShellCheck, and comprehensive Markdown heading spacing rules on push and pull requests.
 
-[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/terra-campaigns/oude-mechanismen/compare/v0.7.3...v0.8.0
