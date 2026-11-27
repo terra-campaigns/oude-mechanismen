@@ -1773,6 +1773,29 @@ class TestOudeCLI(unittest.TestCase):
             self.assertNotIn("entity_type", other_text)
             self.assertEqual(cwd_text, legacy_note)
 
+    def test_doctor_digest_type_dry_run_is_quiet_and_reports_missing_script(self):
+        """Dry-run probe runs quietly (DEVNULL), and missing generate_digests.py returns 127 and fails clearly."""
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_sub:
+            rc = cli._run_script("generate_digests.py", ["--help"], quiet=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stdout"), subprocess.DEVNULL)
+        self.assertEqual(mock_sub.call_args.kwargs.get("stderr"), subprocess.DEVNULL)
+
+        with patch("sys.stderr", new=io.StringIO()) as fake_err:
+            rc_missing = cli._run_script("definitely_missing_script_xyz.py", [])
+        self.assertEqual(rc_missing, 127)
+        self.assertIn("not found", fake_err.getvalue())
+
+        self._write_healthy_vault()
+        with patch.object(cli, "_run_script", return_value=127) as mock_run_script, \
+             patch("sys.stdout", new=io.StringIO()) as fake_out:
+            rc_doc = cli._doctor(self.target_dir)
+        self.assertEqual(rc_doc, 1)
+        out = fake_out.getvalue()
+        self.assertIn("Bundled scripts/generate_digests.py not found", out)
+        self.assertNotIn("Legacy digest type keys", out)
+        self.assertEqual(mock_run_script.call_args.kwargs.get("quiet"), True)
+
 
 class TestDependabotGuard(unittest.TestCase):
     """Regression tests for the vault Dependabot ignore guard (issue #76)."""

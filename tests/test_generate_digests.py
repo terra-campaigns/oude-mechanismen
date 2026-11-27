@@ -1365,6 +1365,7 @@ class TestDigestTypeUnification(unittest.TestCase):
             "hash_disagree.md": "---\nsource: book\ntier: 3\nentity_type: per#son\ntitle: H\n---\n\n# H\n\nB.\n",
             "malformed_yaml.md": "---\nsource: book\ntier: 3\nentity_type: \"person'\ntitle: M\n---\n\n# M\n\nB.\n",
             "dup.md": "---\nsource: book\ntier: 3\nentity_type: faction\nentity_type: location\ntitle: D\n---\n\n# D\n\nB.\n",
+            "unclosed_fm.md": "---\nsource: book\ntier: 3\nentity_type: person\ntitle: U\n",
         }
         for fname, text in conflict_files.items():
             (self.book_dir / fname).write_text(text, encoding="utf-8")
@@ -1374,12 +1375,37 @@ class TestDigestTypeUnification(unittest.TestCase):
             rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
         self.assertEqual(rc, 1)
         out = buf.getvalue()
-        self.assertIn("0 migrated, 8 conflict(s)", out)
+        self.assertIn("0 migrated, 9 conflict(s)", out)
         for fname, text in conflict_files.items():
             self.assertIn(fname, out)
             self.assertEqual((self.book_dir / fname).read_text(encoding="utf-8"), text)
         self.assertIn("sym.md", out)
         self.assertEqual(target.read_text(encoding="utf-8"), target_raw)
+
+    def test_migrate_digest_types_rejects_symlinked_subdirectory(self):
+        ext_dir = Path(self.temp_dir.name) / "external_dir"
+        ext_dir.mkdir()
+        ext_file = ext_dir / "leak.md"
+        ext_raw = "---\nsource: book\ntier: 3\nentity_type: person\ntitle: Leak\n---\n\n# Leak\n\nBody.\n"
+        ext_file.write_text(ext_raw, encoding="utf-8")
+
+        sub_link = self.digests_dir / "linked_sub"
+        sub_link.symlink_to(ext_dir, target_is_directory=True)
+        via_link = sub_link / "leak.md"
+
+        # On Python <= 3.12 rglob traverses symlinked directories; on 3.13+ it skips them.
+        # Verify both natural behaviour (ext_file untouched) and the containment branch explicitly.
+        with patch("sys.stdout", new=io.StringIO()):
+            rc_real = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertIn(rc_real, (0, 1))
+        self.assertEqual(ext_file.read_text(encoding="utf-8"), ext_raw)
+
+        buf = io.StringIO()
+        with patch.object(Path, "rglob", return_value=[via_link]), patch("sys.stdout", new=buf):
+            rc = generate_digests.migrate_digest_types(self.repo_root, dry_run=False)
+        self.assertEqual(rc, 1)
+        self.assertIn("resolves outside _gm-materials/digests", buf.getvalue())
+        self.assertEqual(ext_file.read_text(encoding="utf-8"), ext_raw)
 
     def test_migrate_digest_types_leaves_case_variant_and_missing_untouched(self):
         cv = self.book_dir / "case_variant.md"

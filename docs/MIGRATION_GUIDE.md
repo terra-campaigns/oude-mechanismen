@@ -155,7 +155,7 @@ oude digest                            # recompiles .agents/context/references.j
 oude digest --validate _gm-materials/digests
 ```
 
-3. **Local / self-hosted `oude doctor` exit-1 note:** standard public vault CI skips the check when `_gm-materials/digests/` is absent, whereas local hooks or self-hosted runners mounting `_gm-materials/` will exit `1` until `oude doctor --fix` finishes. Unmigrated `entity_type` notes still pass `oude digest --validate` with a non-fatal `[WARN]`.
+3. **Local / self-hosted `oude doctor` exit-1 note:** standard public vault Continuous Integration (CI) skips the check when `_gm-materials/digests/` is absent, whereas local hooks or self-hosted runners mounting `_gm-materials/` will exit `1` until `oude doctor --fix` finishes. Unmigrated `entity_type` notes still pass `oude digest --validate` with a non-fatal `[WARN]`.
 4. **Immediate `.agents/context/references.json` field rename:** `compile_references()` immediately emits `"type"` instead of `"entity_type"` (and omits `"type"` with a stderr `[WARN]` when absent or invalid). Update any vault-local script reading `entry["entity_type"]` to read `entry["type"]`.
 5. **Rollback:** downgrading the engine restores `entity_type` validation and rejects migrated `type:` notes; roll back from your Step 1 snapshot if reverting.
 

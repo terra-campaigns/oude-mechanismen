@@ -111,7 +111,7 @@ VALID_DIGEST_TYPES = {
 LEGACY_TYPE_VALUES = {"person": "people"}
 _TYPE_KEY_LINE_RE = re.compile(r"^type[ \t]*:", re.MULTILINE)
 _ENTITY_TYPE_KEY_LINE_RE = re.compile(r"^entity_type[ \t]*:", re.MULTILINE)
-ENTITY_TYPE_LINE_RE = re.compile(
+_ENTITY_TYPE_LINE_RE = re.compile(
     r'^entity_type(?P<colon>[ \t]*:[ \t]*)(?P<q>["\']?)(?P<val>[^"\'#\r\n]*?)(?P=q)(?P<rest>[ \t]*(?:#[^\r\n]*)?)(?P<eol>\r?\n|$)',
     re.MULTILINE,
 )
@@ -1265,6 +1265,7 @@ def migrate_digest_types(drive_dir: Path, dry_run: bool = False) -> int:
         print(f"[MIGRATE] No _gm-materials/digests directory found at {digests_dir}; skipping.")
         return 0
 
+    digests_root_resolved = digests_dir.resolve()
     md_files = sorted(digests_dir.rglob("*.md"), key=lambda p: p.as_posix())
     migrated = 0
     already_canonical = 0
@@ -1281,11 +1282,19 @@ def migrate_digest_types(drive_dir: Path, dry_run: bool = False) -> int:
             conflicts.append(f"{rel_display}: symlinked digest file is not migrated")
             continue
 
+        resolved_md = md_file.resolve()
+        if digests_root_resolved not in resolved_md.parents:
+            conflicts.append(f"{rel_display}: digest path resolves outside _gm-materials/digests")
+            continue
+
         with open(md_file, "r", encoding="utf-8", newline="") as fh:
             content = fh.read()
 
         fm_match = FRONTMATTER_BLOCK_RE.match(content)
         if fm_match is None:
+            if content.startswith("---"):
+                conflicts.append(f"{rel_display}: malformed frontmatter delimiters")
+                continue
             no_frontmatter += 1
             continue
 
@@ -1311,7 +1320,7 @@ def migrate_digest_types(drive_dir: Path, dry_run: bool = False) -> int:
             conflicts.append(f"{rel_display}: unsupported type value {resolved_type!r}")
             continue
 
-        matches = list(ENTITY_TYPE_LINE_RE.finditer(raw_block))
+        matches = list(_ENTITY_TYPE_LINE_RE.finditer(raw_block))
         if len(matches) != 1:
             conflicts.append(f"{rel_display}: expected 1 column-0 entity_type line, found {len(matches)}")
             continue
@@ -1342,6 +1351,7 @@ def migrate_digest_types(drive_dir: Path, dry_run: bool = False) -> int:
                     os.fsync(fh.fileno())
                 os.chmod(tmp_path, mode)
                 os.replace(tmp_path, md_file)
+                # Fsync parent directory after os.replace so the directory rename is durable on POSIX.
                 try:
                     dir_fd = os.open(str(md_file.parent), os.O_RDONLY)
                     try:
